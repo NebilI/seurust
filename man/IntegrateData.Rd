@@ -5,15 +5,18 @@
 \title{Integrate data}
 \usage{
 IntegrateData(anchorset, new.assay.name = "integrated",
-  features = NULL, features.to.integrate = NULL, dims = 1:30,
-  k.weight = 100, weight.reduction = NULL, sd.weight = 1,
-  sample.tree = NULL, preserve.order = FALSE, do.cpp = TRUE,
-  eps = 0, verbose = TRUE)
+  normalization.method = c("LogNormalize", "SCT"), features = NULL,
+  features.to.integrate = NULL, dims = 1:30, k.weight = 100,
+  weight.reduction = NULL, sd.weight = 1, sample.tree = NULL,
+  preserve.order = FALSE, do.cpp = TRUE, eps = 0, verbose = TRUE)
 }
 \arguments{
 \item{anchorset}{Results from FindIntegrationAnchors}
 
 \item{new.assay.name}{Name for the new assay containing the integrated data}
+
+\item{normalization.method}{Name of normalization method used: LogNormalize
+or SCT}
 
 \item{features}{Vector of features to use when computing the PCA to determine the weights. Only set
 if you want a different set from those used in the anchor finding process}
@@ -52,5 +55,5 @@ query, and weights will need to be calculated for all cells in the object.}
 Returns a Seurat object with a new integrated Assay
 }
 \description{
-Integrates the data
+Perform dataset integration using a pre-computed anchorset
 }
