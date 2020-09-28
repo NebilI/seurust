@@ -28,7 +28,7 @@ DEenrichRPlot(
 
 \item{ident.2}{Cell class identity 2.}
 
-\item{balanced}{Option to display pathway enrichments for both negative and 
+\item{balanced}{Option to display pathway enrichments for both negative and
 positive DE genes.If false, only positive DE gene will be displayed.}
 
 \item{logfc.threshold}{Limit testing to genes which show, on average, at least
@@ -93,7 +93,7 @@ Increasing logfc.threshold speeds up the function, but can miss weaker signals.}
 \item{...}{Arguments passed to other methods and to specific DE methods}
 }
 \value{
-Returns one (only enriched) or two (both enriched and depleted) 
+Returns one (only enriched) or two (both enriched and depleted)
 barplots with the top enriched/depleted GO terms from EnrichR.
 }
 \description{
