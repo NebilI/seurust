@@ -9,7 +9,7 @@ ReadSTARsolo(data.dir, ...)
 \arguments{
 \item{data.dir}{Directory containing the data files}
 
-\item{...}{Extra parameters passed to \code{ReadMtx}}
+\item{...}{Extra parameters passed to \code{\link{ReadMtx}}}
 }
 \description{
 Read output from STARsolo
