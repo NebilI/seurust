@@ -38,7 +38,7 @@ setGeneric(
 #' @param assays A vector of assays to pull data from
 #' @param combine Combine plots into a single \code{\link[patchwork]{patchwork}ed} ggplot object with 
 #' single shared figure legend when \code{fast=FALSE}. If \code{FALSE}, return a list of ggplot objects
-#' @param leg.pos When \code{combine=TRUE}, allows legend position to be adjusted for \code{\link[patchwork]{patchwork}ed} output; defaults as \code{"right"}
+#' @param legend.position When \code{combine=TRUE}, allows legend position to be adjusted for \code{\link[patchwork]{patchwork}ed} output; defaults as \code{"right"}
 #'
 #' @return No return value by default. If using fast = FALSE, will return a
 #' \code{\link[patchwork]{patchwork}ed} ggplot object if combine = TRUE, otherwise
