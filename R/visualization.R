@@ -70,7 +70,7 @@ DimHeatmap <- function(
     slot = 'scale.data',
     assays = NULL,
     combine = TRUE,
-    leg.pos = "right"
+    legend.position = "right"
 ) {
   ncol <- ncol %||% ifelse(test = length(x = dims) > 2, yes = 3, no = length(x = dims))
   plots <- vector(mode = 'list', length = length(x = dims))
