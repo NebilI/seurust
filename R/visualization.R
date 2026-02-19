@@ -44,7 +44,7 @@ setGeneric(
 #' \code{\link[patchwork]{patchwork}ed} ggplot object if combine = TRUE, otherwise
 #' returns a list of ggplot objects
 #'
-#' @importFrom patchwork wrap_plots
+#' @importFrom patchwork wrap_plots plot_layout
 #' @export
 #' @concept visualization
 #'
