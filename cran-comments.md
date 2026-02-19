@@ -1,28 +1,47 @@
-# Seurat v5.2.1
-This update is a small patch release to address failing M1mac checks ahead of the deadline on 2025-01-28.
+# Seurat v5.4.0
 
 ## Test environments
-* macOS 14.6.1 (Apple M3, arm64, local install): R-release
-* Ubuntu 22.04 (Docker container): R-release
+* Ubuntu 20.04 (local) (R 4.3.2)
+* macOS 15.6.1 (local) (R 4.5.1)
+* Ubuntu 24.04 (GitHub Actions Runner): R-oldrelease, R-release
 * [win-builder](https://win-builder.r-project.org/): R-oldrelease, R-release, R-devel
-* [macOS builder](https://mac.r-project.org/macbuilder/submit.html): R-release, R-devel
 
 ## R CMD check results
-There were no ERRORs or WARNINGs but there was one NOTE.
+**Status: OK**
 
 ```
-❯ checking CRAN incoming feasibility ... [15s/92s] NOTE
-  Maintainer: ‘Rahul Satija <seurat@nygenome.org>’
-  
-  Suggests or Enhances not in mainstream repositories:
-    BPCells, enrichR, presto
-  Availability using Additional_repositories specification:
-    BPCells   yes   https://bnprks.r-universe.dev   
-    enrichR   yes   https://satijalab.r-universe.dev
-    presto    yes   https://satijalab.r-universe.dev
+* checking CRAN incoming feasibility ... [42s] NOTE
+Maintainer: 'Rahul Satija <seurat@nygenome.org>'
+
+Suggests or Enhances not in mainstream repositories:
+  BPCells, presto
+Availability using Additional_repositories specification:
+  BPCells   yes   https://bnprks.r-universe.dev   
+  presto    yes   https://satijalab.r-universe.dev
 ```
 
-`BPCells`, `enrichR`, and `presto` are hosted on R-universe and used conditionally in `Seurat`.
+The maintainer remains Rahul Satija and the email is correct. BPCells and presto are hosted on R-universe and used conditionally in Seurat.
+
+```
+* checking package dependencies ... NOTE
+Packages suggested but not available for checking: 'BPCells', 'presto'
+```
+
+BPCells and presto are hosted on R-universe and used conditionally in Seurat.
+
+```
+* checking DESCRIPTION meta-information ... NOTE
+Author field differs from that derived from Authors@R
+```
+
+There seems to be a slight difference in ORCID formatting between Author and Authors@R; the information in both is the same.
+
+```
+* checking Rd cross-references ... NOTE
+Package unavailable to check Rd xrefs: 'BPCells'
+```
+
+BPCells is listed under "Suggests"; it is hosted on R-universe and used conditionally in Seurat.
 
 ## Reverse dependency check results
-We checked 65 reverse dependencies, comparing `R CMD check` results across the CRAN and dev versions of this package, and saw no new problems.
+We checked 80 reverse dependencies (40 from CRAN + 40 from Bioconductor), comparing R CMD check results across CRAN and dev versions of this package, and saw no new problems.

@@ -260,7 +260,8 @@ LoadXenium <- function(
     `Unassigned Codeword` = 'BlankCodeword',
     `Negative Control Codeword` = 'ControlCodeword',
     `Negative Control Probe` = 'ControlProbe',
-    `Genomic Control` = 'GenomicControl'
+    `Genomic Control` = 'GenomicControl',
+    `Protein Expression` = 'ProteinExpression'
   )
 
   xenium.obj <- CreateSeuratObject(counts = data$matrix[["Gene Expression"]], assay = assay)
@@ -332,7 +333,8 @@ SpatialDimPlot <- function(
   stroke = NA,
   label.box = TRUE,
   interactive = FALSE,
-  information = NULL
+  information = NULL,
+  plot_segmentations = FALSE
 ) {
   return(SpatialPlot(
     object = object,
@@ -357,7 +359,8 @@ SpatialDimPlot <- function(
     stroke = stroke,
     label.box = label.box,
     interactive = interactive,
-    information = information
+    information = information,
+    plot_segmentations = plot_segmentations
   ))
 }
 
@@ -384,7 +387,8 @@ SpatialFeaturePlot <- function(
   shape = 21,
   stroke = NA,
   interactive = FALSE,
-  information = NULL
+  information = NULL,
+  plot_segmentations = FALSE
 ) {
   return(SpatialPlot(
     object = object,
@@ -404,7 +408,8 @@ SpatialFeaturePlot <- function(
     shape = shape,
     stroke = stroke,
     interactive = interactive,
-    information = information
+    information = information,
+    plot_segmentations = plot_segmentations
   ))
 }
 

@@ -220,7 +220,7 @@ HTODemux <- function(
   counts <- GetAssayData(
     object = object,
     assay = assay,
-    slot = 'counts'
+    layer = 'counts'
   )[, colnames(x = object)]
   counts <- as.matrix(x = counts)
   ncenters <- init %||% (nrow(x = data) + 1)
@@ -445,9 +445,8 @@ GetResidual <- function(
     new.residuals <- lapply(
       X = sct.models,
       FUN = function(x) {
-        FetchResidualSCTModel(object = object,
-                              assay = assay,
-                              umi.assay = umi.assay,
+        FetchResidualSCTModel(object = object[[assay]],
+                              umi.object = object[[umi.assay]],
                               SCTModel = x,
                               new_features = features,
                               replace.value = replace.value,
@@ -456,7 +455,7 @@ GetResidual <- function(
       }
     )
   }
-  existing.data <- GetAssayData(object = object, slot = 'scale.data', assay = assay)
+  existing.data <- GetAssayData(object = object, layer = 'scale.data', assay = assay)
   all.features <- union(x = rownames(x = existing.data), y = features)
    new.scale <- matrix(
     data = NA,
@@ -479,7 +478,7 @@ GetResidual <- function(
   object <- SetAssayData(
     object = object,
     assay = assay,
-    slot = "scale.data",
+    layer = "scale.data",
     new.data = new.scale
   )
   if (any(!features.orig %in% rownames(x = new.scale))) {
@@ -498,19 +497,26 @@ GetResidual <- function(
 #' and the image data in a subdirectory called \code{spatial}
 #' @param filename Name of H5 file containing the feature barcode matrix
 #' @param slice Name for the stored image of the tissue slice
-#' @param bin.size Specifies the bin sizes to read in - defaults to c(16, 8)
+#' @param bin.size Specifies the bin sizes to read in, can include "polygons" to load segmentations. Defaults to c(16, 8)
 #' @param filter.matrix Only keep spots that have been determined to be over
 #' tissue
 #' @param to.upper Converts all feature names to upper case. Can be useful when
 #' analyses require comparisons between human and mouse gene names for example.
 #' @param image \code{VisiumV1}/\code{VisiumV2} instance(s) - if a vector is
 #' passed in it should be co-indexed with \code{`bin.size`}
+#' @param segmentation.type Which segmentations to load (cell or nucleus) when bin.size includes "polygons".
+#' Defaults to "cell".
+#' @param compact Whether to store segmentations in \emph{only} the \code{sf.data} slot 
+#' in the corresponding Segmentation object (default TRUE) to save memory and processing time.
+#' If FALSE, segmentations are also stored in \code{\link[sp]{sp}} format in addition to the \code{sf.data} slot.
+#' @param image.name Name of the tissue image to be plotted. Defaults to tissue_lowres_image.png
 #' @param ... Arguments passed to \code{\link{Read10X_h5}}
 #'
 #' @return A \code{Seurat} object
 #'
 #' @importFrom png readPNG
 #' @importFrom jsonlite fromJSON
+#' @importFrom SeuratObject DefaultBoundary<-
 #'
 #' @export
 #' @concept preprocessing
@@ -522,6 +528,7 @@ GetResidual <- function(
 #' Load10X_Spatial(data.dir = data_dir)
 #' }
 #'
+
 Load10X_Spatial <- function (
   data.dir,
   filename = "filtered_feature_bc_matrix.h5",
@@ -531,6 +538,9 @@ Load10X_Spatial <- function (
   filter.matrix = TRUE,
   to.upper = FALSE,
   image = NULL,
+  image.name = "tissue_lowres_image.png",
+  segmentation.type = NULL,
+  compact = TRUE,
   ...
 ) {
   # if more than one directory is passed in
@@ -540,7 +550,7 @@ Load10X_Spatial <- function (
     # but also raise a warning
     warning(
       paste0(
-        "`data.dir` expects a single value but recieved multiple - ",
+        "data.dir expects a single value but received multiple - ",
         "continuing using the first: '",
         data.dir,
         "'."
@@ -554,17 +564,34 @@ Load10X_Spatial <- function (
     stop(paste0("No such file or directory: ", "'", data.dir, "'"))
   }
 
-  # if `bin.size` is not set but `data.dir` points to a folder with binned data
+  # if bin.size is not set but data.dir points to a folder with binned data
   if (is.null(bin.size) & file.exists(paste0(data.dir, "/binned_outputs"))) {
-    # point `bin.size` to the "standard" set - i.e. everything in the default
-    # output except the 8 um binning because it's a memory hog
+    # point bin.size to the "standard" set - i.e. everything in the default
+    # output except the 2 um binning because it's a memory hog
     bin.size <- c(16, 8)
   }
-  # if `bin.size` is specified
-  if(!is.null(bin.size)) {
-    # convert `bin.size` to a character vector and pad values to three digits
-    bin.size.pretty <- paste0(sprintf("%03d", bin.size), "um")
-    # point `data.dirs` to the specified binnings
+
+  # Seurat object to return
+  object <- NULL
+
+  bin.size.numeric <- bin.size
+
+  if (!is.null(bin.size)) {
+    # Store numeric bin sizes - these are used to load binned outputs
+    bin.size.numeric <- as.numeric(bin.size[bin.size != "polygons"])
+  }
+
+  # Set flag to indicate if segmentations should be loaded
+  load.segmentations <- length(bin.size.numeric) != length(bin.size)
+
+  # read h5 files if bin.size is NULL (occurs when no /binned_outputs directory exists) or if bin.size contains numeric values
+  load.binned.outputs <- is.null(bin.size) || (!is.null(bin.size.numeric) && length(bin.size.numeric) > 0)
+
+  # If bin.size is specified and binned outputs need to be loaded
+  if(!is.null(bin.size.numeric) && length(bin.size.numeric) > 0) {
+    # convert bin.size to a character vector and pad values to three digits
+    bin.size.pretty <- paste0(sprintf("%03d", bin.size.numeric), "um")
+    # point data.dirs to the specified binnings
     data.dirs <- paste0(
       data.dir,
       "/binned_outputs/",
@@ -582,67 +609,151 @@ Load10X_Spatial <- function (
     slice.names <- slice
   }
 
-  # read in counts matrices from specified h5 files
-  counts.paths <- lapply(data.dirs, file.path, filename)
-  counts.list <- lapply(counts.paths, Read10X_h5, ...)
-  # maybe convert Cell identifiers to uppercase
-  if (to.upper) {
-    rownames(counts) <- lapply(rownames(counts), toupper)
-  }
+  # read the h5 files in the top-level / binned output directory
+  if(load.binned.outputs) {
+    # read in counts matrices from specified h5 files
+    counts.paths <- lapply(data.dirs, file.path, filename)
+    counts.list <- lapply(counts.paths, Read10X_h5, ...)
+    # maybe convert Cell identifiers to uppercase
+    if (to.upper) {
+      rownames(counts) <- lapply(rownames(counts), toupper)
+    }
 
-  if (is.null(image)) {
-    # read in the corresponding images and coordinate mappings
-    image.list <- mapply(
-      Read10X_Image,
-      file.path(data.dirs, "spatial"),
-      assay = assay.names,
-      slice = slice.names,
-      MoreArgs = list(filter.matrix = filter.matrix)
-    )
-  } else {
-    # make sure any passed images are in a vector
-    image.list <- c(image)
-  }
-
-  # check that for each counts matrix there is a corresponding image
-  if (length(image.list) != length(counts.list)) {
-    stop(
-      paste0(
-        "The number of images does not match the number of counts matrices. ",
-        "Ensure each spatial dataset has a corresponding image."
+    if (is.null(image)) {
+      # read in the corresponding images and coordinate mappings
+      image.list <- mapply(
+        Read10X_Image,
+        file.path(data.dirs, "spatial"),
+        assay = assay.names,
+        slice = slice.names,
+        image.name = image.name,
+        MoreArgs = list(filter.matrix = filter.matrix)
       )
+    } else {
+      # make sure any passed images are in a vector
+      image.list <- c(image)
+    }
+
+    # check that for each counts matrix there is a corresponding image
+    if (length(image.list) != length(counts.list)) {
+      stop(
+        paste0(
+          "The number of images does not match the number of counts matrices. ",
+          "Ensure each spatial dataset has a corresponding image."
+        )
+      )
+    }
+
+    # for each counts matrix, build a Seurat object
+    object.list <- mapply(CreateSeuratObject, counts.list, assay = assay.names)
+    # associate each counts matrix with its corresponding image
+    object.list <- mapply(
+      function(
+        .object,
+        .image,
+        .assay,
+        .slice
+      ) {
+        # align the image's identifiers with the object's
+        .image <- .image[Cells(.object)]
+        # add the image to the corresponding Seurat instance
+        .object[[.slice]] <- .image
+        return (.object)
+      },
+      object.list,
+      image.list,
+      assay.names,
+      slice.names
+    )
+    # merge the Seurat instances - each assay should have unique Cell identifiers
+    object <- merge(
+      object.list[[1]],
+      y = object.list[-1]
     )
   }
+  
+  # read segmentation data if requested
+  if (load.segmentations) {
+    # Check for required packages, stop with clear message if missing
+    if (!requireNamespace("sf", quietly = TRUE)) {
+      stop("The 'sf' package must be installed to load segmentation data.")
+    }
 
-  # for each counts matrix, build a Seurat object
-  object.list <- mapply(CreateSeuratObject, counts.list, assay = assay.names)
-  # associate each counts matrix with its corresponding image
-  object.list <- mapply(
-    function(
-      .object,
-      .image,
-      .assay,
-      .slice
-    ) {
-	    # align the image's identifiers with the object's
-	    .image <- .image[Cells(.object)]
-      # add the image to the corresponding Seurat instance
-      .object[[.slice]] <- .image
-      return (.object)
-    },
-    object.list,
-    image.list,
-    assay.names,
-    slice.names
-  )
-  # merge the Seurat instances - each assay should have unique Cell identifiers
-  object <- merge(
-    object.list[[1]],
-    y = object.list[-1]
-  )
+    segmentation.assay.name <- paste0(assay, ".Polygons")
+    seg.data.dir <- file.path(data.dir, "segmented_outputs")
+    
+    # Check for different possible file formats/names
+    possible.files <- c(
+      "filtered_feature_cell_matrix.h5",
+      "filtered_feature_bc_matrix.h5", 
+      "raw_feature_bc_matrix.h5"
+    )
+    
+    seg.counts.path <- NULL
+    for (pf in possible.files) {
+      test.path <- file.path(seg.data.dir, pf)
+      if (file.exists(test.path)) {
+        seg.counts.path <- test.path
+        break
+      }
+    }
+    
+    if (is.null(seg.counts.path)) {
+      stop("No cell segmentation matrix found. Looked for: ", paste(possible.files, collapse = ", "))
+    }
+
+    # Read raw counts matrix
+    segmentation.counts <- Read10X_h5(seg.counts.path, ...)
+
+    # Holds barcode names
+    segmentation.counts.cell.ids <- colnames(segmentation.counts)
+
+    # Check segmentation type
+    if (is.null(segmentation.type)) {
+      segmentation.type <- "cell"
+    } else if (length(segmentation.type) != 1 || !(segmentation.type %in% c("cell", "nucleus"))) {
+      stop("segmentation.type must be either 'cell' or 'nucleus'")
+    }
+
+    # Read the Visium (V2) object with segmentations loaded
+    visium.segmentation <- Read10X_Segmentations(
+      image.dir = file.path(seg.data.dir, "spatial"),
+      data.dir = data.dir,
+      image.name = image.name,
+      segmentation.type = segmentation.type,
+      compact = compact
+    )
+
+    # Create a new Seurat object with the raw counts
+    segmentation.object <- CreateSeuratObject(
+      segmentation.counts,
+      assay = segmentation.assay.name
+    )
+    
+    common_cells <- unique(Cells(visium.segmentation)[Cells(visium.segmentation) %in% Cells(segmentation.object)])
+    visium.segmentation <- subset(
+      x = visium.segmentation,
+      cells = common_cells
+    )
+    
+    # Set the default boundary type to centroids for plotting
+    DefaultBoundary(object = visium.segmentation) <- "centroids"
+
+    # Add the Visium object with segmentations to the Seurat object holding counts
+    segmentation.object[[paste0(slice, ".polygons")]] <- visium.segmentation
+
+    # Merge segmented outputs into the object containing binned outputs, if it exists
+    if (!is.null(object)) {
+      object <- merge(x = object, y = segmentation.object)
+    } else {
+      object <- segmentation.object
+    }
+    DefaultAssay(object = object) <- segmentation.assay.name
+  }
 
   return(object)
 }
+
 
 
 #' Read10x Probe Metadata
@@ -661,7 +772,7 @@ Read10X_probe_metadata <- function(
   data.dir,
   filename = 'raw_probe_bc_matrix.h5'
 ) {
-  if (!requireNamespace('hdf5r', quietly = TRUE)) {
+  if (isFALSE(x = requireNamespace('hdf5r', quietly = TRUE))) {
     stop("Please install hdf5r to read HDF5 files")
   }
   file.path = paste0(data.dir,"/", filename)
@@ -869,7 +980,7 @@ MULTIseqDemux <- function(
   assay <- assay %||% DefaultAssay(object = object)
   multi_data_norm <- t(x = GetAssayData(
     object = object,
-    slot = "data",
+    layer = "data",
     assay = assay
   ))
   if (autoThresh) {
@@ -1075,6 +1186,11 @@ Read10X <- function(
     if (ncol(x = feature.names) > 2) {
       data_types <- factor(x = feature.names$V3)
       lvls <- levels(x = data_types)
+      if ("Protein Expression" %in% lvls) {
+        message("Xenium protein expression detected, but no scaling factor",
+                " is supplied with the MEX matrices (vs HDF5). The loaded",
+                " matrix is scaled by a constant from the original values.")
+      }
       if (length(x = lvls) > 1 && length(x = full.data) == 0) {
         message("10X data contains more than one type and is being returned as a list containing matrices of each type.")
       }
@@ -1128,7 +1244,7 @@ Read10X <- function(
 #' @concept preprocessing
 #'
 Read10X_h5 <- function(filename, use.names = TRUE, unique.features = TRUE) {
-  if (!requireNamespace('hdf5r', quietly = TRUE)) {
+  if (isFALSE(x = requireNamespace('hdf5r', quietly = TRUE))) {
     stop("Please install hdf5r to read HDF5 files")
   }
   if (!file.exists(filename)) {
@@ -1158,6 +1274,7 @@ Read10X_h5 <- function(filename, use.names = TRUE, unique.features = TRUE) {
     shp <- infile[[paste0(genome, '/shape')]]
     features <- infile[[paste0(genome, '/', feature_slot)]][]
     barcodes <- infile[[paste0(genome, '/barcodes')]]
+
     sparse.mat <- sparseMatrix(
       i = indices[] + 1,
       p = indptr[],
@@ -1189,6 +1306,15 @@ Read10X_h5 <- function(filename, use.names = TRUE, unique.features = TRUE) {
           simplify = FALSE,
           USE.NAMES = TRUE
         )
+
+        # Apply scaling factor that was used when serializing.
+        if ("Protein Expression" %in% types.unique) {
+          if ("protein_scaling_factor" %in% hdf5r::h5attr_names(infile)) {
+            apply_scaling_factor <- 1.0 / hdf5r::h5attr(infile, "protein_scaling_factor")
+            message("Scaling 'Protein Expression' by ", apply_scaling_factor)
+            sparse.mat[["Protein Expression"]] <- sparse.mat[["Protein Expression"]] * apply_scaling_factor
+          }
+        }
       }
     }
     output[[genome]] <- sparse.mat
@@ -1232,12 +1358,18 @@ Read10X_Image <- function(
   image.type <- match.arg(image.type, choices = c("VisiumV1", "VisiumV2"))
 
   # Read in the H&E stain image.
-  image <- png::readPNG(
-    source = file.path(
-      image.dir,
-      image.name
-    )
-  )
+  primary.path <- file.path(image.dir, image.name)
+  fallback.path <- file.path(dirname(dirname(dirname(image.dir))), "spatial", image.name)
+
+  image <- tryCatch({
+    png::readPNG(primary.path)
+  }, error = function(e) {
+    if (file.exists(fallback.path)) {
+      png::readPNG(fallback.path)
+    } else {
+      stop("Neither primary nor fallback image could be read:\n", primary.path, "\n", fallback.path)
+    }
+  })
 
   # Read in the scale factors.
   scale.factors <- Read10X_ScaleFactors(
@@ -1264,8 +1396,8 @@ Read10X_Image <- function(
       image = image
     )
 
-    # As of v5.1.0 `Radius.VisiumV1` no longer returns the value of the 
-    # `spot.radius` slot and instead calculates the value on the fly, but we 
+    # As of v5.1.0 `Radius.VisiumV1` no longer returns the value of the
+    # `spot.radius` slot and instead calculates the value on the fly, but we
     # can populate the static slot in case it's depended on.
     visium.v1@spot.radius <- Radius(visium.v1)
 
@@ -1277,15 +1409,22 @@ Read10X_Image <- function(
 
   # Create an `sp` compatible `FOV` instance.
   fov <- CreateFOV(
-    coordinates[, c("imagerow", "imagecol")],
+    coordinates[, c("imagecol", "imagerow")],
     type = "centroids",
     radius = scale.factors[["spot"]],
     assay = assay,
     key = key
   )
 
-  # Build the final `VisiumV2` instance, essentially just adding `image` and
-  # `scale.factors` to the `fov`.
+  #### NOTE ####
+  # The Visium coordinate system takes the origin to be in the top-left corner,
+  # where the x-axis is horizontal and associated with the image column.
+  # We mark this with the coords_x_orientation flag.
+  # Older Visium objects in Seurat have a different system (x-axis vertical, etc), 
+  # which is updated after checking whether the flag is set (SeuratObject::UpdateSeuratObject).
+  ###############
+
+  # Build the final `VisiumV2` instance
   visium.v2 <- new(
     Class = "VisiumV2",
     boundaries = fov@boundaries,
@@ -1293,7 +1432,8 @@ Read10X_Image <- function(
     assay = fov@assay,
     key = fov@key,
     image = image,
-    scale.factors = scale.factors
+    scale.factors = scale.factors,
+    coords_x_orientation = "horizontal"
   )
 
   return(visium.v2)
@@ -1317,7 +1457,7 @@ Read10X_Coordinates <- function(filename, filter.matrix) {
   # if the coordinate mappings are in a parquet file
   if (tools::file_ext(filename) == "parquet") {
     # `arrow` must be installed to read parquet files
-    if (!requireNamespace("arrow", quietly = TRUE)) {
+    if (isFALSE(x = requireNamespace('arrow', quietly = TRUE))) {
       stop("Please install arrow to read parquet files")
     }
 
@@ -1391,6 +1531,116 @@ Read10X_ScaleFactors <- function(filename) {
   return (scale.factors)
 }
 
+#' Load 10X Genomics Visium Cell Segmentations
+#'
+#' @param image.dir Path to directory with 10X Genomics visium image data;
+#' @param data.dir Directory of the base spaceranger outs
+#' @param image.name Name of the tissue image to be plotted. tissue_lowres_image.png or tissue_hires_image.png
+#' @param assay Name of assay to associate segmentations to
+#' @param slice Name of the slice to associate the segmentations to
+#' @param segmentation.type Which segmentations to load, cell or nucleus. If using nucleus the full matrix from cells is still used
+#' @param compact Whether to store segmentations in only the \code{sf.data} slot; see \code{\link{Load10X_Spatial}} for details
+#'
+#'
+#' @return A VisiumV2 object with segmentations
+#'
+#' @export
+#' @concept preprocessing
+#'
+Read10X_Segmentations <- function (image.dir,
+                                   data.dir,
+                                   image.name = "tissue_lowres_image.png",
+                                   assay = "Spatial.Polygons",
+                                   slice = "slice1.polygons",
+                                   segmentation.type = "cell",
+                                   compact = TRUE) {
+
+
+  sf.obj <- Read10X_HD_GeoJson(data.dir = data.dir, 
+                                segmentation.type = segmentation.type)
+                                
+  # Create a Segmentation object; populate it based on the coordinates from the sf object
+  segmentations <- CreateSegmentation(sf.obj, compact = compact)
+
+  # Create a Centroids object; populate it based on the centroids from the sf object
+  centroids <- CreateCentroids(sf.obj,
+                              nsides = Inf,
+                              radius = NULL,
+                              theta = 0)
+
+  # Named list with segmentations and centroids
+  boundaries <- list(segmentations = segmentations, centroids = centroids)
+
+  # Get image, scale factors, key
+  image <- png::readPNG(source = file.path(image.dir, image.name))
+  scale.factors <- Read10X_ScaleFactors(filename = file.path(image.dir,
+                                                             "scalefactors_json.json"))
+  key <- Key(slice, quiet = TRUE)
+
+  # Build VisiumV2 object
+  visium.v2 <- new(
+    Class = "VisiumV2",
+    boundaries = boundaries,
+    assay = assay,
+    key = key,
+    image = image,
+    scale.factors = scale.factors,
+    coords_x_orientation = "horizontal"
+  )
+
+  return(visium.v2)
+}
+
+#' Format 10X Genomics GeoJson cell IDs
+#'
+#' @param ids Vector of cell IDs to format
+#' @param prefix Optional prefix string
+#' @param suffix Optional suffix string
+#' @param digits Number of digits to zero-pad
+#' 
+#' A helper function to format cell IDs from the segmentation GeoJson to the same type as in the matrix.h5
+#' The GeoJson has cell IDs as integers (eg 1). They need to be in the format cellid_000000001-1
+#'
+#' @return Vector of formatted cell IDs
+Format10X_GeoJson_CellID <- function(ids, prefix = "cellid_", suffix = "-1", digits = 9) {
+  format_string <- paste0("%0", as.integer(digits), "d")
+
+  formatted_ids <- sapply(ids, function(id) {
+    numeric_part <- sprintf(format_string, as.integer(id))
+    paste0(prefix, numeric_part, suffix)
+  })
+
+  return(formatted_ids)
+}
+
+#' Load 10X Genomics GeoJson
+#'
+#' @param data.dir Path to the directory containing matrix data
+#' @param segmentation.type Which segmentations to load, cell or nucleus. If using nucleus the full matrix from cells is still used
+#'
+#' @return An \code{sf} object containing polygon segmentations from the GeoJSON provided by 10x, formatted for downstream coordinate retrieval
+#'
+#' @export
+#' @concept preprocessing
+#'
+Read10X_HD_GeoJson <- function(data.dir, segmentation.type = "cell") {
+  segmentation_polygons <- sf::read_sf(file.path(data.dir,"segmented_outputs", paste0(segmentation.type, "_segmentations.geojson")))
+  
+  # Restructure sf geometry for downstream compatibility
+  segmentation_polygons$geometry <- sf::st_sfc(lapply(
+    segmentation_polygons$geometry,
+    function(geom) {
+      coords <- geom[[1]]
+      sf::st_polygon(list(coords))
+    }
+  ), crs = sf::st_crs(NA))
+
+  segmentation_polygons$barcodes <- Format10X_GeoJson_CellID(segmentation_polygons$cell_id)
+  segmentation_polygons
+}
+
+
+
 #' Read and Load Akoya CODEX data
 #'
 #' @param filename Path to matrix generated by upstream processing.
@@ -1438,7 +1688,7 @@ ReadAkoya <- function(
   filter = 'DAPI|Blank|Empty',
   inform.quant = c('mean', 'total', 'min', 'max', 'std')
 ) {
-  if (!requireNamespace("data.table", quietly = TRUE)) {
+  if (isFALSE(x = requireNamespace('data.table', quietly = TRUE))) {
     stop("Please install 'data.table' for this function")
   }
   # Check arguments
@@ -2011,7 +2261,7 @@ ReadNanostring <- function(
   subset.counts.matrix = NULL,
   cell.mols.only = TRUE
 ) {
-  if (!requireNamespace("data.table", quietly = TRUE)) {
+  if (isFALSE(x = requireNamespace('data.table', quietly = TRUE))) {
     stop("Please install 'data.table' for this function")
   }
 
@@ -2431,16 +2681,27 @@ ReadXenium <- function(
           if(!inherits(cell_seg, "try-error")) { break }
         }
 
-        if(!exists('cell_seg') || inherits(cell_seg, "try-error") || length(intersect(names(col.use), colnames(cell_seg))) != 2) {
-          warning('cells did not contain a segmentation_method column. Skipping...', call. = FALSE, immediate. = TRUE)
+        if (!exists("cell_seg") || inherits(cell_seg, "try-error")) {
+          warning("cells did not contain a segmentation_method column. Skipping...", call. = FALSE, immediate. = TRUE)
           NULL
         } else {
-          cell_seg <- cell_seg[, names(col.use)]
-          colnames(cell_seg) <- col.use
+          #Attempt to add default segmentation_method if nuclei/cell boundary files are provided 
+          message("Cell_seg columns: ", paste(colnames(cell_seg), collapse = ", "))
+          if (!"segmentation_method" %in% colnames(cell_seg)) {
+            message("Adding default segmentation_method = 'cell'")
+            cell_seg$segmentation_method <- "cell"
+          }
 
+          #Try to detect unique cell identifier
+          if (!"cell_id" %in% colnames(cell_seg)) {
+            stop("Missing required column: cell_id")
+          }
+
+          cell_seg <- cell_seg[, c("cell_id", "segmentation_method")]
+          colnames(cell_seg) <- c("cell", "segmentation_method")
           cell_seg$cell <- binary_to_string(cell_seg$cell)
 
-          psegs(type = 'finish')
+          psegs(type = "finish")
 
           data.frame(segmentation_method = cell_seg$segmentation_method, row.names = cell_seg$cell)
         }
@@ -2747,7 +3008,7 @@ ReadVitessce <- function(
   type = c('segmentations', 'centroids'),
   filter = NA_character_
 ) {
-  if (!requireNamespace('jsonlite', quietly = TRUE)) {
+  if (isFALSE(x = requireNamespace('jsonlite', quietly = TRUE))) {
     stop("Please install 'jsonlite' for this function")
   }
   type <- match.arg(arg = type, several.ok = TRUE)
@@ -2964,7 +3225,7 @@ ReadVizgen <- function(
   z = 3L
 ) {
   # TODO: handle multiple segmentations per z-plane
-  if (!requireNamespace("data.table", quietly = TRUE)) {
+  if (isFALSE(x = requireNamespace('data.table', quietly = TRUE))) {
     stop("Please install 'data.table' for this function")
   }
   # hdf5r is only used for loading polygon boundaries
@@ -3419,10 +3680,10 @@ RunMoransI <- function(data, pos, verbose = TRUE) {
     message("Computing Moran's I")
     mysapply <- pbsapply
   }
-  Rfast2.installed <- PackageCheck("Rfast2", error = FALSE)
-  if (Rfast2.installed) {
+  Rfast2.installed <- requireNamespace('Rfast2', quietly = TRUE)
+  if (isTRUE(x = Rfast2.installed)) {
     MyMoran <- Rfast2::moranI
-  } else if (!PackageCheck('ape', error = FALSE)) {
+  } else if (isFALSE(x = requireNamespace('ape', quietly = TRUE))) {
     stop(
       "'RunMoransI' requires either Rfast2 or ape to be installed",
       call. = FALSE
@@ -3482,7 +3743,7 @@ RunMoransI <- function(data, pos, verbose = TRUE) {
 #'
 #' @examples
 #' data("pbmc_small")
-#' counts = as.matrix(x = GetAssayData(object = pbmc_small, assay = "RNA", slot = "counts"))
+#' counts = as.matrix(x = GetAssayData(object = pbmc_small, assay = "RNA", layer = "counts"))
 #' downsampled = SampleUMI(data = counts)
 #' head(x = downsampled)
 #'
@@ -3514,64 +3775,86 @@ SampleUMI <- function(
   return(new_data)
 }
 
-#' Use regularized negative binomial regression to normalize UMI count data
+#' SCTransform: Regularized NB regression for UMI count normalization
 #'
-#' This function calls sctransform::vst. The sctransform package is available at
-#' https://github.com/satijalab/sctransform.
-#' Use this function as an alternative to the NormalizeData,
-#' FindVariableFeatures, ScaleData workflow. Results are saved in a new assay
-#' (named SCT by default) with counts being (corrected) counts, data being log1p(counts),
-#' scale.data being pearson residuals; sctransform::vst intermediate results are saved
-#' in misc slot of new assay.
+#' Perform a variance‐stabilizing transformation on UMI counts using
+#' \code{sctransform::vst} (https://github.com/satijalab/sctransform). This
+#' replaces the \code{NormalizeData} → \code{FindVariableFeatures} →
+#' \code{ScaleData} workflow by fitting a regularized negative binomial model
+#' per gene and returning:
 #'
-#' @param object UMI counts matrix
-#' @param cell.attr A metadata with cell attributes
-#' @param reference.SCT.model If not NULL, compute residuals for the object
-#' using the provided SCT model; supports only log_umi as the latent variable.
-#' If residual.features are not specified, compute for the top variable.features.n
-#' specified in the model which are also present in the object. If
-#' residual.features are specified, the variable features of the resulting SCT
-#' assay are set to the top variable.features.n in the model.
-#' @param do.correct.umi Place corrected UMI matrix in assay counts slot; default is TRUE
-#' @param ncells Number of subsampling cells used to build NB regression; default is 5000
-#' @param residual.features Genes to calculate residual features for; default is NULL (all genes).
-#' If specified, will be set to VariableFeatures of the returned object.
-#' @param variable.features.n Use this many features as variable features after
-#' ranking by residual variance; default is 3000. Only applied if residual.features is not set.
-#' @param variable.features.rv.th Instead of setting a fixed number of variable features,
-#' use this residual variance cutoff; this is only used when \code{variable.features.n}
-#' is set to NULL; default is 1.3. Only applied if residual.features is not set.
-#' @param vars.to.regress Variables to regress out in a second non-regularized linear
-#' @param latent.data Extra data to regress out, should be cells x latent data
-#' regression. For example, percent.mito. Default is NULL
-#' @param do.scale Whether to scale residuals to have unit variance; default is FALSE
-#' @param do.center Whether to center residuals to have mean zero; default is TRUE
-#' @param clip.range Range to clip the residuals to; default is \code{c(-sqrt(n/30), sqrt(n/30))},
-#' where n is the number of cells
-#' @param vst.flavor When set to 'v2' sets method = glmGamPoi_offset, n_cells=2000,
-#' and exclude_poisson = TRUE which causes the model to learn theta and intercept
-#' only besides excluding poisson genes from learning and regularization
-#' @param conserve.memory If set to TRUE the residual matrix for all genes is never
-#' created in full; useful for large data sets, but will take longer to run;
-#' this will also set return.only.var.genes to TRUE; default is FALSE
-#' @param return.only.var.genes If set to TRUE the scale.data matrices in output assay are
-#' subset to contain only the variable genes; default is TRUE
-#' @param seed.use Set a random seed. By default, sets the seed to 1448145. Setting
-#' NULL will not set a seed.
-#' @param verbose Whether to print messages and progress bars
-#' @param ... Additional parameters passed to \code{sctransform::vst}
+#' - A new assay (default name “SCT”), in which:
+#'   - \code{counts}: depth‐corrected UMI counts (as if each cell had uniform
+#'     sequencing depth; controlled by \code{do.correct.umi}).
+#'   - \code{data}: \code{log1p} of corrected counts.
+#'   - \code{scale.data}: Pearson residuals from the fitted NB model (optionally
+#'     centered and/or scaled).
+#'   - \code{misc}: intermediate outputs from \code{sctransform::vst}.
 #'
-#' @return Returns a Seurat object with a new assay (named SCT by default) with
-#' counts being (corrected) counts, data being log1p(counts), scale.data being
-#' pearson residuals; sctransform::vst intermediate results are saved in misc
-#' slot of the new assay.
+#' When multiple \code{counts} layers exist (e.g. after \code{split()}),
+#' each layer is modeled independently. A consensus variable‐feature set is
+#' then defined by ranking features by how often they’re called “variable”
+#' across different layers (ties broken by median rank).
+#'
+#' By default, \code{sctransform::vst} will drop features expressed in fewer
+#' than five cells. In the multi-layer case, this can lead to consenus
+#' variable-features being excluded from the output's \code{scale.data} when
+#' a feature is "variable" across many layers but sparsely expressed in at
+#' least one.
+#'
+#' @param object A Seurat object or UMI count matrix.
+#' @param cell.attr Optional metadata frame (cells × attributes).
+#' @param reference.SCT.model Pre‐fitted SCT model (supports only \code{log_umi}
+#'   as latent variable). If provided, computes residuals via that model. When
+#'   \code{residual.features} is NULL, uses the model’s top
+#'   \code{variable.features.n}; otherwise, sets the assay’s variable features
+#'   to \code{residual.features}.
+#' @param do.correct.umi Logical; if TRUE (default), stores corrected UMIs in
+#'   \code{counts}.
+#' @param ncells Integer; number of cells to subsample when fitting NB
+#'   regression (default: 5000).
+#' @param residual.features Character vector of genes to compute residuals for.
+#'   Default NULL (all genes). If set, these become the assay’s variable
+#'   features.
+#' @param variable.features.n Integer; when \code{residual.features} is NULL,
+#'   select this many top features by residual variance (default: 3000).
+#' @param variable.features.rv.th Numeric; if \code{variable.features.n} is NULL,
+#'   select features exceeding this residual‐variance threshold (default: 1.3).
+#' @param vars.to.regress Character vector of metadata columns (e.g.
+#'   \code{percent.mito}) to regress out in a second, non‐regularized model.
+#' @param latent.data Numeric matrix (cells × latent covariates) to regress out.
+#' @param do.scale Logical; if TRUE, scale residuals to unit variance
+#'   (default: FALSE).
+#' @param do.center Logical; if TRUE, center residuals to mean zero
+#'   (default: TRUE).
+#' @param clip.range Numeric vector of length 2; range to clip residuals
+#'   (default \code{c(-sqrt(n/30), sqrt(n/30))}, with n = number of cells).
+#' @param vst.flavor Character; if \code{"v2"}, uses \code{method = "glmGamPoi_offset"},
+#'   \code{n_cells = 2000}, and \code{exclude_poisson = TRUE} to fit \eqn{\theta} and
+#'   intercept only.
+#' @param conserve.memory Logical; if TRUE, never builds the full residual
+#'   matrix (slower but memory‐efficient; forces \code{return.only.var.genes=TRUE};
+#'   default: FALSE).
+#' @param return.only.var.genes Logical; if TRUE (default), \code{scale.data}
+#'   is subset to variable features only.
+#' @param seed.use Integer; random seed for reproducibility (default: 1448145).
+#'   Set to NULL to skip setting a seed.
+#' @param verbose Logical; whether to print progress messages (default: TRUE).
+#' @param ... Additional arguments passed to \code{sctransform::vst}.
+#'
+#' @return A Seurat object with a new \code{SCT} assay containing:
+#' \code{counts} (corrected UMIs), \code{data} (log1p counts), and
+#' \code{scale.data} (Pearson residuals), plus \code{misc} for intermediate
+#' \code{vst} outputs.
 #'
 #' @importFrom stats setNames
 #' @importFrom Matrix colSums
 #' @importFrom SeuratObject as.sparse
 #' @importFrom sctransform vst get_residual_var get_residuals correct_counts
 #'
-#' @seealso \code{\link[sctransform]{correct_counts}} \code{\link[sctransform]{get_residuals}}
+#' @seealso \code{\link[sctransform]{vst}},
+#'   \code{\link[sctransform]{get_residuals}},
+#'   \code{\link[sctransform]{correct_counts}}
 #'
 #' @rdname SCTransform
 #' @concept preprocessing
@@ -3879,7 +4162,7 @@ SCTransform.Assay <- function(
     do.center <- FALSE
   }
 
-  umi <- GetAssayData(object = object, slot = 'counts')
+  umi <- GetAssayData(object = object, layer = 'counts')
   vst.out <- SCTransform(object = umi,
                          cell.attr = cell.attr,
                          reference.SCT.model = reference.SCT.model,
@@ -3918,13 +4201,13 @@ SCTransform.Assay <- function(
   # put log1p transformed counts in data
   assay.out <- SetAssayData(
     object = assay.out,
-    slot = 'data',
-    new.data = log1p(x = GetAssayData(object = assay.out, slot = 'counts'))
+    layer = 'data',
+    new.data = log1p(x = GetAssayData(object = assay.out, layer = 'counts'))
   )
   scale.data <- vst.out$y
   assay.out <- SetAssayData(
     object = assay.out,
-    slot = 'scale.data',
+    layer = 'scale.data',
     new.data = scale.data
   )
   vst.out$y <- NULL
@@ -4219,14 +4502,14 @@ FindVariableFeatures.Assay <- function(
     stop("Both 'mean.cutoff' and 'dispersion.cutoff' must be two numbers")
   }
   if (selection.method == "vst") {
-    data <- GetAssayData(object = object, slot = "counts")
+    data <- GetAssayData(object = object, layer = "counts")
     # if (ncol(x = data) < 1 || nrow(x = data) < 1) {
     if (IsMatrixEmpty(x = data)) {
       warning("selection.method set to 'vst' but count slot is empty; will use data slot instead")
-      data <- GetAssayData(object = object, slot = "data")
+      data <- GetAssayData(object = object, layer = "data")
     }
   } else {
-    data <- GetAssayData(object = object, slot = "data")
+    data <- GetAssayData(object = object, layer = "data")
   }
   hvf.info <- FindVariableFeatures(
     object = data,
@@ -4284,13 +4567,7 @@ FindVariableFeatures.SCTAssay <- function(
   nfeatures = 2000,
   ...
 ) {
-  if (length(x = slot(object = object, name = "SCTModel.list")) > 1) {
-    stop("SCT assay is comprised of multiple SCT models. To change the variable features, please set manually with VariableFeatures<-", call. = FALSE)
-  }
-  feature.attr <- SCTResults(object = object, slot = "feature.attributes")
-  nfeatures <- min(nfeatures, nrow(x = feature.attr))
-  top.features <- rownames(x = feature.attr)[order(feature.attr$residual_variance, decreasing = TRUE)[1:nfeatures]]
-  VariableFeatures(object = object) <- top.features
+  VariableFeatures(object) <- VariableFeatures(object, nfeatures = nfeatures)
   return(object)
 }
 
@@ -4411,7 +4688,8 @@ FindSpatiallyVariableFeatures.default <- function(
   return(svf.info)
 }
 
-#' @param slot Slot in the Assay to pull data from
+#' @param layer The layer in the specified assay to pull data from.
+#' @param slot Deprecated, use `layer`.
 #' @param features If provided, only compute on given features. Otherwise,
 #' compute for all features.
 #' @param nfeatures Number of features to mark as the top spatially variable.
@@ -4424,7 +4702,8 @@ FindSpatiallyVariableFeatures.default <- function(
 #'
 FindSpatiallyVariableFeatures.Assay <- function(
   object,
-  slot = "scale.data",
+  layer = "scale.data",
+  slot = deprecated(),
   spatial.location,
   selection.method = c('markvariogram', 'moransi'),
   features = NULL,
@@ -4435,13 +4714,22 @@ FindSpatiallyVariableFeatures.Assay <- function(
   verbose = TRUE,
   ...
 ) {
-  features <- features %||% rownames(x = object)
+  if (is_present(slot)) {
+    deprecate_soft(
+      when = '5.3.0',
+      what = 'FindSpatiallyVariableFeatures(slot = )',
+      with = 'FindSpatiallyVariableFeatures(layer = )'
+    )
+    layer <- slot %||% layer
+  }
+  features <- features %||% Features(object, layer = layer)
   if (selection.method == "markvariogram" && "markvariogram" %in% names(x = Misc(object = object))) {
     features.computed <- names(x = Misc(object = object, slot = "markvariogram"))
     features <- features[! features %in% features.computed]
   }
-  data <- GetAssayData(object = object, slot = slot)
-  data <- as.matrix(x = data[features, ])
+  cells <- rownames(spatial.location)
+  data <- LayerData(object, layer = layer, cells = cells, features = features)
+  data <- as.matrix(x = data)
   data <- data[RowVar(x = data) > 0, ]
   if (nrow(x = data) != 0) {
     svf.info <- FindSpatiallyVariableFeatures(
@@ -4490,7 +4778,10 @@ FindSpatiallyVariableFeatures.Assay <- function(
 FindSpatiallyVariableFeatures.Seurat <- function(
   object,
   assay = NULL,
-  slot = "scale.data",
+  layer = "scale.data",
+  # Using `deprecated()` as the default for any arguments will break the
+  # `LogSeuratCommand` call at the end of this method.
+  slot = NULL,
   features = NULL,
   image = NULL,
   selection.method = c('markvariogram', 'moransi'),
@@ -4501,15 +4792,23 @@ FindSpatiallyVariableFeatures.Seurat <- function(
   verbose = TRUE,
   ...
 ) {
+  if (!is.null(slot)) {
+    deprecate_soft(
+      when = '5.3.0',
+      what = 'FindSpatiallyVariableFeatures(slot = )',
+      with = 'FindSpatiallyVariableFeatures(layer = )'
+    )
+    layer <- slot %||% layer
+  }
+
   assay <- assay %||% DefaultAssay(object = object)
-  features <- features %||% rownames(x = object[[assay]])
   image <- image %||% DefaultImage(object = object)
+  features <- features %||% Features(object, assay = assay, layer = layer)
   tc <- GetTissueCoordinates(object = object[[image]])
-  # check if markvariogram has been run on necessary features
-  # only run for new ones
+
   object[[assay]] <- FindSpatiallyVariableFeatures(
     object = object[[assay]],
-    slot = slot,
+    layer = layer,
     features = features,
     spatial.location = tc,
     selection.method = selection.method,
@@ -4520,7 +4819,10 @@ FindSpatiallyVariableFeatures.Seurat <- function(
     verbose = verbose,
     ...
   )
-  object <- LogSeuratCommand(object = object)
+
+  object <- LogSeuratCommand(object)
+
+  return(object)
 }
 
 #' @rdname LogNormalize
@@ -4710,9 +5012,9 @@ NormalizeData.Assay <- function(
 ) {
   object <- SetAssayData(
     object = object,
-    slot = 'data',
+    layer = 'data',
     new.data = NormalizeData(
-      object = GetAssayData(object = object, slot = 'counts'),
+      object = GetAssayData(object = object, layer = 'counts'),
       normalization.method = normalization.method,
       scale.factor = scale.factor,
       verbose = verbose,
@@ -5092,13 +5394,13 @@ ScaleData.Assay <- function(
   slot.use <- ifelse(test = use.umi, yes = 'counts', no = 'data')
   features <- features %||% VariableFeatures(object)
   if (length(x = features) == 0) {
-    features <- rownames(x = GetAssayData(object = object, slot = slot.use))
+    features <- rownames(x = GetAssayData(object = object, layer = slot.use))
   }
   object <- SetAssayData(
     object = object,
-    slot = 'scale.data',
+    layer = 'scale.data',
     new.data = ScaleData(
-      object = GetAssayData(object = object, slot = slot.use),
+      object = GetAssayData(object = object, layer = slot.use),
       features = features,
       vars.to.regress = vars.to.regress,
       latent.data = latent.data,
@@ -5555,10 +5857,10 @@ GetResidualSCTModel <- function(
   umi.assay <- SCTResults(object = object[[assay]], slot = "umi.assay", model = SCTModel)
   model.cells <- Cells(x = slot(object = object[[assay]], name = "SCTModel.list")[[SCTModel]])
   sct.method <-  SCTResults(object = object[[assay]], slot = "arguments", model = SCTModel)$sct.method %||% "default"
-  scale.data.cells <- colnames(x = GetAssayData(object = object, assay = assay, slot = "scale.data"))
+  scale.data.cells <- colnames(x = GetAssayData(object = object, assay = assay, layer = "scale.data"))
   if (length(x = setdiff(x = model.cells, y =  scale.data.cells)) == 0) {
   existing_features <- names(x = which(x = ! apply(
-    X = GetAssayData(object = object, assay = assay, slot = "scale.data")[, model.cells],
+    X = GetAssayData(object = object, assay = assay, layer = "scale.data")[, model.cells],
     MARGIN = 1,
     FUN = anyNA)
   ))
@@ -5584,7 +5886,7 @@ GetResidualSCTModel <- function(
   diff_features <- setdiff(x = features_to_compute, y = model.features)
   intersect_features <- intersect(x = features_to_compute, y = model.features)
   if (length(x = diff_features) == 0) {
-    umi <- GetAssayData(object = object, assay = umi.assay, slot = "counts" )[features_to_compute, model.cells, drop = FALSE]
+    umi <- GetAssayData(object = object, assay = umi.assay, layer = "counts" )[features_to_compute, model.cells, drop = FALSE]
   } else {
     warning(
       "In the SCTModel ", SCTModel, ", the following ", length(x = diff_features),
@@ -5598,7 +5900,7 @@ GetResidualSCTModel <- function(
         dimnames = list(features_to_compute, model.cells)
       ))
     }
-    umi <- GetAssayData(object = object, assay = umi.assay, slot = "counts")[intersect_features, model.cells, drop = FALSE]
+    umi <- GetAssayData(object = object, assay = umi.assay, layer = "counts")[intersect_features, model.cells, drop = FALSE]
   }
   clip.max <- max(clip.range)
   clip.min <- min(clip.range)
@@ -5622,7 +5924,7 @@ GetResidualSCTModel <- function(
   }
   old.features <- setdiff(x = new_features, y = features_to_compute)
   if (length(x = old.features) > 0) {
-    old_residuals <- GetAssayData(object = object[[assay]], slot = "scale.data")[old.features, model.cells, drop = FALSE]
+    old_residuals <- GetAssayData(object = object[[assay]], layer = "scale.data")[old.features, model.cells, drop = FALSE]
     new_residual <- rbind(new_residual, old_residuals)[new_features, ]
   }
   return(new_residual)
