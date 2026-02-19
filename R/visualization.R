@@ -185,7 +185,7 @@ DimHeatmap <- function(
   if (combine) {
     plots <- wrap_plots(plots, ncol = ncol, guides = "collect") + 
       plot_layout(guides = "collect") &
-      theme(legend.position = leg.pos)
+      theme(legend.position = legend.position)
   }
   return(plots)
 }
