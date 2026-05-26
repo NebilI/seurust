@@ -1,0 +1,50 @@
+# Development image for Seurat's original Rcpp/C++ implementation (Eigen, CXX17).
+# Build from repo root:
+#   docker build -f docker/Dockerfile.rcpp -t rust-seurat-rcpp:dev .
+# Run with the repo mounted:
+#   docker compose -f docker/docker-compose.yml run --rm rcpp-dev
+
+FROM rocker/r2u:jammy
+
+LABEL org.opencontainers.image.title="rust-seurat-rcpp-dev"
+LABEL org.opencontainers.image.description="R + toolchain for Seurat Rcpp/C++ development"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    SEURAT_PKG_ROOT=/workspace \
+    CXX_STD=CXX17 \
+    MAKEFLAGS=-j$(nproc)
+
+# System libraries for R package compilation (Matrix, graphics imports, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gfortran \
+    clang \
+    cmake \
+    git \
+    curl \
+    ca-certificates \
+    libblas-dev \
+    liblapack-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libxml2-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
+    libfribidi-dev \
+    libharfbuzz-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    pandoc \
+    littler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY docker/scripts/install-r-deps.R /usr/local/bin/install-r-deps.R
+RUN Rscript /usr/local/bin/install-r-deps.R
+
+# Default dev shell; mount the repo at /workspace when running the container.
+CMD ["bash"]

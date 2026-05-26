@@ -1,0 +1,38 @@
+# Local development containers for Rust-Seurat.
+# Usage (from repo root):
+#   docker compose -f docker/docker-compose.yml build
+#   docker compose -f docker/docker-compose.yml run --rm rcpp-dev
+#   docker compose -f docker/docker-compose.yml run --rm rust-dev
+
+services:
+  rcpp-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rcpp
+    image: rust-seurat-rcpp:dev
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+  rust-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rust
+      args:
+        RCPP_IMAGE: rust-seurat-rcpp:dev
+    image: rust-seurat-rust:dev
+    volumes:
+      - ..:/workspace
+      - rust-seurat-cargo:/usr/local/cargo/registry
+      - rust-seurat-target:/workspace/src/rust-target
+    working_dir: /workspace
+    environment:
+      CARGO_TARGET_DIR: /workspace/src/rust-target
+    stdin_open: true
+    tty: true
+
+volumes:
+  rust-seurat-cargo:
+  rust-seurat-target:

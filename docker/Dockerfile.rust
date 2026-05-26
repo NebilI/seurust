@@ -1,0 +1,42 @@
+# Development image for Seurat + Rust/extendr work.
+# Extends the Rcpp dev image with Rust, bindgen/clang deps, and rextendr.
+#
+# Build from repo root (builds rcpp base first):
+#   docker build -f docker/Dockerfile.rcpp -t rust-seurat-rcpp:dev .
+#   docker build -f docker/Dockerfile.rust -t rust-seurat-rust:dev .
+# Or use compose:
+#   docker compose -f docker/docker-compose.yml build rust-dev
+
+ARG RCPP_IMAGE=rust-seurat-rcpp:dev
+FROM ${RCPP_IMAGE}
+
+LABEL org.opencontainers.image.title="rust-seurat-rust-dev"
+LABEL org.opencontainers.image.description="R + Rcpp + Rust/extendr for Seurat rewrite development"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# bindgen / libR-sys / extendr need libclang; patchelf is used when linking Rust into R on Linux.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libclang-dev \
+    llvm-dev \
+    patchelf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust (script copied then normalized for Windows CRLF checkouts)
+COPY docker/scripts/install-rust-toolchain.sh /tmp/install-rust-toolchain.sh
+RUN sed -i 's/\r$//' /tmp/install-rust-toolchain.sh \
+    && chmod +x /tmp/install-rust-toolchain.sh \
+    && /tmp/install-rust-toolchain.sh \
+    && rm /tmp/install-rust-toolchain.sh
+
+# rextendr: scaffold extendr crates, run cargo from R CMD INSTALL / devtools::document
+RUN Rscript -e 'install.packages("rextendr", repos = "https://cloud.r-project.org")' \
+    && Rscript -e 'rextendr::rust_sitrep()'
+
+WORKDIR /workspace
+
+CMD ["bash"]

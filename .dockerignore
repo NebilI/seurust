@@ -1,0 +1,17 @@
+.git
+.github
+.Rproj.user
+.Rhistory
+.RData
+.RDataTmp
+**/*.o
+**/*.so
+**/*.dll
+.DS_Store
+*.pdf
+docs/
+Rplots.pdf
+revdep/
+Seurat.Rcheck/
+vignettes/**/*.html
+adhoc/output/

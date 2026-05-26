@@ -2,3 +2,6 @@
 data/* binary
 src/* text=lf
 R/* text=lf
+docker/scripts/*.sh text eol=lf
+docker/Dockerfile* text eol=lf
+docker/docker-compose.yml text eol=lf
