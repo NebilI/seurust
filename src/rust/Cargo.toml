@@ -1,0 +1,28 @@
+[package]
+name = "Seurat"
+publish = false
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.65"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+name = "Seurat"
+
+[[bin]]
+name = "document"
+path = "document.rs"
+bench = false
+
+[dependencies]
+extendr-api = "0.9.0"
+extendr-ffi = "0.9.0"
+ndarray = "0.16.1"
+sprs = "=0.11.3"
+
+[build-dependencies]
+cc = "1.2"
+
+[profile.release]
+lto = true
+codegen-units = 1

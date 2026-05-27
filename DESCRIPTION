@@ -128,11 +128,14 @@ Suggests:
     testthat,
     VGAM
 LinkingTo: Rcpp (>= 0.11.0), RcppEigen, RcppProgress
+SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.65)
 BuildManual: true
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.3
 Collate:
+    'extendr-wrappers.R'
+    'rust-sparse.R'
     'RcppExports.R'
     'reexports.R'
     'generics.R'
