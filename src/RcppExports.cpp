@@ -3,6 +3,7 @@
 
 #include <RcppEigen.h>
 #include <Rcpp.h>
+#include <R_ext/Rdynload.h>
 
 using namespace Rcpp;
 
@@ -402,104 +403,41 @@ BEGIN_RCPP
 END_RCPP
 }
 
-RcppExport SEXP isnull(SEXP);
-RcppExport SEXP wrap__compute_snn_rust(SEXP, SEXP);
-RcppExport SEXP wrap__direct_snn_to_file_rust(SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__fast_cov_mats_rust(SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__fast_cov_rust(SEXP, SEXP);
-RcppExport SEXP wrap__fast_dist_rust(SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__fast_exp_mean_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__fast_log_vmr_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__fast_rbind_rust(SEXP, SEXP);
-RcppExport SEXP wrap__fast_sparse_row_scale_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__fast_sparse_row_scale_with_known_stats_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__find_weights_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__graph_to_neighbor_helper_rust(SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__integrate_data_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__log_norm_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__replace_cols_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__row_mean_dgcmatrix_rust(SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__row_merge_matrices_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__row_sum_dgcmatrix_rust(SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__row_var_dgcmatrix_rust(SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__row_var_rust(SEXP);
-RcppExport SEXP wrap__run_modularity_clustering_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__run_umi_sampling_per_cell_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__run_umi_sampling_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__score_helper_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__snn_smallest_nonzero_dist_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__sparse_row_var_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__sparse_row_var_std_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__sparse_row_var2_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-RcppExport SEXP wrap__standardize_rust(SEXP, SEXP);
-RcppExport SEXP wrap__write_edge_file_rust(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-
 static const R_CallMethodDef CallEntries[] = {
+    {"_Seurat_ComputeSNN", (DL_FUNC) &_Seurat_ComputeSNN, 2},
+    {"_Seurat_DirectSNNToFile", (DL_FUNC) &_Seurat_DirectSNNToFile, 4},
+    {"_Seurat_FastCov", (DL_FUNC) &_Seurat_FastCov, 2},
+    {"_Seurat_FastCovMats", (DL_FUNC) &_Seurat_FastCovMats, 3},
+    {"_Seurat_FastExpMean", (DL_FUNC) &_Seurat_FastExpMean, 2},
+    {"_Seurat_FastLogVMR", (DL_FUNC) &_Seurat_FastLogVMR, 2},
+    {"_Seurat_FastRBind", (DL_FUNC) &_Seurat_FastRBind, 2},
+    {"_Seurat_FastSparseRowScale", (DL_FUNC) &_Seurat_FastSparseRowScale, 5},
+    {"_Seurat_FastSparseRowScaleWithKnownStats", (DL_FUNC) &_Seurat_FastSparseRowScaleWithKnownStats, 7},
+    {"_Seurat_FindWeightsC", (DL_FUNC) &_Seurat_FindWeightsC, 9},
+    {"_Seurat_GraphToNeighborHelper", (DL_FUNC) &_Seurat_GraphToNeighborHelper, 1},
+    {"_Seurat_IntegrateDataC", (DL_FUNC) &_Seurat_IntegrateDataC, 3},
+    {"_Seurat_LogNorm", (DL_FUNC) &_Seurat_LogNorm, 3},
+    {"_Seurat_ReplaceColsC", (DL_FUNC) &_Seurat_ReplaceColsC, 3},
+    {"_Seurat_RowMergeMatrices", (DL_FUNC) &_Seurat_RowMergeMatrices, 5},
+    {"_Seurat_RowVar", (DL_FUNC) &_Seurat_RowVar, 1},
     {"_Seurat_RunModularityClusteringCpp", (DL_FUNC) &_Seurat_RunModularityClusteringCpp, 9},
     {"_Seurat_RunUMISampling", (DL_FUNC) &_Seurat_RunUMISampling, 4},
     {"_Seurat_RunUMISamplingPerCell", (DL_FUNC) &_Seurat_RunUMISamplingPerCell, 4},
-    {"_Seurat_RowMergeMatrices", (DL_FUNC) &_Seurat_RowMergeMatrices, 5},
-    {"_Seurat_LogNorm", (DL_FUNC) &_Seurat_LogNorm, 3},
-    {"_Seurat_Standardize", (DL_FUNC) &_Seurat_Standardize, 2},
-    {"_Seurat_FastSparseRowScale", (DL_FUNC) &_Seurat_FastSparseRowScale, 5},
-    {"_Seurat_FastSparseRowScaleWithKnownStats", (DL_FUNC) &_Seurat_FastSparseRowScaleWithKnownStats, 7},
-    {"_Seurat_FastCov", (DL_FUNC) &_Seurat_FastCov, 2},
-    {"_Seurat_FastCovMats", (DL_FUNC) &_Seurat_FastCovMats, 3},
-    {"_Seurat_FastRBind", (DL_FUNC) &_Seurat_FastRBind, 2},
-    {"_Seurat_FastExpMean", (DL_FUNC) &_Seurat_FastExpMean, 2},
+    {"_Seurat_SNN_SmallestNonzero_Dist", (DL_FUNC) &_Seurat_SNN_SmallestNonzero_Dist, 4},
+    {"_Seurat_ScoreHelper", (DL_FUNC) &_Seurat_ScoreHelper, 7},
+    {"_Seurat_SparseRowVar", (DL_FUNC) &_Seurat_SparseRowVar, 2},
     {"_Seurat_SparseRowVar2", (DL_FUNC) &_Seurat_SparseRowVar2, 3},
     {"_Seurat_SparseRowVarStd", (DL_FUNC) &_Seurat_SparseRowVarStd, 5},
-    {"_Seurat_FastLogVMR", (DL_FUNC) &_Seurat_FastLogVMR, 2},
-    {"_Seurat_RowVar", (DL_FUNC) &_Seurat_RowVar, 1},
-    {"_Seurat_SparseRowVar", (DL_FUNC) &_Seurat_SparseRowVar, 2},
-    {"_Seurat_ReplaceColsC", (DL_FUNC) &_Seurat_ReplaceColsC, 3},
-    {"_Seurat_GraphToNeighborHelper", (DL_FUNC) &_Seurat_GraphToNeighborHelper, 1},
-    {"_Seurat_fast_dist", (DL_FUNC) &_Seurat_fast_dist, 3},
-    {"_Seurat_FindWeightsC", (DL_FUNC) &_Seurat_FindWeightsC, 9},
-    {"_Seurat_IntegrateDataC", (DL_FUNC) &_Seurat_IntegrateDataC, 3},
-    {"_Seurat_ScoreHelper", (DL_FUNC) &_Seurat_ScoreHelper, 7},
-    {"_Seurat_ComputeSNN", (DL_FUNC) &_Seurat_ComputeSNN, 2},
+    {"_Seurat_Standardize", (DL_FUNC) &_Seurat_Standardize, 2},
     {"_Seurat_WriteEdgeFile", (DL_FUNC) &_Seurat_WriteEdgeFile, 3},
-    {"_Seurat_DirectSNNToFile", (DL_FUNC) &_Seurat_DirectSNNToFile, 4},
-    {"_Seurat_SNN_SmallestNonzero_Dist", (DL_FUNC) &_Seurat_SNN_SmallestNonzero_Dist, 4},
-    {"_Seurat_row_sum_dgcmatrix", (DL_FUNC) &_Seurat_row_sum_dgcmatrix, 4},
+    {"_Seurat_fast_dist", (DL_FUNC) &_Seurat_fast_dist, 3},
     {"_Seurat_row_mean_dgcmatrix", (DL_FUNC) &_Seurat_row_mean_dgcmatrix, 4},
+    {"_Seurat_row_sum_dgcmatrix", (DL_FUNC) &_Seurat_row_sum_dgcmatrix, 4},
     {"_Seurat_row_var_dgcmatrix", (DL_FUNC) &_Seurat_row_var_dgcmatrix, 4},
-    {"isnull",                                            (DL_FUNC) &isnull,                                             1},
-    {"wrap__compute_snn_rust",                            (DL_FUNC) &wrap__compute_snn_rust,                             2},
-    {"wrap__direct_snn_to_file_rust",                     (DL_FUNC) &wrap__direct_snn_to_file_rust,                      4},
-    {"wrap__fast_cov_mats_rust",                          (DL_FUNC) &wrap__fast_cov_mats_rust,                           3},
-    {"wrap__fast_cov_rust",                               (DL_FUNC) &wrap__fast_cov_rust,                                2},
-    {"wrap__fast_dist_rust",                              (DL_FUNC) &wrap__fast_dist_rust,                               3},
-    {"wrap__fast_exp_mean_rust",                          (DL_FUNC) &wrap__fast_exp_mean_rust,                           6},
-    {"wrap__fast_log_vmr_rust",                           (DL_FUNC) &wrap__fast_log_vmr_rust,                            6},
-    {"wrap__fast_rbind_rust",                             (DL_FUNC) &wrap__fast_rbind_rust,                              2},
-    {"wrap__fast_sparse_row_scale_rust",                  (DL_FUNC) &wrap__fast_sparse_row_scale_rust,                   9},
-    {"wrap__fast_sparse_row_scale_with_known_stats_rust", (DL_FUNC) &wrap__fast_sparse_row_scale_with_known_stats_rust, 11},
-    {"wrap__find_weights_rust",                           (DL_FUNC) &wrap__find_weights_rust,                            9},
-    {"wrap__graph_to_neighbor_helper_rust",               (DL_FUNC) &wrap__graph_to_neighbor_helper_rust,                5},
-    {"wrap__integrate_data_rust",                         (DL_FUNC) &wrap__integrate_data_rust,                         15},
-    {"wrap__log_norm_rust",                               (DL_FUNC) &wrap__log_norm_rust,                                7},
-    {"wrap__replace_cols_rust",                           (DL_FUNC) &wrap__replace_cols_rust,                           11},
-    {"wrap__row_mean_dgcmatrix_rust",                     (DL_FUNC) &wrap__row_mean_dgcmatrix_rust,                      4},
-    {"wrap__row_merge_matrices_rust",                     (DL_FUNC) &wrap__row_merge_matrices_rust,                     13},
-    {"wrap__row_sum_dgcmatrix_rust",                      (DL_FUNC) &wrap__row_sum_dgcmatrix_rust,                       4},
-    {"wrap__row_var_dgcmatrix_rust",                      (DL_FUNC) &wrap__row_var_dgcmatrix_rust,                       4},
-    {"wrap__row_var_rust",                                (DL_FUNC) &wrap__row_var_rust,                                 1},
-    {"wrap__run_modularity_clustering_rust",              (DL_FUNC) &wrap__run_modularity_clustering_rust,              13},
-    {"wrap__run_umi_sampling_per_cell_rust",              (DL_FUNC) &wrap__run_umi_sampling_per_cell_rust,               8},
-    {"wrap__run_umi_sampling_rust",                       (DL_FUNC) &wrap__run_umi_sampling_rust,                        8},
-    {"wrap__score_helper_rust",                           (DL_FUNC) &wrap__score_helper_rust,                           11},
-    {"wrap__snn_smallest_nonzero_dist_rust",              (DL_FUNC) &wrap__snn_smallest_nonzero_dist_rust,               8},
-    {"wrap__sparse_row_var_rust",                         (DL_FUNC) &wrap__sparse_row_var_rust,                          6},
-    {"wrap__sparse_row_var_std_rust",                     (DL_FUNC) &wrap__sparse_row_var_std_rust,                      9},
-    {"wrap__sparse_row_var2_rust",                        (DL_FUNC) &wrap__sparse_row_var2_rust,                         7},
-    {"wrap__standardize_rust",                            (DL_FUNC) &wrap__standardize_rust,                             2},
-    {"wrap__write_edge_file_rust",                        (DL_FUNC) &wrap__write_edge_file_rust,                         7},
     {NULL, NULL, 0}
 };
 
-RcppExport void R_init_Seurat_rcpp(DllInfo *dll) {
+RcppExport void R_init_Seurat(DllInfo *dll) {
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
 }

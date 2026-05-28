@@ -1,13 +1,13 @@
 use std::path::Path;
 
 fn main() {
-    let seurat_src = Path::new("..");
+    let cpp_dir = Path::new("../cpp");
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("-std=c++17")
-        .file(seurat_src.join("ModularityOptimizer.cpp"))
+        .file(cpp_dir.join("ModularityOptimizer.cpp"))
         .file("cpp/modularity_bridge.cpp")
-        .include(seurat_src)
+        .include(cpp_dir)
         .compile("seurat_modularity");
 
     if cfg!(target_os = "macos") {

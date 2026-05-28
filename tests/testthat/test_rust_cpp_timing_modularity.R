@@ -1,7 +1,5 @@
-# Timing comparison: C++ (Rcpp) vs Rust (extendr) modularity clustering.
-# The current Rust path calls the same ModularityOptimizer.cpp via a C bridge,
-# so overhead from slot extraction and FFI is expected until a pure Rust port exists.
-context("ModularityOptimizer Rust/C++ timing")
+# Timing comparison: Seurat (C++) vs SeuratRust modularity clustering.
+context("ModularityOptimizer SeuratRust/Seurat timing")
 
 node1 <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
            1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 8, 8, 8, 9, 13,
@@ -25,30 +23,24 @@ modularity_args <- list(
   edgefilename = ""
 )
 
-run_cpp <- function() {
-  do.call(Seurat:::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args))
-}
-
-run_rust <- function() {
-  do.call(Seurat:::RunModularityClusteringRust, c(list(SNN = connections), modularity_args))
-}
-
-test_that("Modularity clustering timing (heavy workload)", {
-  skip_on_cran()
-
+test_that("Modularity clustering timing", {
+  skip_if_no_seuratrust()
+  run_cpp <- function() {
+    do.call(Seurat:::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args))
+  }
+  run_rust <- function() {
+    do.call(SeuratRust::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args))
+  }
   out_cpp <- run_cpp()
   out_rust <- run_rust()
   expect_equal(out_rust, out_cpp)
-
   bench <- benchmark_rust_cpp(
     cpp_fn = run_cpp,
     rust_fn = run_rust,
     n_warmup = 2L,
     n_reps = 10L
   )
-  msg <- format_benchmark(bench, "Modularity (alg 3, 5 starts x 50 iters)")
-  message(msg)
-
+  expect_timing_report(bench, "Modularity clustering")
   if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {
     expect_rust_faster(bench, "Modularity clustering")
   }

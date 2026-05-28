@@ -1,0 +1,28 @@
+Package: SeuratRust
+Title: Rust Native Kernels for Seurat
+Version: 0.1.0.9000
+Authors@R: c(
+    person(given = "Rahul", family = "Satija", email = "seurat@nygenome.org", role = c("aut", "cre")),
+    person("Satija Lab and Collaborators", role = "cph")
+    )
+Description: Rust/extendr reimplementation of performance-critical Seurat native
+    routines. Install alongside Seurat to compare C++ and Rust backends during
+    the migration.
+License: MIT + file LICENSE
+URL: https://github.com/satijalab/seurat
+BugReports: https://github.com/satijalab/seurat/issues
+Depends:
+    R (>= 4.0.0)
+Imports:
+    Matrix (>= 1.5-0)
+Suggests:
+    Seurat,
+    testthat
+SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.65)
+BuildManual: true
+Encoding: UTF-8
+RoxygenNote: 7.3.3
+Collate:
+    'extendr-wrappers.R'
+    'native.R'
+    'zzz.R'

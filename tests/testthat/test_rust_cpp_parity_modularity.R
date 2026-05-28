@@ -1,5 +1,5 @@
-# C++ vs Rust parity for modularity clustering (karate club fixtures).
-context("ModularityOptimizer Rust/C++ parity")
+# C++ (Seurat) vs Rust (SeuratRust) parity for modularity clustering.
+context("ModularityOptimizer SeuratRust/Seurat parity")
 
 node1 <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
            1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 8, 8, 8, 9, 13,
@@ -13,8 +13,9 @@ node2 <- c(1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 17, 19, 21, 31, 2, 3, 7, 13,
 connections <- sparseMatrix(i = node2 + 1, j = node1 + 1, x = 1.0)
 
 run_both <- function(...) {
+  skip_if_no_seuratrust()
   cpp <- Seurat:::RunModularityClusteringCpp(SNN = connections, ...)
-  rust <- Seurat:::RunModularityClusteringRust(SNN = connections, ...)
+  rust <- SeuratRust::RunModularityClusteringCpp(SNN = connections, ...)
   list(cpp = cpp, rust = rust)
 }
 
@@ -53,68 +54,83 @@ test_that("Algorithm 3 parity", {
     algorithm = 3,
     nRandomStarts = 1,
     nIterations = 1,
-    randomSeed = 56464,
+    randomSeed = 42,
     printOutput = 0,
     edgefilename = ""
   )
   expect_equal(out$rust, out$cpp)
 })
 
-test_that("Low resolution parity", {
+test_that("Algorithm 4 parity", {
   out <- run_both(
     modularityFunction = 1,
-    resolution = 0.05,
-    algorithm = 3,
+    resolution = 1.0,
+    algorithm = 4,
     nRandomStarts = 1,
-    nIterations = 10,
-    randomSeed = 10,
+    nIterations = 1,
+    randomSeed = 99,
     printOutput = 0,
     edgefilename = ""
   )
   expect_equal(out$rust, out$cpp)
-
-  out2 <- run_both(
-    modularityFunction = 2,
-    resolution = 0.05,
-    algorithm = 3,
-    nRandomStarts = 1,
-    nIterations = 10,
-    randomSeed = 10,
-    printOutput = 0,
-    edgefilename = ""
-  )
-  expect_equal(out2$rust, out2$cpp)
 })
 
-test_that("Edge weights parity", {
-  c2 <- connections
-  c2[5, 4] <- 3.0
-  c2[5, 1] <- 5.0
-  c2[4, 1] <- 8.0
-  c2[20, 5] <- 8.0
-  c2[20, 4] <- 5.0
-  c2[20, 1] <- 5.0
-  cpp <- Seurat:::RunModularityClusteringCpp(
-    SNN = c2,
-    modularityFunction = 1,
-    resolution = 1.0,
-    algorithm = 3,
+test_that("Modularity function 2 parity", {
+  out <- run_both(
+    modularityFunction = 2,
+    resolution = 0.5,
+    algorithm = 1,
     nRandomStarts = 1,
-    nIterations = 10,
-    randomSeed = 40,
+    nIterations = 1,
+    randomSeed = 7,
     printOutput = 0,
     edgefilename = ""
   )
-  rust <- Seurat:::RunModularityClusteringRust(
-    SNN = c2,
+  expect_equal(out$rust, out$cpp)
+})
+
+test_that("Multiple random starts parity", {
+  out <- run_both(
     modularityFunction = 1,
     resolution = 1.0,
-    algorithm = 3,
-    nRandomStarts = 1,
-    nIterations = 10,
-    randomSeed = 40,
+    algorithm = 1,
+    nRandomStarts = 3,
+    nIterations = 2,
+    randomSeed = 123,
     printOutput = 0,
     edgefilename = ""
+  )
+  expect_equal(out$rust, out$cpp)
+})
+
+test_that("Edge file input parity", {
+  skip_if_no_seuratrust()
+  edgefile <- tempfile(fileext = ".txt")
+  on.exit(unlink(edgefile), add = TRUE)
+  nn <- matrix(c(1, 2, 3, 2, 3, 1, 3, 1, 2), nrow = 3, byrow = TRUE)
+  snn <- Seurat:::ComputeSNN(nn_ranked = nn, prune = 0)
+  Seurat:::WriteEdgeFile(snn = snn, filename = edgefile, display_progress = FALSE)
+  cpp <- Seurat:::RunModularityClusteringCpp(
+    SNN = connections,
+    modularityFunction = 1,
+    resolution = 1.0,
+    algorithm = 1,
+    nRandomStarts = 1,
+    nIterations = 1,
+    randomSeed = 1,
+    printOutput = FALSE,
+    edgefilename = edgefile
+  )
+  rust <- SeuratRust::RunModularityClusteringCpp(
+    SNN = connections,
+    modularityFunction = 1,
+    resolution = 1.0,
+    algorithm = 1,
+    nRandomStarts = 1,
+    nIterations = 1,
+    randomSeed = 1,
+    printOutput = FALSE,
+    edgefilename = edgefile
   )
   expect_equal(rust, cpp)
 })

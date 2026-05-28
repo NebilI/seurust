@@ -1,12 +1,11 @@
-CXX_STD = CXX17
-
-# Avoid parallel make racing cargo build.rs (seurat_modularity) with C++ compilation.
+# Avoid parallel make racing cargo build.rs (seurat_modularity) with cleanup.
 .NOTPARALLEL:
 
 TARGET_DIR = ./rust/target
-LIBDIR = $(TARGET_DIR)/release
-STATLIB = $(LIBDIR)/libSeurat.a
-PKG_LIBS = -L$(LIBDIR) -lSeurat
+LIBDIR = $(TARGET_DIR)/@LIBDIR@
+STATLIB = $(LIBDIR)/libSeuratRust.a
+# LTO can strip unreferenced Rust registration symbols; whole-archive keeps them.
+PKG_LIBS = -Wl,--whole-archive -L$(LIBDIR) -lSeuratRust -Wl,--no-whole-archive
 
 all: $(SHLIB) rust_clean
 
@@ -32,16 +31,16 @@ $(STATLIB):
 
 	export CARGO_HOME=$(CARGOTMP) && \
 	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
-	RUSTFLAGS="$(RUSTFLAGS) --print=native-static-libs" cargo build  --lib --release --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) 
+	@PANIC_EXPORTS@RUSTFLAGS="$(RUSTFLAGS) --print=native-static-libs" cargo build @CRAN_FLAGS@ --lib @PROFILE@ --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) @TARGET@
 
 	export CARGO_HOME=$(CARGOTMP) && \
 	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
-	RUSTFLAGS="$(RUSTFLAGS)" cargo run  --bin document --release --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) 
+	@PANIC_EXPORTS@RUSTFLAGS="$(RUSTFLAGS)" cargo run @CRAN_FLAGS@ --bin document @PROFILE@ --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) @TARGET@
 
 	rm -Rf $(CARGOTMP);
 
 rust_clean: $(SHLIB)
-	rm -Rf $(CARGOTMP) $(VENDOR_DIR) 
+	-rm -Rf $(CARGOTMP) $(VENDOR_DIR) @CLEAN_TARGET@
 
 clean:
 	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) $(TARGET_DIR) $(VENDOR_DIR)

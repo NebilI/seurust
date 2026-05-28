@@ -12,7 +12,7 @@ fn expm1(x: f64) -> f64 {
     x.exp_m1()
 }
 
-pub fn log_norm_impl(mut mat: CscSlots, scale_factor: i32, _display_progress: bool) -> CscSlots {
+pub fn log_norm_impl(mat: &mut CscSlots, scale_factor: i32, _display_progress: bool) {
     let col_sums = mat.col_sums();
     let scale = scale_factor as f64;
     let ncols = mat.ncols as usize;
@@ -22,8 +22,6 @@ pub fn log_norm_impl(mut mat: CscSlots, scale_factor: i32, _display_progress: bo
             mat.x[idx] = log1p(mat.x[idx] / col_sums[col] * scale);
         }
     }
-
-    mat
 }
 
 pub fn run_umi_sampling_impl(mut mat: CscSlots, sample_val: i32, upsample: bool) -> CscSlots {
@@ -135,41 +133,45 @@ pub fn fast_sparse_row_scale_impl(
     scale_max: f64,
     _display_progress: bool,
 ) -> RMatrix<f64> {
-    let nrows = mat.nrows as usize;
-    let ncols = mat.ncols as usize;
-    let cs = mat.to_cs_mat();
-    let transposed = cs.transpose_view();
-    let mut scaled = Array2::zeros((nrows, ncols));
+    let n_genes = mat.nrows as usize;
+    let n_cells = mat.ncols as usize;
+    let transposed = mat.to_cs_mat().transpose_view().to_csc();
+    let mut scaled = Array2::zeros((n_genes, n_cells));
 
-    for (row_idx, row) in transposed.outer_iterator().enumerate() {
-        let mut col_mean = row.data().iter().sum::<f64>() / nrows as f64;
+    for (gene_idx, col_vec) in transposed.outer_iterator().enumerate() {
+        let col_mean: f64 = col_vec.data().iter().sum::<f64>() / n_cells as f64;
         let mut col_sdev = 1.0;
 
         if scale {
             let mut nn_zero = 0usize;
             let mut var_sum = 0.0;
             if center {
-                for &val in row.data() {
+                for &val in col_vec.data() {
                     nn_zero += 1;
                     var_sum += (val - col_mean).powi(2);
                 }
-                var_sum += col_mean.powi(2) * (nrows - nn_zero) as f64;
+                var_sum += col_mean.powi(2) * (n_cells - nn_zero) as f64;
             } else {
-                var_sum = row.data().iter().map(|v| v.powi(2)).sum();
+                var_sum = col_vec.data().iter().map(|v| v.powi(2)).sum();
             }
-            col_sdev = (var_sum / (nrows - 1) as f64).sqrt();
+            col_sdev = (var_sum / (n_cells - 1) as f64).sqrt();
         }
 
-        if !center {
-            col_mean = 0.0;
-        }
+        let mean = if center { col_mean } else { 0.0 };
 
-        for r in 0..nrows {
-            let mut value = (mat.get(r, row_idx) - col_mean) / col_sdev;
+        for cell in 0..n_cells {
+            let mut value = (0.0 - mean) / col_sdev;
             if value > scale_max {
                 value = scale_max;
             }
-            scaled[[r, row_idx]] = value;
+            scaled[[gene_idx, cell]] = value;
+        }
+        for (cell, &val) in col_vec.iter() {
+            let mut value = (val - mean) / col_sdev;
+            if value > scale_max {
+                value = scale_max;
+            }
+            scaled[[gene_idx, cell]] = value;
         }
     }
 
@@ -185,20 +187,28 @@ pub fn fast_sparse_row_scale_with_known_stats_impl(
     scale_max: f64,
     _display_progress: bool,
 ) -> RMatrix<f64> {
-    let nrows = mat.nrows as usize;
-    let ncols = mat.ncols as usize;
-    let mut scaled = Array2::zeros((nrows, ncols));
+    let n_genes = mat.nrows as usize;
+    let n_cells = mat.ncols as usize;
+    let transposed = mat.to_cs_mat().transpose_view().to_csc();
+    let mut scaled = Array2::zeros((n_genes, n_cells));
 
-    for row_idx in 0..ncols {
-        let col_mean = if center { mu[row_idx] } else { 0.0 };
-        let col_sdev = if scale { sigma[row_idx] } else { 1.0 };
+    for (gene_idx, col_vec) in transposed.outer_iterator().enumerate() {
+        let col_mean = if center { mu[gene_idx] } else { 0.0 };
+        let col_sdev = if scale { sigma[gene_idx] } else { 1.0 };
 
-        for r in 0..nrows {
-            let mut value = (mat.get(r, row_idx) - col_mean) / col_sdev;
+        for cell in 0..n_cells {
+            let mut value = (0.0 - col_mean) / col_sdev;
             if value > scale_max {
                 value = scale_max;
             }
-            scaled[[r, row_idx]] = value;
+            scaled[[gene_idx, cell]] = value;
+        }
+        for (cell, &val) in col_vec.iter() {
+            let mut value = (val - col_mean) / col_sdev;
+            if value > scale_max {
+                value = scale_max;
+            }
+            scaled[[gene_idx, cell]] = value;
         }
     }
 
@@ -388,4 +398,27 @@ pub fn graph_to_neighbor_helper_impl(mat: CscSlots) -> Robj {
         Robj::from(rmatrix_from_ndarray(nn_idx.view())),
         Robj::from(rmatrix_from_ndarray(nn_dist.view())),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sparse::CscSlots;
+
+    fn toy_csc() -> CscSlots {
+        CscSlots {
+            x: vec![1.0, 2.0, 3.0],
+            i: vec![0, 2, 1],
+            p: vec![0, 1, 2, 3],
+            nrows: 3,
+            ncols: 3,
+        }
+    }
+
+    #[test]
+    fn log_norm_scales_columns() {
+        let mut mat = toy_csc();
+        log_norm_impl(&mut mat, 10_000, false);
+        assert!(mat.x.iter().all(|v| v.is_finite() && *v >= 0.0));
+    }
 }

@@ -1,9 +1,12 @@
 #!/usr/bin/env Rscript
-# Print C++ vs Rust timing for ported Seurat routines.
+# Print Seurat (C++) vs SeuratRust timing for ported routines.
 # Optional gate: SEURAT_REQUIRE_RUST_FASTER=1 fails when Rust is slower.
+
+system2("Rscript", "docker/scripts/bootstrap-dev-env.R", stdout = "", stderr = "")
 
 suppressPackageStartupMessages({
   devtools::load_all(recompile = FALSE, quiet = TRUE)
+  library(SeuratRust)
   library(Matrix)
 })
 
@@ -46,7 +49,7 @@ modularity_args <- list(
 run_bench(
   "Modularity (alg 3, 5 starts x 50 iters)",
   cpp_fn = function() do.call(Seurat:::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
-  rust_fn = function() do.call(Seurat:::RunModularityClusteringRust, c(list(SNN = connections), modularity_args)),
+  rust_fn = function() do.call(SeuratRust::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
   n_warmup = 2L,
   n_reps = 10L
 )
@@ -55,8 +58,8 @@ cat("\n==> LogNorm\n")
 mat <- as(matrix(1:160000, ncol = 400, nrow = 400), "sparseMatrix")
 run_bench(
   "LogNorm (400x400 sparse)",
-  cpp_fn = function() LogNorm(mat, 1e4, display_progress = FALSE),
-  rust_fn = function() LogNormRust(mat, 1e4, display_progress = FALSE)
+  cpp_fn = function() Seurat:::LogNorm(mat, 1e4, display_progress = FALSE),
+  rust_fn = function() SeuratRust::LogNorm(mat, 1e4, display_progress = FALSE)
 )
 
 cat("\n==> ComputeSNN\n")
@@ -69,8 +72,8 @@ nn <- matrix(
 storage.mode(nn) <- "double"
 run_bench(
   "ComputeSNN (500 cells, k=20)",
-  cpp_fn = function() ComputeSNN(nn, 0.01),
-  rust_fn = function() Seurat:::ComputeSNNRust(nn, 0.01)
+  cpp_fn = function() Seurat:::ComputeSNN(nn, 0.01),
+  rust_fn = function() SeuratRust::ComputeSNN(nn, 0.01)
 )
 
 cat("\n==> row_sum_dgcmatrix\n")
@@ -85,7 +88,7 @@ bi <- slot(big, "i")
 run_bench(
   "row_sum_dgcmatrix (3000x800 sparse)",
   cpp_fn = function() Seurat:::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big)),
-  rust_fn = function() Seurat:::row_sum_dgcmatrix_rust(bx, bi, nrow(big), ncol(big))
+  rust_fn = function() SeuratRust::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big))
 )
 
 if (length(failures) > 0) {

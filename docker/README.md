@@ -22,65 +22,85 @@ Rust / extendr work:
 docker compose -f docker/docker-compose.yml run --rm rust-dev
 ```
 
+## Two-package layout
+
+| Package | Native backend | Rust required? |
+|---------|----------------|----------------|
+| **Seurat** (root) | C++/Rcpp | No |
+| **SeuratRust** (`SeuratRust/`) | Rust/extendr | Yes |
+
+Install both to compare implementations:
+
+```r
+devtools::load_all()                    # Seurat (C++)
+devtools::install("SeuratRust")       # Rust backend
+library(SeuratRust)
+
+all.equal(
+  Seurat:::LogNorm(mat, 1e4, FALSE),
+  SeuratRust::LogNorm(mat, 1e4, FALSE)
+)
+```
+
 ## Common tasks inside the container
 
-**Compile and load the package (Rcpp + Rust path):**
+**Compile Seurat (C++ only):**
 
 ```sh
 Rscript -e "pkgbuild::compile_dll(debug = FALSE)"
 Rscript -e "devtools::load_all()"
 ```
 
-The Rust crate lives in `src/rust/`. `configure` generates `src/Makevars` from `src/Makevars.in` and runs `cargo build` + the `document` binary to refresh `R/extendr-wrappers.R`.
-
-**Run Rust unit tests for the ported code:**
+**Build and install SeuratRust:**
 
 ```sh
-cargo test --manifest-path src/rust/Cargo.toml
+cd SeuratRust && Rscript tools/config.R && cd ..
+R CMD INSTALL SeuratRust
 ```
 
-**Regenerate Rcpp exports after editing remaining `src/*.cpp`:**
+The Rust crate lives in `SeuratRust/src/rust/`. `SeuratRust/configure` generates `Makevars` and runs `cargo build` + the `document` binary to refresh `R/extendr-wrappers.R`.
+
+**Run Rust unit tests:**
+
+```sh
+cargo test --manifest-path SeuratRust/src/rust/Cargo.toml
+```
+
+**Regenerate Rcpp exports after editing `src/*.cpp`:**
 
 ```sh
 Rscript -e "Rcpp::compileAttributes()"
-Rscript tools/fix-rcpp-init.R
-Rscript -e "devtools::document()"
 ```
 
-After `Rcpp::compileAttributes()`, always run `tools/fix-rcpp-init.R` so `entrypoint.c` remains the unified `R_init_Seurat` entry point for both Rcpp and extendr.
-
-**Regenerate extendr wrappers after editing `src/rust/`:**
+**Regenerate extendr wrappers after editing `SeuratRust/src/rust/`:**
 
 ```sh
-Rscript -e "rextendr::document()"
+cd SeuratRust/src/rust && cargo run --bin document --release && cd ../../..
 ```
 
-**Full dependency install** (heavy; matches more of CI):
-
-```sh
-Rscript /usr/local/bin/install-r-deps.R --full
-```
-
-**Standalone modularity optimizer** (optional sanity check of `ModularityOptimizer.cpp`):
-
-```sh
-cd src
-clang++ -O3 -std=c++11 -DSTANDALONE -Wall -g ModularityOptimizer.cpp -o modularity_optimizer
-```
-
-**Check Rust / extendr setup:**
-
-```sh
-Rscript -e "rextendr::rust_sitrep()"
-```
-
-**End-to-end build + smoke test (Rust row stats):**
+**End-to-end build + parity checks** (installs Seurat Imports, then builds both packages):
 
 ```sh
 bash docker/scripts/build-and-test-rust.sh
 ```
 
-**C++ vs Rust timing benchmarks** (informational; set `SEURAT_REQUIRE_RUST_FASTER=1` to fail when Rust is slower):
+Or from the host in one shot:
+
+```sh
+docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/scripts/build-and-test-rust.sh
+```
+
+The first run installs many R packages from `DESCRIPTION` and can take several minutes.
+
+Each `docker compose run` starts a **fresh container**. Standalone scripts call
+`docker/scripts/bootstrap-dev-env.R` first to install Imports, compile Seurat,
+and install SeuratRust if needed:
+
+```sh
+docker compose -f docker/docker-compose.yml run --rm rust-dev Rscript docker/scripts/run-rust-parity.R
+```
+
+**C++ vs Rust timing benchmarks** (set `SEURAT_REQUIRE_RUST_FASTER=1` to fail when Rust is slower):
 
 ```sh
 Rscript docker/scripts/benchmark-rust-cpp.R
@@ -90,39 +110,28 @@ Ratio `> 1.0` means Rust is faster. Modularity currently calls the same C++ opti
 
 ## Rust rewrite status
 
-C++ remains the default for all production R code paths until you opt in to Rust.
-Rust ports live alongside C++ with a `_rust` suffix on exported R functions.
+Seurat remains the production package (C++/Rcpp). **SeuratRust** is a sibling package with the same R API for ported kernels, used for parity testing and benchmarks.
 
-| Module | C++ source (active) | Rust source (parallel) | Default R path |
-|--------|---------------------|------------------------|----------------|
-| Sparse row stats | `src/stats.cpp` | `src/rust/src/stats.rs` | `R/RcppExports.R` → `R/utilities.R` |
-| Data manipulation | `src/data_manipulation.cpp` | `src/rust/src/data_manipulation/` | `R/RcppExports.R` |
-| Integration | `src/integration.cpp` | `src/rust/src/integration.rs` | `R/RcppExports.R` |
-| SNN / kNN | `src/snn.cpp`, `src/fast_NN_dist.cpp` | `src/rust/src/snn.rs`, `fast_nn_dist.rs` | `R/RcppExports.R` |
-| Modularity | `src/ModularityOptimizer.cpp` | `src/rust/` (C++ bridge) | `R/RcppExports.R` |
-
-Rust data-manipulation ports use **`ndarray`** (dense linear algebra) and **`sprs`** (sparse CSC/CSR).
-Test helpers in `R/rust-sparse.R` wrap slot extraction/reconstruction for parity checks.
-
-Compare C++ vs Rust for log-normalization:
-
-```r
-mat <- Matrix::sparseMatrix(i = c(0, 2, 1), p = c(0, 1, 2, 3), x = 1:3, dims = c(3, 3))
-all.equal(LogNorm(mat, 1e4, FALSE), LogNormRust(mat, 1e4, FALSE))
-```
+| Module | Seurat (C++) | SeuratRust |
+|--------|--------------|------------|
+| Sparse row stats | `src/stats.cpp` | `SeuratRust/src/rust/src/stats.rs` |
+| Data manipulation | `src/data_manipulation.cpp` | `SeuratRust/src/rust/src/data_manipulation/` |
+| Integration | `src/integration.cpp` | `SeuratRust/src/rust/src/integration.rs` |
+| SNN / kNN | `src/snn.cpp`, `src/fast_NN_dist.cpp` | `SeuratRust/src/rust/src/snn.rs`, `fast_nn_dist.rs` |
+| Modularity | `src/ModularityOptimizer.cpp` | C++ bridge in `SeuratRust/src/rust/` |
 
 ## Build without Compose
 
 ```sh
 docker build -f docker/Dockerfile.rcpp -t rust-seurat-rcpp:dev .
 docker build -f docker/Dockerfile.rust -t rust-seurat-rust:dev .
-docker run --rm -it -v "$(pwd):/workspace" -w /workspace rust-seurat-rcpp:dev
+docker run --rm -it -v "$(pwd):/workspace" -w /workspace rust-seurat-rust:dev
 ```
 
 On Windows PowerShell, replace `$(pwd)` with `${PWD}`.
 
 ## Notes
 
-- Base image `rocker/r2u:jammy` matches the **r2u** stack referenced in `.github/workflows/merge_checks.yaml` (Ubuntu + fast binary R packages).
-- The rust image mounts a named volume at `src/rust/target` so `cargo` artifacts stay off the bind mount and out of git.
+- Base image `rocker/r2u:jammy` matches the **r2u** stack referenced in `.github/workflows/merge_checks.yaml`.
+- The rust image mounts a named volume at `SeuratRust/src/rust/target` so `cargo` artifacts stay off the bind mount.
 - Production/user-facing images remain [`satijalab/seurat`](https://hub.docker.com/r/satijalab/seurat); these are dev-only.

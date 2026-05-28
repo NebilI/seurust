@@ -1,5 +1,5 @@
 use crate::sparse::{csc_from_triplets, ndarray_from_rmatrix, CscSlots};
-use crate::utils::{col_euclidean_dist, csc_to_dense, dense_to_csc, sort_indexes};
+use crate::utils::{col_euclidean_dist, dense_to_csc, sort_indexes};
 use extendr_api::prelude::*;
 use std::collections::HashMap;
 
@@ -103,11 +103,10 @@ pub fn integrate_data_impl(
 ) -> CscSlots {
     let im = integration_matrix.to_cs_mat();
     let w = weights.to_cs_mat();
+    let expr = expression_cells2.to_cs_mat();
     let correction = &w.transpose_view().to_csc() * &im;
-    let expr = csc_to_dense(&expression_cells2);
-    let corr = correction.to_dense();
-    let out = &expr - &corr;
-    dense_to_csc(&out)
+    let out = &expr - &correction;
+    CscSlots::from_cs_mat(&out)
 }
 
 pub fn score_helper_impl(
@@ -183,4 +182,38 @@ pub fn score_helper_impl(
     }
 
     Doubles::from_values(scores)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sparse::CscSlots;
+
+    #[test]
+    fn integrate_data_stays_sparse() {
+        let im = CscSlots {
+            x: vec![1.0],
+            i: vec![0],
+            p: vec![0, 1],
+            nrows: 1,
+            ncols: 1,
+        };
+        let w = CscSlots {
+            x: vec![0.5],
+            i: vec![0],
+            p: vec![0, 1],
+            nrows: 1,
+            ncols: 1,
+        };
+        let expr = CscSlots {
+            x: vec![2.0],
+            i: vec![0],
+            p: vec![0, 1],
+            nrows: 1,
+            ncols: 1,
+        };
+        let out = integrate_data_impl(im, w, expr);
+        assert_eq!(out.x.len(), 1);
+        assert!((out.x[0] - 1.5).abs() < 1e-10);
+    }
 }

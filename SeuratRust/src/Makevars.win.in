@@ -1,14 +1,12 @@
-CXX_STD = CXX17
-
-# Avoid parallel make racing cargo build.rs (seurat_modularity) with C++ compilation.
+# Avoid parallel make racing cargo build.rs (seurat_modularity) with cleanup.
 .NOTPARALLEL:
 
 TARGET = $(subst 64,x86_64,$(subst 32,i686,$(WIN)))-pc-windows-gnu
 
 TARGET_DIR = ./rust/target
 LIBDIR = $(TARGET_DIR)/$(TARGET)/@LIBDIR@
-STATLIB = $(LIBDIR)/libSeurat.a
-PKG_LIBS = -L$(LIBDIR) -lSeurat -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll
+STATLIB = $(LIBDIR)/libSeuratRust.a
+PKG_LIBS = -L$(LIBDIR) -lSeuratRust -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll
 
 all: $(SHLIB) rust_clean
 
@@ -45,7 +43,7 @@ $(STATLIB):
 	rm -Rf $(CARGOTMP);
 
 rust_clean: $(SHLIB)
-	rm -Rf $(CARGOTMP) $(VENDOR_DIR) @CLEAN_TARGET@
+	-rm -Rf $(CARGOTMP) $(VENDOR_DIR) @CLEAN_TARGET@
 
 clean:
 	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) $(TARGET_DIR) $(VENDOR_DIR)

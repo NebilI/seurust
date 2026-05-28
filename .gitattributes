@@ -1,6 +1,12 @@
 * text=auto
 data/* binary
 src/* text=lf
+SeuratRust/configure text eol=lf
+SeuratRust/cleanup text eol=lf
+SeuratRust/DESCRIPTION text eol=lf
+SeuratRust/src/entrypoint.c text eol=lf
+SeuratRust/src/Makevars.in text eol=lf
+SeuratRust/src/Makevars.win.in text eol=lf
 R/* text=lf
 docker/scripts/*.sh text eol=lf
 docker/Dockerfile* text eol=lf

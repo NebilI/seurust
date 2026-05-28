@@ -28,22 +28,22 @@ use stats::{
 };
 
 #[extendr]
-fn row_sum_dgcmatrix_rust(x: Doubles, i: Integers, rows: i32, _cols: i32) -> Doubles {
-    row_sum_dgcmatrix_impl(x, i, rows)
+fn row_sum_dgcmatrix(x: Doubles, i: Integers, rows: i32, _cols: i32) -> Doubles {
+    row_sum_dgcmatrix_impl(&x, &i, rows)
 }
 
 #[extendr]
-fn row_mean_dgcmatrix_rust(x: Doubles, i: Integers, rows: i32, cols: i32) -> Doubles {
-    row_mean_dgcmatrix_impl(x, i, rows, cols)
+fn row_mean_dgcmatrix(x: Doubles, i: Integers, rows: i32, cols: i32) -> Doubles {
+    row_mean_dgcmatrix_impl(&x, &i, rows, cols)
 }
 
 #[extendr]
-fn row_var_dgcmatrix_rust(x: Doubles, i: Integers, rows: i32, cols: i32) -> Doubles {
-    row_var_dgcmatrix_impl(x, i, rows, cols)
+fn row_var_dgcmatrix(x: Doubles, i: Integers, rows: i32, cols: i32) -> Doubles {
+    row_var_dgcmatrix_impl(&x, &i, rows, cols)
 }
 
 #[extendr]
-fn log_norm_rust(
+fn log_norm(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -51,38 +51,39 @@ fn log_norm_rust(
     ncols: i32,
     scale_factor: i32,
     display_progress: bool,
-) -> List {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
-    log_norm_impl(mat, scale_factor, display_progress).to_r_list()
+) -> Doubles {
+    let mut mat = CscSlots::from_r(x, i, p, nrows, ncols);
+    log_norm_impl(&mut mat, scale_factor, display_progress);
+    Doubles::from_values(mat.x)
 }
 
 #[extendr]
-fn standardize_rust(mat: RMatrix<f64>, display_progress: bool) -> RMatrix<f64> {
+fn standardize(mat: RMatrix<f64>, display_progress: bool) -> RMatrix<f64> {
     standardize_impl(&mat, display_progress)
 }
 
 #[extendr]
-fn fast_cov_rust(mat: RMatrix<f64>, center: bool) -> RMatrix<f64> {
+fn fast_cov(mat: RMatrix<f64>, center: bool) -> RMatrix<f64> {
     fast_cov_impl(&mat, center)
 }
 
 #[extendr]
-fn fast_cov_mats_rust(mat1: RMatrix<f64>, mat2: RMatrix<f64>, center: bool) -> RMatrix<f64> {
+fn fast_cov_mats(mat1: RMatrix<f64>, mat2: RMatrix<f64>, center: bool) -> RMatrix<f64> {
     fast_cov_mats_impl(&mat1, &mat2, center)
 }
 
 #[extendr]
-fn fast_rbind_rust(mat1: RMatrix<f64>, mat2: RMatrix<f64>) -> RMatrix<f64> {
+fn fast_rbind(mat1: RMatrix<f64>, mat2: RMatrix<f64>) -> RMatrix<f64> {
     fast_rbind_impl(&mat1, &mat2)
 }
 
 #[extendr]
-fn row_var_rust(mat: RMatrix<f64>) -> Doubles {
+fn row_var(mat: RMatrix<f64>) -> Doubles {
     row_var_impl(&mat)
 }
 
 #[extendr]
-fn fast_exp_mean_rust(
+fn fast_exp_mean(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -95,7 +96,7 @@ fn fast_exp_mean_rust(
 }
 
 #[extendr]
-fn sparse_row_var_rust(
+fn sparse_row_var(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -108,7 +109,7 @@ fn sparse_row_var_rust(
 }
 
 #[extendr]
-fn sparse_row_var2_rust(
+fn sparse_row_var2(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -123,7 +124,7 @@ fn sparse_row_var2_rust(
 }
 
 #[extendr]
-fn sparse_row_var_std_rust(
+fn sparse_row_var_std(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -141,7 +142,7 @@ fn sparse_row_var_std_rust(
 }
 
 #[extendr]
-fn fast_log_vmr_rust(
+fn fast_log_vmr(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -154,7 +155,7 @@ fn fast_log_vmr_rust(
 }
 
 #[extendr]
-fn fast_sparse_row_scale_rust(
+fn fast_sparse_row_scale(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -170,7 +171,7 @@ fn fast_sparse_row_scale_rust(
 }
 
 #[extendr]
-fn fast_sparse_row_scale_with_known_stats_rust(
+fn fast_sparse_row_scale_with_known_stats(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -198,7 +199,7 @@ fn fast_sparse_row_scale_with_known_stats_rust(
 }
 
 #[extendr(use_rng = true)]
-fn run_umi_sampling_rust(
+fn run_umi_sampling(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -213,7 +214,7 @@ fn run_umi_sampling_rust(
 }
 
 #[extendr(use_rng = true)]
-fn run_umi_sampling_per_cell_rust(
+fn run_umi_sampling_per_cell(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -229,7 +230,7 @@ fn run_umi_sampling_per_cell_rust(
 }
 
 #[extendr]
-fn row_merge_matrices_rust(
+fn row_merge_matrices(
     x1: Doubles,
     j1: Integers,
     p1: Integers,
@@ -253,7 +254,7 @@ fn row_merge_matrices_rust(
 }
 
 #[extendr]
-fn replace_cols_rust(
+fn replace_cols(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -276,7 +277,7 @@ fn replace_cols_rust(
 }
 
 #[extendr]
-fn graph_to_neighbor_helper_rust(
+fn graph_to_neighbor_helper(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -288,12 +289,12 @@ fn graph_to_neighbor_helper_rust(
 }
 
 #[extendr]
-fn fast_dist_rust(x: RMatrix<f64>, y: RMatrix<f64>, n: List) -> Robj {
+fn fast_dist(x: RMatrix<f64>, y: RMatrix<f64>, n: List) -> Robj {
     fast_dist_impl(&x, &y, &n)
 }
 
 #[extendr]
-fn find_weights_rust(
+fn find_weights(
     cells2: Doubles,
     distances: RMatrix<f64>,
     anchor_cells2: Strings,
@@ -323,7 +324,7 @@ fn find_weights_rust(
 }
 
 #[extendr]
-fn integrate_data_rust(
+fn integrate_data(
     ix: Doubles,
     ii: Integers,
     ip: Integers,
@@ -347,7 +348,7 @@ fn integrate_data_rust(
 }
 
 #[extendr]
-fn score_helper_rust(
+fn score_helper(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -373,12 +374,12 @@ fn score_helper_rust(
 }
 
 #[extendr]
-fn compute_snn_rust(nn_ranked: RMatrix<f64>, prune: f64) -> List {
-    compute_snn_impl(&nn_ranked, prune).to_r_list()
+fn compute_snn(nn_ranked: RMatrix<f64>, prune: f64) -> extendr_api::Result<Robj> {
+    compute_snn_impl(&nn_ranked, prune).into_r_dgcmatrix()
 }
 
 #[extendr]
-fn write_edge_file_rust(
+fn write_edge_file(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -392,17 +393,17 @@ fn write_edge_file_rust(
 }
 
 #[extendr]
-fn direct_snn_to_file_rust(
+fn direct_snn_to_file(
     nn_ranked: RMatrix<f64>,
     prune: f64,
     display_progress: bool,
     filename: &str,
 ) -> List {
-    direct_snn_to_file_impl(&nn_ranked, prune, display_progress, filename).to_r_list()
+    direct_snn_to_file_impl(&nn_ranked, prune, display_progress, filename).into_r_list()
 }
 
 #[extendr]
-fn run_modularity_clustering_rust(
+fn run_modularity_clustering(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -437,7 +438,7 @@ fn run_modularity_clustering_rust(
 }
 
 #[extendr]
-fn snn_smallest_nonzero_dist_rust(
+fn snn_smallest_nonzero_dist(
     x: Doubles,
     i: Integers,
     p: Integers,
@@ -453,35 +454,35 @@ fn snn_smallest_nonzero_dist_rust(
 }
 
 extendr_module! {
-    mod Seurat;
-    fn row_sum_dgcmatrix_rust;
-    fn row_mean_dgcmatrix_rust;
-    fn row_var_dgcmatrix_rust;
-    fn log_norm_rust;
-    fn standardize_rust;
-    fn fast_cov_rust;
-    fn fast_cov_mats_rust;
-    fn fast_rbind_rust;
-    fn row_var_rust;
-    fn fast_exp_mean_rust;
-    fn sparse_row_var_rust;
-    fn sparse_row_var2_rust;
-    fn sparse_row_var_std_rust;
-    fn fast_log_vmr_rust;
-    fn fast_sparse_row_scale_rust;
-    fn fast_sparse_row_scale_with_known_stats_rust;
-    fn run_umi_sampling_rust;
-    fn run_umi_sampling_per_cell_rust;
-    fn row_merge_matrices_rust;
-    fn replace_cols_rust;
-    fn graph_to_neighbor_helper_rust;
-    fn fast_dist_rust;
-    fn find_weights_rust;
-    fn integrate_data_rust;
-    fn score_helper_rust;
-    fn compute_snn_rust;
-    fn write_edge_file_rust;
-    fn direct_snn_to_file_rust;
-    fn snn_smallest_nonzero_dist_rust;
-    fn run_modularity_clustering_rust;
+    mod SeuratRust;
+    fn row_sum_dgcmatrix;
+    fn row_mean_dgcmatrix;
+    fn row_var_dgcmatrix;
+    fn log_norm;
+    fn standardize;
+    fn fast_cov;
+    fn fast_cov_mats;
+    fn fast_rbind;
+    fn row_var;
+    fn fast_exp_mean;
+    fn sparse_row_var;
+    fn sparse_row_var2;
+    fn sparse_row_var_std;
+    fn fast_log_vmr;
+    fn fast_sparse_row_scale;
+    fn fast_sparse_row_scale_with_known_stats;
+    fn run_umi_sampling;
+    fn run_umi_sampling_per_cell;
+    fn row_merge_matrices;
+    fn replace_cols;
+    fn graph_to_neighbor_helper;
+    fn fast_dist;
+    fn find_weights;
+    fn integrate_data;
+    fn score_helper;
+    fn compute_snn;
+    fn write_edge_file;
+    fn direct_snn_to_file;
+    fn snn_smallest_nonzero_dist;
+    fn run_modularity_clustering;
 }
