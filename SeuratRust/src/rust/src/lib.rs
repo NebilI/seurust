@@ -23,7 +23,7 @@ use snn::{
     compute_snn_impl, compute_snn_to_r_impl, direct_snn_to_file_impl,
     snn_smallest_nonzero_dist_impl, write_edge_file_impl,
 };
-use sparse::{strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CsrSlots};
+use sparse::{strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView, CsrSlots};
 use stats::{
     row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl,
 };
@@ -53,9 +53,27 @@ fn log_norm(
     scale_factor: i32,
     display_progress: bool,
 ) -> Doubles {
-    let mut mat = CscSlots::from_r(x, i, p, nrows, ncols);
-    log_norm_impl(&mut mat, scale_factor, display_progress);
-    Doubles::from_values(mat.x)
+    let col_sums = {
+        let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+        view.col_sums()
+    };
+    let p_slice = p.as_robj().as_integer_slice().expect("integer p");
+    let x_in = x.as_robj().as_real_slice().expect("numeric x");
+    let mut out = Doubles::new(x_in.len());
+    let x_out = out
+        .as_robj_mut()
+        .as_real_slice_mut()
+        .expect("numeric output");
+    x_out.copy_from_slice(x_in);
+    log_norm_impl(
+        x_out,
+        p_slice,
+        &col_sums,
+        ncols as usize,
+        scale_factor,
+        display_progress,
+    );
+    out
 }
 
 #[extendr]
@@ -420,9 +438,9 @@ fn run_modularity_clustering(
     edgefilename: &str,
 ) -> Result<Integers, extendr_api::Error> {
     let clusters = run_modularity_clustering_impl(
-        &vec_from_doubles(&x),
-        &vec_from_integers(&i),
-        &vec_from_integers(&p),
+        x.as_robj().as_real_slice().expect("numeric x"),
+        i.as_robj().as_integer_slice().expect("integer i"),
+        p.as_robj().as_integer_slice().expect("integer p"),
         nrows,
         ncols,
         modularity_function,
@@ -435,7 +453,13 @@ fn run_modularity_clustering(
         edgefilename,
     )
     .map_err(|msg| extendr_api::Error::Other(msg.into()))?;
-    Ok(Integers::from_values(clusters))
+
+    let mut out = Integers::new(clusters.len());
+    out.as_robj_mut()
+        .as_integer_slice_mut()
+        .expect("cluster labels")
+        .copy_from_slice(&clusters);
+    Ok(out)
 }
 
 #[extendr]

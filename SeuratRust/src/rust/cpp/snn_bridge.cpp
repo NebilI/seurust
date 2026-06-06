@@ -27,7 +27,8 @@ static int fill_snn_csc_prealloc(
     int* out_p,
     int out_x_len,
     int out_i_len,
-    int out_p_len) {
+    int out_p_len,
+    int* out_nnz_required) {
   const double k_f = static_cast<double>(k);
   const int n = static_cast<int>(snn.cols());
 
@@ -43,6 +44,10 @@ static int fill_snn_csc_prealloc(
         ++nnz;
       }
     }
+  }
+
+  if (out_nnz_required != nullptr) {
+    *out_nnz_required = nnz;
   }
 
   if (out_x_len < nnz || out_i_len < nnz) {
@@ -180,6 +185,7 @@ extern "C" int compute_snn_csc_into(
     int out_i_len,
     int* out_p,
     int out_p_len,
+    int* out_nnz_required,
     char* error_msg,
     int error_msg_len) {
   if (out_x == nullptr || out_i == nullptr || out_p == nullptr) {
@@ -207,7 +213,17 @@ extern "C" int compute_snn_csc_into(
     snn.setFromTriplets(triplet_list.begin(), triplet_list.end());
     snn = snn * snn.transpose();
 
-    return fill_snn_csc_prealloc(snn, k, prune, out_x, out_i, out_p, out_x_len, out_i_len, out_p_len);
+    return fill_snn_csc_prealloc(
+        snn,
+        k,
+        prune,
+        out_x,
+        out_i,
+        out_p,
+        out_x_len,
+        out_i_len,
+        out_p_len,
+        out_nnz_required);
   } catch (const std::exception& ex) {
     set_error(error_msg, error_msg_len, ex.what());
     return -1;

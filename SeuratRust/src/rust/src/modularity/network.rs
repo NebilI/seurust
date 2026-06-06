@@ -303,6 +303,91 @@ impl Network {
     }
 }
 
+/// Build a modularity network directly from a symmetric SNN dgCMatrix (lower triangle).
+pub fn network_from_snn_csc(
+    x: &[f64],
+    i: &[i32],
+    p: &[i32],
+    nrows: i32,
+    ncols: i32,
+    modularity_function: i32,
+) -> Result<Network, String> {
+    let n_nodes = nrows.max(ncols);
+    let mut n_neighbors = vec![0i32; n_nodes as usize];
+    let mut edge_count = 0usize;
+
+    for col in 0..ncols {
+        let start = p[col as usize] as usize;
+        let end = p[(col + 1) as usize] as usize;
+        for idx in start..end {
+            let row = i[idx];
+            if col >= row {
+                continue;
+            }
+            n_neighbors[col as usize] += 1;
+            n_neighbors[row as usize] += 1;
+            edge_count += 1;
+        }
+    }
+
+    if edge_count == 0 {
+        return Err("Matrix contained no network data.  Check format.".to_string());
+    }
+
+    let mut first_neighbor_index = vec![0i32; (n_nodes + 1) as usize];
+    let mut n_edges = 0i32;
+    for node in 0..n_nodes {
+        first_neighbor_index[node as usize] = n_edges;
+        n_edges += n_neighbors[node as usize];
+    }
+    first_neighbor_index[n_nodes as usize] = n_edges;
+
+    let mut neighbor = vec![0i32; n_edges as usize];
+    let mut edge_weight2 = vec![0.0f64; n_edges as usize];
+    n_neighbors.fill(0);
+
+    for col in 0..ncols {
+        let start = p[col as usize] as usize;
+        let end = p[(col + 1) as usize] as usize;
+        for idx in start..end {
+            let row = i[idx];
+            if col >= row {
+                continue;
+            }
+            let weight = x[idx];
+
+            let mut j = first_neighbor_index[col as usize] + n_neighbors[col as usize];
+            neighbor[j as usize] = row;
+            edge_weight2[j as usize] = weight;
+            n_neighbors[col as usize] += 1;
+
+            j = first_neighbor_index[row as usize] + n_neighbors[row as usize];
+            neighbor[j as usize] = col;
+            edge_weight2[j as usize] = weight;
+            n_neighbors[row as usize] += 1;
+        }
+    }
+
+    Ok(if modularity_function == 1 {
+        Network::from_adjacency(
+            n_nodes,
+            None,
+            first_neighbor_index,
+            neighbor,
+            Some(&edge_weight2),
+        )
+    } else {
+        let node_weight = vec![1.0; n_nodes as usize];
+        Network::from_adjacency(
+            n_nodes,
+            Some(&node_weight),
+            first_neighbor_index,
+            neighbor,
+            Some(&edge_weight2),
+        )
+    })
+}
+
 pub fn matrix_to_network(
     node1: &[i32],
     node2: &[i32],
