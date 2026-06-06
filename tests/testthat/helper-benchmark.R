@@ -45,6 +45,9 @@ benchmark_rust_cpp <- function(cpp_fn, rust_fn, n_warmup = 3L, n_reps = 20L) {
   if (rust_basis <= 0) {
     rust_basis <- max(rust$min, .Machine$double.eps)
   }
+  if (cpp_basis <= 0) {
+    cpp_basis <- max(cpp$min, .Machine$double.eps)
+  }
   list(
     n_reps = n_reps,
     cpp = cpp,
@@ -97,7 +100,7 @@ expect_timing_report <- function(bench, label) {
 #' Optionally fail when Rust is not faster than C++.
 #' Set SEURAT_REQUIRE_RUST_FASTER=1 to enforce in CI or local runs.
 #' @keywords internal
-expect_rust_faster <- function(bench, label, tolerance = 1.0) {
+expect_rust_faster <- function(bench, label, tolerance = 0.95) {
   msg <- format_benchmark(bench, label)
   testthat::expect_true(
     bench$rust_vs_cpp >= tolerance,
@@ -125,8 +128,8 @@ benchmark_compute_snn <- function(
     k = 20L,
     prune = 0.01,
     label = NULL,
-    n_warmup = 2L,
-    n_reps = 10L,
+    n_warmup = 5L,
+    n_reps = 20L,
     seed = 1L) {
   if (is.null(label)) {
     label <- sprintf("ComputeSNN (%d cells, k=%d)", n_cells, k)

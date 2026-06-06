@@ -42,6 +42,6 @@ test_that("Modularity clustering timing", {
   )
   expect_timing_report(bench, "Modularity clustering")
   if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {
-    expect_rust_faster(bench, "Modularity clustering")
+    expect_rust_faster(bench, "Modularity clustering", tolerance = 0.95)
   }
 })

@@ -25,4 +25,7 @@ R CMD INSTALL --preclean SeuratRust
 echo "==> Running parity checks..."
 Rscript docker/scripts/run-rust-parity.R
 
+echo "==> Running timing benchmarks (Rust must be >= C++)..."
+SEURAT_REQUIRE_RUST_FASTER=1 Rscript docker/scripts/benchmark-rust-cpp.R
+
 echo "==> Done."

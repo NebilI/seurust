@@ -8,8 +8,8 @@ pub fn row_sum_dgcmatrix_impl(x: &Doubles, i: &Integers, rows: i32) -> Doubles {
     let mut out = Doubles::new(n_rows);
     let rowsum = out.as_robj_mut().as_real_slice_mut().expect("output");
 
-    for (&row, &val) in i_data.iter().zip(x_data.iter()) {
-        rowsum[row as usize] += val;
+    for idx in 0..x_data.len() {
+        rowsum[i_data[idx] as usize] += x_data[idx];
     }
     out
 }

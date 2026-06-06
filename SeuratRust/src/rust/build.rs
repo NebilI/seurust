@@ -51,30 +51,24 @@ fn rcpp_eigen_include() -> Option<PathBuf> {
 }
 
 fn main() {
-    let cpp_dir = Path::new("../cpp");
-    let mut build = cc::Build::new();
-    build
-        .cpp(true)
-        .flag_if_supported("-std=c++17")
-        .file(cpp_dir.join("ModularityOptimizer.cpp"))
-        .file("cpp/modularity_bridge.cpp")
-        .include(cpp_dir);
-
     if let Some(eigen_inc) = rcpp_eigen_include() {
         println!("cargo:rerun-if-env-changed=RCPP_EIGEN_INCLUDE");
         println!("cargo:rerun-if-env-changed=R_HOME");
         println!("cargo:rustc-cfg=snn_eigen");
-        build.include(&eigen_inc);
-        build.file("cpp/snn_bridge.cpp");
+        let mut build = cc::Build::new();
+        build
+            .cpp(true)
+            .flag_if_supported("-std=c++17")
+            .file("cpp/snn_bridge.cpp")
+            .include(&eigen_inc);
+        build.compile("snn_eigen_bridge");
         println!(
             "cargo:warning=ComputeSNN Eigen bridge enabled ({})",
             eigen_inc.display()
         );
     } else {
-        println!("cargo:warning=RcppEigen not found; ComputeSNN uses Rust sprs fallback");
+        println!("cargo:warning=RcppEigen not found; ComputeSNN uses pure Rust counting");
     }
-
-    build.compile("seurat_cpp_kernels");
 
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=c++");

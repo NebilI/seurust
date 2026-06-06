@@ -18,7 +18,54 @@ static void set_error(char* error_msg, int error_msg_len, const char* msg) {
   error_msg[error_msg_len - 1] = '\0';
 }
 
-static int fill_snn_csc(
+static int fill_snn_csc_prealloc(
+    const Eigen::SparseMatrix<double>& snn,
+    int k,
+    double prune,
+    double* out_x,
+    int* out_i,
+    int* out_p,
+    int out_x_len,
+    int out_i_len,
+    int out_p_len) {
+  const double k_f = static_cast<double>(k);
+  const int n = static_cast<int>(snn.cols());
+
+  if (out_p_len < n + 1) {
+    return -2;
+  }
+
+  int nnz = 0;
+  for (int col = 0; col < snn.outerSize(); ++col) {
+    for (Eigen::SparseMatrix<double>::InnerIterator it(snn, col); it; ++it) {
+      const double scaled = it.value() / (k_f + (k_f - it.value()));
+      if (scaled >= prune) {
+        ++nnz;
+      }
+    }
+  }
+
+  if (out_x_len < nnz || out_i_len < nnz) {
+    return -3;
+  }
+
+  int nz = 0;
+  for (int col = 0; col < n; ++col) {
+    out_p[col] = nz;
+    for (Eigen::SparseMatrix<double>::InnerIterator it(snn, col); it; ++it) {
+      const double scaled = it.value() / (k_f + (k_f - it.value()));
+      if (scaled >= prune) {
+        out_i[nz] = static_cast<int>(it.row());
+        out_x[nz] = scaled;
+        ++nz;
+      }
+    }
+  }
+  out_p[n] = nz;
+  return nnz;
+}
+
+static int fill_snn_csc_malloc(
     const Eigen::SparseMatrix<double>& snn,
     int k,
     double prune,
@@ -95,7 +142,6 @@ extern "C" int compute_snn_csc(
     std::vector<Triplet> triplet_list;
     triplet_list.reserve(static_cast<size_t>(nrows) * static_cast<size_t>(ncols));
 
-    // R stores matrices column-major: entry (row, col) at col * nrows + row.
     for (int col = 0; col < ncols; ++col) {
       for (int row = 0; row < nrows; ++row) {
         const double neighbor = nn_ranked[col * nrows + row];
@@ -107,7 +153,7 @@ extern "C" int compute_snn_csc(
     snn.setFromTriplets(triplet_list.begin(), triplet_list.end());
     snn = snn * snn.transpose();
 
-    return fill_snn_csc(snn, k, prune, out_x, out_i, out_p, out_nnz);
+    return fill_snn_csc_malloc(snn, k, prune, out_x, out_i, out_p, out_nnz);
   } catch (const std::exception& ex) {
     set_error(error_msg, error_msg_len, ex.what());
     return -1;
@@ -121,4 +167,52 @@ extern "C" void compute_snn_csc_free(double* x, int* i, int* p) {
   std::free(x);
   std::free(i);
   std::free(p);
+}
+
+extern "C" int compute_snn_csc_into(
+    const double* nn_ranked,
+    int nrows,
+    int ncols,
+    double prune,
+    double* out_x,
+    int out_x_len,
+    int* out_i,
+    int out_i_len,
+    int* out_p,
+    int out_p_len,
+    char* error_msg,
+    int error_msg_len) {
+  if (out_x == nullptr || out_i == nullptr || out_p == nullptr) {
+    set_error(error_msg, error_msg_len, "Null output pointer.");
+    return -1;
+  }
+  if (nn_ranked == nullptr || nrows < 1 || ncols < 1) {
+    set_error(error_msg, error_msg_len, "Invalid nn_ranked input.");
+    return -1;
+  }
+
+  try {
+    const int k = ncols;
+    std::vector<Triplet> triplet_list;
+    triplet_list.reserve(static_cast<size_t>(nrows) * static_cast<size_t>(ncols));
+
+    for (int col = 0; col < ncols; ++col) {
+      for (int row = 0; row < nrows; ++row) {
+        const double neighbor = nn_ranked[col * nrows + row];
+        triplet_list.emplace_back(row, static_cast<int>(neighbor) - 1, 1.0);
+      }
+    }
+
+    Eigen::SparseMatrix<double> snn(nrows, nrows);
+    snn.setFromTriplets(triplet_list.begin(), triplet_list.end());
+    snn = snn * snn.transpose();
+
+    return fill_snn_csc_prealloc(snn, k, prune, out_x, out_i, out_p, out_x_len, out_i_len, out_p_len);
+  } catch (const std::exception& ex) {
+    set_error(error_msg, error_msg_len, ex.what());
+    return -1;
+  } catch (...) {
+    set_error(error_msg, error_msg_len, "Unknown error in compute_snn_csc_into.");
+    return -1;
+  }
 }
