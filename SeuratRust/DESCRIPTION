@@ -15,10 +15,12 @@ Depends:
     R (>= 4.0.0)
 Imports:
     Matrix (>= 1.5-0)
+LinkingTo:
+    RcppEigen
 Suggests:
     Seurat,
     testthat
-SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.65)
+SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.65), RcppEigen
 BuildManual: true
 Encoding: UTF-8
 RoxygenNote: 7.3.3

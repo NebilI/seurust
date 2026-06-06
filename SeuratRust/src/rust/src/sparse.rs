@@ -34,6 +34,86 @@ fn vec_to_integers(values: Vec<i32>) -> Integers {
     out
 }
 
+/// Build a dgCMatrix from preallocated slot vectors (no extra copy).
+pub fn dgcmatrix_from_buffers(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    dim: Integers,
+) -> extendr_api::Result<Robj> {
+    call!(
+        "methods::new",
+        "dgCMatrix",
+        x = x,
+        i = i,
+        p = p,
+        Dim = dim
+    )
+}
+
+/// Sort/merge coordinate triplets and write CSC slots directly into R memory.
+pub fn dgcmatrix_from_triplets(
+    nrows: i32,
+    ncols: i32,
+    mut triplets: Vec<(usize, usize, f64)>,
+) -> extendr_api::Result<Robj> {
+    let ncols_usize = ncols as usize;
+    let dim = Integers::from_values(vec![nrows, ncols]);
+
+    if triplets.is_empty() {
+        let mut p = Integers::new(ncols_usize + 1);
+        p.as_robj_mut()
+            .as_integer_slice_mut()
+            .expect("p")
+            .fill(0);
+        return dgcmatrix_from_buffers(Doubles::new(0), Integers::new(0), p, dim);
+    }
+
+    triplets.sort_unstable_by_key(|&(r, c, _)| (c, r));
+
+    let mut merged: Vec<(usize, usize, f64)> = Vec::with_capacity(triplets.len());
+    for (r, c, v) in triplets {
+        if let Some(last) = merged.last_mut() {
+            if last.0 == r && last.1 == c {
+                last.2 += v;
+                continue;
+            }
+        }
+        merged.push((r, c, v));
+    }
+
+    let nnz = merged.len();
+    let mut x_out = Doubles::new(nnz);
+    let mut i_out = Integers::new(nnz);
+    let mut p_out = Integers::new(ncols_usize + 1);
+
+    let x = x_out
+        .as_robj_mut()
+        .as_real_slice_mut()
+        .expect("numeric x");
+    let i = i_out
+        .as_robj_mut()
+        .as_integer_slice_mut()
+        .expect("integer i");
+    let p = p_out
+        .as_robj_mut()
+        .as_integer_slice_mut()
+        .expect("integer p");
+
+    let mut nz = 0usize;
+    for col in 0..ncols_usize {
+        p[col] = nz as i32;
+        while nz < nnz && merged[nz].1 == col {
+            i[nz] = merged[nz].0 as i32;
+            x[nz] = merged[nz].2;
+            nz += 1;
+        }
+    }
+    p[ncols_usize] = nnz as i32;
+
+    dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
+}
+
 /// Column-compressed sparse matrix slots (dgCMatrix).
 #[derive(Clone, Debug)]
 pub struct CscSlots {
@@ -75,17 +155,11 @@ impl CscSlots {
 
     /// Build a dgCMatrix SEXP directly (avoids R-side `Matrix::sparseMatrix`).
     pub fn into_r_dgcmatrix(self) -> extendr_api::Result<Robj> {
-        let x = vec_to_doubles(self.x);
-        let i = vec_to_integers(self.i);
-        let p = vec_to_integers(self.p);
-        let dim = Integers::from_values(vec![self.nrows, self.ncols]);
-        call!(
-            "methods::new",
-            "dgCMatrix",
-            x = x,
-            i = i,
-            p = p,
-            Dim = dim
+        dgcmatrix_from_buffers(
+            vec_to_doubles(self.x),
+            vec_to_integers(self.i),
+            vec_to_integers(self.p),
+            Integers::from_values(vec![self.nrows, self.ncols]),
         )
     }
 

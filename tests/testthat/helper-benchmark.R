@@ -104,3 +104,45 @@ expect_rust_faster <- function(bench, label, tolerance = 1.0) {
     info = paste0(msg, " (goal: Rust/C++ median ratio >= ", tolerance, ")")
   )
 }
+
+#' Synthetic ranked-neighbor matrix for ComputeSNN benchmarks.
+#' @keywords internal
+make_compute_snn_nn <- function(n_cells, k = 20L, seed = 1L) {
+  set.seed(seed)
+  nn <- matrix(
+    sample.int(n_cells, n_cells * k, replace = TRUE),
+    nrow = n_cells,
+    ncol = k
+  )
+  storage.mode(nn) <- "double"
+  nn
+}
+
+#' Parity-check and time ComputeSNN for a given cell count.
+#' @keywords internal
+benchmark_compute_snn <- function(
+    n_cells,
+    k = 20L,
+    prune = 0.01,
+    label = NULL,
+    n_warmup = 2L,
+    n_reps = 10L,
+    seed = 1L) {
+  if (is.null(label)) {
+    label <- sprintf("ComputeSNN (%d cells, k=%d)", n_cells, k)
+  }
+  nn <- make_compute_snn_nn(n_cells = n_cells, k = k, seed = seed)
+  cpp <- Seurat:::ComputeSNN(nn, prune)
+  rust <- SeuratRust::ComputeSNN(nn, prune)
+  if (!isTRUE(all.equal(as.matrix(rust), as.matrix(cpp), tolerance = 1e-10))) {
+    stop("ComputeSNN parity failed for ", label, call. = FALSE)
+  }
+  bench <- benchmark_rust_cpp(
+    cpp_fn = function() Seurat:::ComputeSNN(nn, prune),
+    rust_fn = function() SeuratRust::ComputeSNN(nn, prune),
+    n_warmup = n_warmup,
+    n_reps = n_reps
+  )
+  attr(bench, "label") <- label
+  bench
+}

@@ -25,6 +25,17 @@ run_bench <- function(label, cpp_fn, rust_fn, ...) {
   invisible(bench)
 }
 
+run_compute_snn_bench <- function(n_cells, ...) {
+  bench <- benchmark_compute_snn(n_cells = n_cells, ...)
+  label <- attr(bench, "label")
+  line <- format_benchmark(bench, label)
+  cat(line, "\n", sep = "")
+  if (require_rust_faster && bench$rust_vs_cpp < 1) {
+    failures <<- c(failures, line)
+  }
+  invisible(bench)
+}
+
 cat("==> Modularity clustering\n")
 node1 <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
            1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 8, 8, 8, 9, 13,
@@ -63,18 +74,8 @@ run_bench(
 )
 
 cat("\n==> ComputeSNN\n")
-set.seed(1)
-nn <- matrix(
-  sample.int(500, 500 * 20, replace = TRUE),
-  nrow = 500,
-  ncol = 20
-)
-storage.mode(nn) <- "double"
-run_bench(
-  "ComputeSNN (500 cells, k=20)",
-  cpp_fn = function() Seurat:::ComputeSNN(nn, 0.01),
-  rust_fn = function() SeuratRust::ComputeSNN(nn, 0.01)
-)
+run_compute_snn_bench(500L, n_warmup = 2L, n_reps = 20L)
+run_compute_snn_bench(2000L, n_warmup = 1L, n_reps = 10L)
 
 cat("\n==> row_sum_dgcmatrix\n")
 big <- sparseMatrix(

@@ -21,30 +21,29 @@ test_that("LogNorm timing", {
   }
 })
 
-test_that("ComputeSNN timing", {
+test_that("ComputeSNN timing (500 cells)", {
   skip_if_no_seuratrust()
-  set.seed(1)
-  nn <- matrix(
-    sample.int(500, 500 * 20, replace = TRUE),
-    nrow = 500,
-    ncol = 20
-  )
-  storage.mode(nn) <- "double"
-  prune <- 0.01
-  expect_equal(
-    as.matrix(SeuratRust::ComputeSNN(nn, prune)),
-    as.matrix(Seurat:::ComputeSNN(nn, prune)),
-    tolerance = 1e-10
-  )
-  bench <- benchmark_rust_cpp(
-    cpp_fn = function() Seurat:::ComputeSNN(nn, prune),
-    rust_fn = function() SeuratRust::ComputeSNN(nn, prune),
+  bench <- benchmark_compute_snn(
+    n_cells = 500L,
     n_warmup = 2L,
     n_reps = 10L
   )
-  expect_timing_report(bench, "ComputeSNN")
+  expect_timing_report(bench, attr(bench, "label"))
   if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {
-    expect_rust_faster(bench, "ComputeSNN")
+    expect_rust_faster(bench, attr(bench, "label"))
+  }
+})
+
+test_that("ComputeSNN timing (2000 cells)", {
+  skip_if_no_seuratrust()
+  bench <- benchmark_compute_snn(
+    n_cells = 2000L,
+    n_warmup = 1L,
+    n_reps = 10L
+  )
+  expect_timing_report(bench, attr(bench, "label"))
+  if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {
+    expect_rust_faster(bench, attr(bench, "label"))
   }
 })
 

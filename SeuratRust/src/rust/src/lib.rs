@@ -20,7 +20,8 @@ use fast_nn_dist::fast_dist_impl;
 use integration::{find_weights_impl, integrate_data_impl, score_helper_impl};
 use modularity::run_modularity_clustering_impl;
 use snn::{
-    compute_snn_impl, direct_snn_to_file_impl, snn_smallest_nonzero_dist_impl, write_edge_file_impl,
+    compute_snn_impl, compute_snn_to_r_impl, direct_snn_to_file_impl,
+    snn_smallest_nonzero_dist_impl, write_edge_file_impl,
 };
 use sparse::{strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CsrSlots};
 use stats::{
@@ -375,7 +376,7 @@ fn score_helper(
 
 #[extendr]
 fn compute_snn(nn_ranked: RMatrix<f64>, prune: f64) -> extendr_api::Result<Robj> {
-    compute_snn_impl(&nn_ranked, prune).into_r_dgcmatrix()
+    compute_snn_to_r_impl(&nn_ranked, prune)
 }
 
 #[extendr]

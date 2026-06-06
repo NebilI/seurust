@@ -1,14 +1,80 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn rcpp_eigen_include() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("RCPP_EIGEN_INCLUDE") {
+        let p = PathBuf::from(path);
+        if p.join("Eigen").exists() {
+            return Some(p);
+        }
+    }
+
+    let r_home = std::env::var("R_HOME").ok().or_else(|| {
+        Command::new("R")
+            .arg("RHOME")
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            })
+    })?;
+
+    let candidates = [
+        PathBuf::from(&r_home).join("library/RcppEigen/include"),
+        PathBuf::from("/usr/lib/R/site-library/RcppEigen/include"),
+        PathBuf::from("/usr/local/lib/R/site-library/RcppEigen/include"),
+    ];
+
+    for path in candidates {
+        if path.join("Eigen").exists() {
+            return Some(path);
+        }
+    }
+
+    if let Ok(output) = Command::new(format!("{}/bin/Rscript", r_home))
+        .args(["-e", "cat(system.file('include', package='RcppEigen'))"])
+        .output()
+    {
+        if output.status.success() {
+            let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+            if path.join("Eigen").exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
 
 fn main() {
     let cpp_dir = Path::new("../cpp");
-    cc::Build::new()
+    let mut build = cc::Build::new();
+    build
         .cpp(true)
         .flag_if_supported("-std=c++17")
         .file(cpp_dir.join("ModularityOptimizer.cpp"))
         .file("cpp/modularity_bridge.cpp")
-        .include(cpp_dir)
-        .compile("seurat_modularity");
+        .include(cpp_dir);
+
+    if let Some(eigen_inc) = rcpp_eigen_include() {
+        println!("cargo:rerun-if-env-changed=RCPP_EIGEN_INCLUDE");
+        println!("cargo:rerun-if-env-changed=R_HOME");
+        println!("cargo:rustc-cfg=snn_eigen");
+        build.include(&eigen_inc);
+        build.file("cpp/snn_bridge.cpp");
+        println!(
+            "cargo:warning=ComputeSNN Eigen bridge enabled ({})",
+            eigen_inc.display()
+        );
+    } else {
+        println!("cargo:warning=RcppEigen not found; ComputeSNN uses Rust sprs fallback");
+    }
+
+    build.compile("seurat_cpp_kernels");
 
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=c++");
