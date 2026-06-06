@@ -1,4 +1,4 @@
-use crate::sparse::{csc_from_triplets, rmatrix_from_ndarray, CscSlots, CsrSlots};
+use crate::sparse::{csc_from_triplets, rmatrix_from_ndarray, CscSlots, CscView, CsrSlots};
 use extendr_api::prelude::*;
 use extendr_ffi::Rf_runif;
 use ndarray::Array2;
@@ -12,16 +12,42 @@ fn expm1(x: f64) -> f64 {
     x.exp_m1()
 }
 
-pub fn log_norm_impl(mat: &mut CscSlots, scale_factor: i32, _display_progress: bool) {
-    let col_sums = mat.col_sums();
+/// Normalize CSC `x` values in place.
+pub fn log_norm_impl(
+    x: &mut [f64],
+    p: &[i32],
+    col_sums: &[f64],
+    ncols: usize,
+    scale_factor: i32,
+    _display_progress: bool,
+) {
     let scale = scale_factor as f64;
-    let ncols = mat.ncols as usize;
 
     for col in 0..ncols {
-        for idx in mat.p[col] as usize..mat.p[col + 1] as usize {
-            mat.x[idx] = log1p(mat.x[idx] / col_sums[col] * scale);
+        for idx in p[col] as usize..p[col + 1] as usize {
+            x[idx] = log1p(x[idx] / col_sums[col] * scale);
         }
     }
+}
+
+pub fn log_norm_owned_impl(mat: &mut CscSlots, scale_factor: i32, display_progress: bool) {
+    let view = CscView {
+        x: &mat.x,
+        i: &mat.i,
+        p: &mat.p,
+        nrows: mat.nrows,
+        ncols: mat.ncols,
+    };
+    let col_sums = view.col_sums();
+    let ncols = mat.ncols as usize;
+    log_norm_impl(
+        &mut mat.x,
+        &mat.p,
+        &col_sums,
+        ncols,
+        scale_factor,
+        display_progress,
+    );
 }
 
 pub fn run_umi_sampling_impl(mut mat: CscSlots, sample_val: i32, upsample: bool) -> CscSlots {
@@ -418,7 +444,7 @@ mod tests {
     #[test]
     fn log_norm_scales_columns() {
         let mut mat = toy_csc();
-        log_norm_impl(&mut mat, 10_000, false);
+        log_norm_owned_impl(&mut mat, 10_000, false);
         assert!(mat.x.iter().all(|v| v.is_finite() && *v >= 0.0));
     }
 }

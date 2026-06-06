@@ -114,6 +114,45 @@ pub fn dgcmatrix_from_triplets(
     dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
 }
 
+/// Borrowed dgCMatrix CSC slots backed by R memory (zero-copy input).
+#[derive(Clone, Copy, Debug)]
+pub struct CscView<'a> {
+    pub x: &'a [f64],
+    pub i: &'a [i32],
+    pub p: &'a [i32],
+    pub nrows: i32,
+    pub ncols: i32,
+}
+
+impl<'a> CscView<'a> {
+    pub fn from_slots(
+        x: &'a Doubles,
+        i: &'a Integers,
+        p: &'a Integers,
+        nrows: i32,
+        ncols: i32,
+    ) -> Self {
+        Self {
+            x: x.as_robj().as_real_slice().expect("numeric x"),
+            i: i.as_robj().as_integer_slice().expect("integer i"),
+            p: p.as_robj().as_integer_slice().expect("integer p"),
+            nrows,
+            ncols,
+        }
+    }
+
+    pub fn col_sums(&self) -> Vec<f64> {
+        let ncols = self.ncols as usize;
+        let mut sums = vec![0.0; ncols];
+        for col in 0..ncols {
+            for idx in self.p[col] as usize..self.p[col + 1] as usize {
+                sums[col] += self.x[idx];
+            }
+        }
+        sums
+    }
+}
+
 /// Column-compressed sparse matrix slots (dgCMatrix).
 #[derive(Clone, Debug)]
 pub struct CscSlots {

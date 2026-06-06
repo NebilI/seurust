@@ -1,6 +1,6 @@
 use super::clustering::Clustering;
 use super::java_random::JavaRandom;
-use super::network::{matrix_to_network, read_input_file, Network};
+use super::network::{network_from_snn_csc, read_input_file, Network};
 use super::vos::VOSClusteringTechnique;
 use std::sync::Arc;
 
@@ -95,35 +95,12 @@ fn build_network_from_snn(
     snn_ncols: i32,
     modularity_function: i32,
 ) -> Result<Network, String> {
-    let ncols = snn_ncols;
-    let mut node1 = Vec::with_capacity(snn_x.len());
-    let mut node2 = Vec::with_capacity(snn_x.len());
-    let mut edgeweights = Vec::with_capacity(snn_x.len());
-
-    for col in 0..ncols {
-        let start = snn_p[col as usize] as usize;
-        let end = snn_p[(col + 1) as usize] as usize;
-        for idx in start..end {
-            let row = snn_i[idx];
-            if col >= row {
-                continue;
-            }
-            node1.push(col);
-            node2.push(row);
-            edgeweights.push(snn_x[idx]);
-        }
-    }
-
-    if node1.is_empty() {
-        return Err("Matrix contained no network data.  Check format.".to_string());
-    }
-
-    let n_nodes = snn_nrows.max(snn_ncols);
-    Ok(matrix_to_network(
-        &node1,
-        &node2,
-        &edgeweights,
+    network_from_snn_csc(
+        snn_x,
+        snn_i,
+        snn_p,
+        snn_nrows,
+        snn_ncols,
         modularity_function,
-        n_nodes,
-    ))
+    )
 }
