@@ -26,7 +26,7 @@ services:
     volumes:
       - ..:/workspace
       - rust-seurat-cargo:/usr/local/cargo/registry
-      - rust-seurat-target:/workspace/SeuratRust/src/rust/target
+      - rust-seurat-target:/workspace/RSeurat/src/rust/target
     working_dir: /workspace
     stdin_open: true
     tty: true

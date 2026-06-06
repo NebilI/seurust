@@ -12,4 +12,4 @@ docs/
 Rplots.pdf
 revdep/
 Seurat.Rcheck/
-SeuratRust/src/rust/target/
+RSeurat/src/rust/target/

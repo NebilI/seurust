@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export R_HOME="$(R RHOME)"
-cd /workspace/SeuratRust/src/rust
+cd /workspace/RSeurat/src/rust
 cargo build --release --lib "$@"

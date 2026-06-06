@@ -1,5 +1,5 @@
-# C++ (Seurat) vs Rust (SeuratRust) parity for modularity clustering.
-context("ModularityOptimizer SeuratRust/Seurat parity")
+# C++ (Seurat) vs Rust (RSeurat) parity for modularity clustering.
+context("ModularityOptimizer RSeurat/Seurat parity")
 
 node1 <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
            1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 8, 8, 8, 9, 13,
@@ -13,9 +13,9 @@ node2 <- c(1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 17, 19, 21, 31, 2, 3, 7, 13,
 connections <- sparseMatrix(i = node2 + 1, j = node1 + 1, x = 1.0)
 
 run_both <- function(...) {
-  skip_if_no_seuratrust()
+  skip_if_no_rseurat()
   cpp <- Seurat:::RunModularityClusteringCpp(SNN = connections, ...)
-  rust <- SeuratRust::RunModularityClusteringCpp(SNN = connections, ...)
+  rust <- RSeurat::RunModularityClusteringCpp(SNN = connections, ...)
   list(cpp = cpp, rust = rust)
 }
 
@@ -104,7 +104,7 @@ test_that("Multiple random starts parity", {
 })
 
 test_that("Edge file input parity", {
-  skip_if_no_seuratrust()
+  skip_if_no_rseurat()
   edgefile <- tempfile(fileext = ".txt")
   on.exit(unlink(edgefile), add = TRUE)
   nn <- matrix(c(1, 2, 3, 2, 3, 1, 3, 1, 2), nrow = 3, byrow = TRUE)
@@ -121,7 +121,7 @@ test_that("Edge file input parity", {
     printOutput = FALSE,
     edgefilename = edgefile
   )
-  rust <- SeuratRust::RunModularityClusteringCpp(
+  rust <- RSeurat::RunModularityClusteringCpp(
     SNN = connections,
     modularityFunction = 1,
     resolution = 1.0,

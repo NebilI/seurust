@@ -2,7 +2,7 @@ system2("Rscript", "docker/scripts/bootstrap-dev-env.R", stdout = "", stderr = "
 
 suppressPackageStartupMessages({
   devtools::load_all(recompile = FALSE, quiet = TRUE)
-  library(SeuratRust)
+  library(RSeurat)
   library(Matrix)
 })
 
@@ -17,27 +17,27 @@ x <- slot(m, "x")
 i <- slot(m, "i")
 stopifnot(all.equal(
   Seurat:::row_sum_dgcmatrix(x, i, nrow(m), ncol(m)),
-  SeuratRust::row_sum_dgcmatrix(x, i, nrow(m), ncol(m))
+  RSeurat::row_sum_dgcmatrix(x, i, nrow(m), ncol(m))
 ))
 cat("Row stats OK\n")
 
 cat("==> Parity: log normalization...\n")
 mat <- as(matrix(1:16, ncol = 4, nrow = 4), "sparseMatrix")
 cpp <- Seurat:::LogNorm(mat, 1e4, display_progress = FALSE)
-rust <- SeuratRust::LogNorm(mat, 1e4, display_progress = FALSE)
+rust <- RSeurat::LogNorm(mat, 1e4, display_progress = FALSE)
 stopifnot(all.equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10))
 cat("LogNorm OK\n")
 
 cat("==> Parity: dense covariance...\n")
 set.seed(42)
 mat <- replicate(10, rchisq(10, 4))
-stopifnot(all.equal(Seurat:::FastCov(mat), SeuratRust::FastCov(mat)))
+stopifnot(all.equal(Seurat:::FastCov(mat), RSeurat::FastCov(mat)))
 cat("FastCov OK\n")
 
 cat("==> Parity: ComputeSNN...\n")
 nn <- matrix(c(1, 2, 3, 2, 3, 1, 3, 1, 2), nrow = 3, byrow = TRUE)
 cpp <- Seurat:::ComputeSNN(nn, 0.01)
-rust <- SeuratRust::ComputeSNN(nn, 0.01)
+rust <- RSeurat::ComputeSNN(nn, 0.01)
 stopifnot(all.equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10))
 cat("ComputeSNN OK\n")
 
@@ -50,7 +50,7 @@ cat("==> Running modularity optimizer tests...\n")
 run_tests("tests/testthat/test_modularity_optimizer.R")
 run_tests("tests/testthat/test_rust_cpp_parity_modularity.R")
 
-cat("==> Timing: Seurat vs SeuratRust (ratio > 1 => Rust faster)...\n")
+cat("==> Timing: Seurat vs RSeurat (ratio > 1 => Rust faster)...\n")
 run_tests("tests/testthat/test_rust_cpp_timing_modularity.R")
 run_tests("tests/testthat/test_rust_cpp_timing.R")
 

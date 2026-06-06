@@ -27,18 +27,18 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev
 | Package | Native backend | Rust required? |
 |---------|----------------|----------------|
 | **Seurat** (root) | C++/Rcpp | No |
-| **SeuratRust** (`SeuratRust/`) | Rust/extendr | Yes |
+| **RSeurat** (`RSeurat/`) | Rust/extendr | Yes |
 
 Install both to compare implementations:
 
 ```r
 devtools::load_all()                    # Seurat (C++)
-devtools::install("SeuratRust")       # Rust backend
-library(SeuratRust)
+devtools::install("RSeurat")       # Rust backend
+library(RSeurat)
 
 all.equal(
   Seurat:::LogNorm(mat, 1e4, FALSE),
-  SeuratRust::LogNorm(mat, 1e4, FALSE)
+  RSeurat::LogNorm(mat, 1e4, FALSE)
 )
 ```
 
@@ -51,19 +51,19 @@ Rscript -e "pkgbuild::compile_dll(debug = FALSE)"
 Rscript -e "devtools::load_all()"
 ```
 
-**Build and install SeuratRust:**
+**Build and install RSeurat:**
 
 ```sh
-cd SeuratRust && Rscript tools/config.R && cd ..
-R CMD INSTALL SeuratRust
+cd RSeurat && Rscript tools/config.R && cd ..
+R CMD INSTALL RSeurat
 ```
 
-The Rust crate lives in `SeuratRust/src/rust/`. `SeuratRust/configure` generates `Makevars` and runs `cargo build` + the `document` binary to refresh `R/extendr-wrappers.R`.
+The Rust crate lives in `RSeurat/src/rust/`. `RSeurat/configure` generates `Makevars` and runs `cargo build` + the `document` binary to refresh `R/extendr-wrappers.R`.
 
 **Run Rust unit tests:**
 
 ```sh
-cargo test --manifest-path SeuratRust/src/rust/Cargo.toml
+cargo test --manifest-path RSeurat/src/rust/Cargo.toml
 ```
 
 **Regenerate Rcpp exports after editing `src/*.cpp`:**
@@ -72,10 +72,10 @@ cargo test --manifest-path SeuratRust/src/rust/Cargo.toml
 Rscript -e "Rcpp::compileAttributes()"
 ```
 
-**Regenerate extendr wrappers after editing `SeuratRust/src/rust/`:**
+**Regenerate extendr wrappers after editing `RSeurat/src/rust/`:**
 
 ```sh
-cd SeuratRust/src/rust && cargo run --bin document --release && cd ../../..
+cd RSeurat/src/rust && cargo run --bin document --release && cd ../../..
 ```
 
 **End-to-end build + parity checks** (installs Seurat Imports, then builds both packages):
@@ -94,7 +94,7 @@ The first run installs many R packages from `DESCRIPTION` and can take several m
 
 Each `docker compose run` starts a **fresh container**. Standalone scripts call
 `docker/scripts/bootstrap-dev-env.R` first to install Imports, compile Seurat,
-and install SeuratRust if needed:
+and install RSeurat if needed:
 
 ```sh
 docker compose -f docker/docker-compose.yml run --rm rust-dev Rscript docker/scripts/run-rust-parity.R
@@ -110,15 +110,15 @@ Ratio `> 1.0` means Rust is faster. Modularity currently calls the same C++ opti
 
 ## Rust rewrite status
 
-Seurat remains the production package (C++/Rcpp). **SeuratRust** is a sibling package with the same R API for ported kernels, used for parity testing and benchmarks.
+Seurat remains the production package (C++/Rcpp). **RSeurat** is a sibling package with the same R API for ported kernels, used for parity testing and benchmarks.
 
-| Module | Seurat (C++) | SeuratRust |
+| Module | Seurat (C++) | RSeurat |
 |--------|--------------|------------|
-| Sparse row stats | `src/stats.cpp` | `SeuratRust/src/rust/src/stats.rs` |
-| Data manipulation | `src/data_manipulation.cpp` | `SeuratRust/src/rust/src/data_manipulation/` |
-| Integration | `src/integration.cpp` | `SeuratRust/src/rust/src/integration.rs` |
-| SNN / kNN | `src/snn.cpp`, `src/fast_NN_dist.cpp` | `SeuratRust/src/rust/src/snn.rs`, `fast_nn_dist.rs` |
-| Modularity | `src/ModularityOptimizer.cpp` | C++ bridge in `SeuratRust/src/rust/` |
+| Sparse row stats | `src/stats.cpp` | `RSeurat/src/rust/src/stats.rs` |
+| Data manipulation | `src/data_manipulation.cpp` | `RSeurat/src/rust/src/data_manipulation/` |
+| Integration | `src/integration.cpp` | `RSeurat/src/rust/src/integration.rs` |
+| SNN / kNN | `src/snn.cpp`, `src/fast_NN_dist.cpp` | `RSeurat/src/rust/src/snn.rs`, `fast_nn_dist.rs` |
+| Modularity | `src/ModularityOptimizer.cpp` | C++ bridge in `RSeurat/src/rust/` |
 
 ## Build without Compose
 
@@ -133,5 +133,5 @@ On Windows PowerShell, replace `$(pwd)` with `${PWD}`.
 ## Notes
 
 - Base image `rocker/r2u:jammy` matches the **r2u** stack referenced in `.github/workflows/merge_checks.yaml`.
-- The rust image mounts a named volume at `SeuratRust/src/rust/target` so `cargo` artifacts stay off the bind mount.
+- The rust image mounts a named volume at `RSeurat/src/rust/target` so `cargo` artifacts stay off the bind mount.
 - Production/user-facing images remain [`satijalab/seurat`](https://hub.docker.com/r/satijalab/seurat); these are dev-only.

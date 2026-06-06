@@ -1,4 +1,4 @@
-# SeuratRust
+# RSeurat
 
 Rust/extendr backend for Seurat's performance-critical native routines. Install
 alongside [Seurat](../) to compare C++ and Rust implementations during the
@@ -9,34 +9,34 @@ migration.
 From the repo root (requires Rust toolchain):
 
 ```r
-devtools::install("SeuratRust")
+devtools::install("RSeurat")
 ```
 
 Or from the shell:
 
 ```sh
-cd SeuratRust
+cd RSeurat
 Rscript tools/config.R
 cd ..
-R CMD INSTALL SeuratRust
+R CMD INSTALL RSeurat
 ```
 
 ## Compare against Seurat
 
 ```r
 library(Seurat)
-library(SeuratRust)
+library(RSeurat)
 library(Matrix)
 
 mat <- Matrix::sparseMatrix(i = c(0, 2, 1), p = c(0, 1, 2, 3), x = 1:3, dims = c(3, 3))
 all.equal(
   Seurat:::LogNorm(mat, 1e4, FALSE),
-  SeuratRust::LogNorm(mat, 1e4, FALSE)
+  RSeurat::LogNorm(mat, 1e4, FALSE)
 )
 ```
 
 Parity and benchmark tests live in the parent package under
-`tests/testthat/test_rust_cpp_*.R` and require `SeuratRust` in `Suggests`.
+`tests/testthat/test_rust_cpp_*.R` and require `RSeurat` in `Suggests`.
 
 ## Layout
 
@@ -44,7 +44,7 @@ Parity and benchmark tests live in the parent package under
 |------|------|
 | `src/rust/` | extendr crate (Rust kernels) |
 | `src/cpp/` | ModularityOptimizer C++ bridge |
-| `src/entrypoint.c` | Links Rust staticlib into `SeuratRust.so` |
+| `src/entrypoint.c` | Links Rust staticlib into `RSeurat.so` |
 | `R/native.R` | High-level R API matching Seurat's RcppExports |
 | `R/extendr-wrappers.R` | Generated low-level `.Call` wrappers |
 

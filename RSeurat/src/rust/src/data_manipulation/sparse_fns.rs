@@ -257,20 +257,20 @@ pub fn fast_exp_mean_impl(mat: CscSlots, _display_progress: bool) -> Doubles {
 }
 
 pub fn sparse_row_var2_impl(mat: CscSlots, mu: &[f64], _display_progress: bool) -> Doubles {
-    let nrows = mat.nrows as usize;
-    let cs = mat.to_cs_mat();
-    let transposed = cs.transpose_view();
-    let mut all_vars = Vec::with_capacity(transposed.cols());
+    let n_genes = mat.nrows as usize;
+    let n_cells = mat.ncols as usize;
+    let csr = mat.to_cs_mat().to_csr();
+    let mut all_vars = Vec::with_capacity(n_genes);
 
-    for (row_idx, row) in transposed.outer_iterator().enumerate() {
+    for (gene_idx, row) in csr.outer_iterator().enumerate() {
         let mut col_sum = 0.0;
-        let mut n_zero = nrows;
+        let mut n_zero = n_cells;
         for &val in row.data() {
             n_zero -= 1;
-            col_sum += (val - mu[row_idx]).powi(2);
+            col_sum += (val - mu[gene_idx]).powi(2);
         }
-        col_sum += mu[row_idx].powi(2) * n_zero as f64;
-        all_vars.push(col_sum / (nrows - 1) as f64);
+        col_sum += mu[gene_idx].powi(2) * n_zero as f64;
+        all_vars.push(col_sum / (n_cells as f64 - 1.0));
     }
 
     Doubles::from_values(all_vars)
@@ -283,25 +283,24 @@ pub fn sparse_row_var_std_impl(
     vmax: f64,
     _display_progress: bool,
 ) -> Doubles {
-    let nrows = mat.nrows as usize;
-    let ncols = mat.ncols as usize;
-    let cs = mat.to_cs_mat();
-    let transposed = cs.transpose_view();
-    let mut all_vars = vec![0.0; ncols];
+    let n_genes = mat.nrows as usize;
+    let n_cells = mat.ncols as usize;
+    let csr = mat.to_cs_mat().to_csr();
+    let mut all_vars = vec![0.0; n_genes];
 
-    for (row_idx, row) in transposed.outer_iterator().enumerate() {
-        if sd[row_idx] == 0.0 {
+    for (gene_idx, row) in csr.outer_iterator().enumerate() {
+        if sd[gene_idx] == 0.0 {
             continue;
         }
         let mut col_sum = 0.0;
-        let mut n_zero = nrows;
+        let mut n_zero = n_cells;
         for &val in row.data() {
             n_zero -= 1;
-            let standardized = ((val - mu[row_idx]) / sd[row_idx]).min(vmax);
+            let standardized = ((val - mu[gene_idx]) / sd[gene_idx]).min(vmax);
             col_sum += standardized.powi(2);
         }
-        col_sum += ((0.0 - mu[row_idx]) / sd[row_idx]).powi(2) * n_zero as f64;
-        all_vars[row_idx] = col_sum / (nrows - 1) as f64;
+        col_sum += ((0.0 - mu[gene_idx]) / sd[gene_idx]).powi(2) * n_zero as f64;
+        all_vars[gene_idx] = col_sum / (n_cells as f64 - 1.0);
     }
 
     Doubles::from_values(all_vars)
@@ -331,22 +330,21 @@ pub fn fast_log_vmr_impl(mat: CscSlots, _display_progress: bool) -> Doubles {
 }
 
 pub fn sparse_row_var_impl(mat: CscSlots, _display_progress: bool) -> Doubles {
-    let nrows = mat.nrows as usize;
-    let ncols = mat.ncols as usize;
-    let ncols_f = ncols as f64;
-    let cs = mat.to_cs_mat();
-    let transposed = cs.transpose_view();
-    let mut rowdisp = Vec::with_capacity(nrows);
+    let n_genes = mat.nrows as usize;
+    let n_cells = mat.ncols as usize;
+    let n_cells_f = n_cells as f64;
+    let csr = mat.to_cs_mat().to_csr();
+    let mut rowdisp = Vec::with_capacity(n_genes);
 
-    for row in transposed.outer_iterator() {
-        let rm: f64 = row.data().iter().sum::<f64>() / ncols_f;
+    for row in csr.outer_iterator() {
+        let rm: f64 = row.data().iter().sum::<f64>() / n_cells_f;
         let mut v = 0.0;
         let mut nn_zero = 0usize;
         for &val in row.data() {
             v += (val - rm).powi(2);
             nn_zero += 1;
         }
-        v = (v + (ncols - nn_zero) as f64 * rm.powi(2)) / (ncols - 1) as f64;
+        v = (v + (n_cells - nn_zero) as f64 * rm.powi(2)) / (n_cells as f64 - 1.0);
         rowdisp.push(v);
     }
 

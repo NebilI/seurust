@@ -1,7 +1,7 @@
-#' Skip when SeuratRust is not installed (Rust backend package).
+#' Skip when RSeurat is not installed (Rust backend package).
 #' @keywords internal
-skip_if_no_seuratrust <- function() {
-  if (!requireNamespace("SeuratRust", quietly = TRUE)) {
-    skip("SeuratRust not installed; install the sibling package from SeuratRust/")
+skip_if_no_rseurat <- function() {
+  if (!requireNamespace("RSeurat", quietly = TRUE)) {
+    skip("RSeurat not installed; install the sibling package from RSeurat/")
   }
 }

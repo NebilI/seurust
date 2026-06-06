@@ -1,11 +1,12 @@
 # Avoid parallel make racing cargo build.rs (seurat_modularity) with cleanup.
 .NOTPARALLEL:
 
+TARGET = $(subst 64,x86_64,$(subst 32,i686,$(WIN)))-pc-windows-gnu
+
 TARGET_DIR = ./rust/target
-LIBDIR = $(TARGET_DIR)/@LIBDIR@
-STATLIB = $(LIBDIR)/libSeuratRust.a
-# LTO can strip unreferenced Rust registration symbols; whole-archive keeps them.
-PKG_LIBS = -Wl,--whole-archive -L$(LIBDIR) -lSeuratRust -Wl,--no-whole-archive
+LIBDIR = $(TARGET_DIR)/$(TARGET)/@LIBDIR@
+STATLIB = $(LIBDIR)/libRSeurat.a
+PKG_LIBS = -L$(LIBDIR) -lRSeurat -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll
 
 all: $(SHLIB) rust_clean
 
@@ -14,9 +15,11 @@ all: $(SHLIB) rust_clean
 $(SHLIB): $(STATLIB)
 
 CARGOTMP = $(CURDIR)/.cargo
-VENDOR_DIR = $(CURDIR)/vendor
+VENDOR_DIR = vendor
 
 $(STATLIB):
+	mkdir -p $(TARGET_DIR)/libgcc_mock
+	touch $(TARGET_DIR)/libgcc_mock/libgcc_eh.a
 
 	if [ -d ./vendor ]; then \
 		echo "=== Using offline vendor directory ==="; \
@@ -30,12 +33,12 @@ $(STATLIB):
 	fi
 
 	export CARGO_HOME=$(CARGOTMP) && \
-	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
-	@PANIC_EXPORTS@RUSTFLAGS="$(RUSTFLAGS) --print=native-static-libs" cargo build @CRAN_FLAGS@ --lib @PROFILE@ --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) @TARGET@
+	export LIBRARY_PATH="$(LIBRARY_PATH);$(CURDIR)/$(TARGET_DIR)/libgcc_mock" && \
+	RUSTFLAGS="$(RUSTFLAGS) --print=native-static-libs" cargo build @CRAN_FLAGS@ --target=$(TARGET) --lib @PROFILE@ --manifest-path=rust/Cargo.toml --target-dir=$(TARGET_DIR)
 
 	export CARGO_HOME=$(CARGOTMP) && \
 	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
-	@PANIC_EXPORTS@RUSTFLAGS="$(RUSTFLAGS)" cargo run @CRAN_FLAGS@ --bin document @PROFILE@ --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) @TARGET@
+	RUSTFLAGS="$(RUSTFLAGS)" cargo run @CRAN_FLAGS@ --bin document --target $(TARGET) @PROFILE@ --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
 
 	rm -Rf $(CARGOTMP);
 

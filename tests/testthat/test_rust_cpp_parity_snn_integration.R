@@ -1,8 +1,8 @@
-# Parity tests: SeuratRust vs Seurat (C++/Rcpp) for integration, SNN, and kNN.
-# Requires SeuratRust to be installed alongside Seurat.
+# Parity tests: RSeurat vs Seurat (C++/Rcpp) for integration, SNN, and kNN.
+# Requires RSeurat to be installed alongside Seurat.
 #
 # Run locally:
-#   devtools::install("SeuratRust")
+#   devtools::install("RSeurat")
 #   devtools::load_all()
 #   testthat::test_file("tests/testthat/test_rust_cpp_parity_snn_integration.R")
 
@@ -11,10 +11,10 @@ suppressPackageStartupMessages({
   library(testthat)
 })
 
-context("SeuratRust/Seurat parity: fast_dist")
+context("RSeurat/Seurat parity: fast_dist")
 
-test_that("SeuratRust fast_dist matches Seurat fast_dist", {
-  skip_if_no_seuratrust()
+test_that("RSeurat fast_dist matches Seurat fast_dist", {
+  skip_if_no_rseurat()
   set.seed(1)
   x <- matrix(rnorm(12), nrow = 4, ncol = 3)
   y <- matrix(rnorm(12), nrow = 4, ncol = 3)
@@ -25,26 +25,26 @@ test_that("SeuratRust fast_dist matches Seurat fast_dist", {
     c(4, 2, 3)
   )
   cpp <- Seurat:::fast_dist(x = x, y = y, n = n)
-  rust <- SeuratRust::fast_dist(x = x, y = y, n = n)
+  rust <- RSeurat::fast_dist(x = x, y = y, n = n)
   expect_equal(cpp, rust, tolerance = 1e-10)
 })
 
-context("SeuratRust/Seurat parity: ComputeSNN")
+context("RSeurat/Seurat parity: ComputeSNN")
 
-test_that("SeuratRust ComputeSNN matches Seurat ComputeSNN", {
-  skip_if_no_seuratrust()
+test_that("RSeurat ComputeSNN matches Seurat ComputeSNN", {
+  skip_if_no_rseurat()
   set.seed(2)
   nn <- matrix(sample(x = 1:6, size = 18, replace = TRUE), nrow = 6, ncol = 3)
   prune <- 0.01
   cpp <- Seurat:::ComputeSNN(nn_ranked = nn, prune = prune)
-  rust <- SeuratRust::ComputeSNN(nn_ranked = nn, prune = prune)
+  rust <- RSeurat::ComputeSNN(nn_ranked = nn, prune = prune)
   expect_equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10)
 })
 
-context("SeuratRust/Seurat parity: IntegrateDataC")
+context("RSeurat/Seurat parity: IntegrateDataC")
 
-test_that("SeuratRust IntegrateDataC matches Seurat IntegrateDataC", {
-  skip_if_no_seuratrust()
+test_that("RSeurat IntegrateDataC matches Seurat IntegrateDataC", {
+  skip_if_no_rseurat()
   set.seed(3)
   expr <- as(sparseMatrix(
     i = c(0, 1, 2, 0, 1),
@@ -69,7 +69,7 @@ test_that("SeuratRust IntegrateDataC matches Seurat IntegrateDataC", {
     weights = w,
     expression_cells2 = expr
   )
-  rust <- SeuratRust::IntegrateDataC(
+  rust <- RSeurat::IntegrateDataC(
     integration_matrix = im,
     weights = w,
     expression_cells2 = expr
@@ -77,10 +77,10 @@ test_that("SeuratRust IntegrateDataC matches Seurat IntegrateDataC", {
   expect_equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10)
 })
 
-context("SeuratRust/Seurat parity: FindWeightsC")
+context("RSeurat/Seurat parity: FindWeightsC")
 
-test_that("SeuratRust FindWeightsC matches Seurat FindWeightsC (min_dist = 0)", {
-  skip_if_no_seuratrust()
+test_that("RSeurat FindWeightsC matches Seurat FindWeightsC (min_dist = 0)", {
+  skip_if_no_rseurat()
   set.seed(4)
   cells2 <- 0:1
   distances <- matrix(c(0.1, 0.2, 0.3, 0.4), nrow = 2, byrow = TRUE)
@@ -99,7 +99,7 @@ test_that("SeuratRust FindWeightsC matches Seurat FindWeightsC (min_dist = 0)", 
     sd = 1,
     display_progress = FALSE
   )
-  rust <- SeuratRust::FindWeightsC(
+  rust <- RSeurat::FindWeightsC(
     cells2 = cells2,
     distances = distances,
     anchor_cells2 = anchor_cells2,
@@ -113,10 +113,10 @@ test_that("SeuratRust FindWeightsC matches Seurat FindWeightsC (min_dist = 0)", 
   expect_equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10)
 })
 
-context("SeuratRust/Seurat parity: SNN_SmallestNonzero_Dist")
+context("RSeurat/Seurat parity: SNN_SmallestNonzero_Dist")
 
-test_that("SeuratRust SNN_SmallestNonzero_Dist matches Seurat", {
-  skip_if_no_seuratrust()
+test_that("RSeurat SNN_SmallestNonzero_Dist matches Seurat", {
+  skip_if_no_rseurat()
   set.seed(5)
   nn <- matrix(c(1, 2, 3, 2, 3, 1, 3, 1, 2), nrow = 3, byrow = TRUE)
   snn <- Seurat:::ComputeSNN(nn_ranked = nn, prune = 0)
@@ -125,16 +125,16 @@ test_that("SeuratRust SNN_SmallestNonzero_Dist matches Seurat", {
   cpp <- Seurat:::SNN_SmallestNonzero_Dist(
     snn = snn, mat = mat, n = 2, nearest_dist = nearest_dist
   )
-  rust <- SeuratRust::SNN_SmallestNonzero_Dist(
+  rust <- RSeurat::SNN_SmallestNonzero_Dist(
     snn = snn, mat = mat, n = 2, nearest_dist = nearest_dist
   )
   expect_equal(cpp, rust, tolerance = 1e-10)
 })
 
-context("SeuratRust/Seurat parity: ScoreHelper")
+context("RSeurat/Seurat parity: ScoreHelper")
 
-test_that("SeuratRust ScoreHelper matches Seurat ScoreHelper", {
-  skip_if_no_seuratrust()
+test_that("RSeurat ScoreHelper matches Seurat ScoreHelper", {
+  skip_if_no_rseurat()
   set.seed(6)
   nn <- matrix(c(1, 2, 3, 2, 3, 1, 3, 1, 2), nrow = 3, byrow = TRUE)
   snn <- Seurat:::ComputeSNN(nn_ranked = nn, prune = 0)
@@ -150,7 +150,7 @@ test_that("SeuratRust ScoreHelper matches Seurat ScoreHelper", {
     subtract_first_nn = FALSE,
     display_progress = FALSE
   )
-  rust <- SeuratRust::ScoreHelper(
+  rust <- RSeurat::ScoreHelper(
     snn = snn,
     query_pca = query_pca,
     query_dists = query_dists,

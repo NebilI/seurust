@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
-# Print Seurat (C++) vs SeuratRust timing for ported routines.
+# Print Seurat (C++) vs RSeurat timing for ported routines.
 # Optional gate: SEURAT_REQUIRE_RUST_FASTER=1 fails when Rust is slower.
 
 system2("Rscript", "docker/scripts/bootstrap-dev-env.R", stdout = "", stderr = "")
 
 suppressPackageStartupMessages({
   devtools::load_all(recompile = FALSE, quiet = TRUE)
-  library(SeuratRust)
+  library(RSeurat)
   library(Matrix)
 })
 
@@ -60,7 +60,7 @@ modularity_args <- list(
 run_bench(
   "Modularity (alg 3, 5 starts x 50 iters)",
   cpp_fn = function() do.call(Seurat:::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
-  rust_fn = function() do.call(SeuratRust::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
+  rust_fn = function() do.call(RSeurat::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
   n_warmup = 2L,
   n_reps = 10L,
   tolerance = 0.95
@@ -71,7 +71,7 @@ mat <- as(matrix(1:160000, ncol = 400, nrow = 400), "sparseMatrix")
 run_bench(
   "LogNorm (400x400 sparse)",
   cpp_fn = function() Seurat:::LogNorm(mat, 1e4, display_progress = FALSE),
-  rust_fn = function() SeuratRust::LogNorm(mat, 1e4, display_progress = FALSE)
+  rust_fn = function() RSeurat::LogNorm(mat, 1e4, display_progress = FALSE)
 )
 
 cat("\n==> ComputeSNN\n")
@@ -90,7 +90,7 @@ bi <- slot(big, "i")
 run_bench(
   "row_sum_dgcmatrix (3000x800 sparse)",
   cpp_fn = function() Seurat:::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big)),
-  rust_fn = function() SeuratRust::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big))
+  rust_fn = function() RSeurat::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big))
 )
 
 if (length(failures) > 0) {

@@ -3,7 +3,7 @@
 
 #' @docType package
 #' @usage NULL
-#' @useDynLib SeuratRust, .registration = TRUE
+#' @useDynLib RSeurat, .registration = TRUE
 NULL
 
 row_sum_dgcmatrix <- function(x, i, rows, `_cols`) .Call(wrap__row_sum_dgcmatrix, x, i, rows, `_cols`)

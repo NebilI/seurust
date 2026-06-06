@@ -3,7 +3,7 @@
 version = 3
 
 [[package]]
-name = "SeuratRust"
+name = "RSeurat"
 version = "0.1.0"
 dependencies = [
  "cc",
