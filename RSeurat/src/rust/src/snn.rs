@@ -1,10 +1,6 @@
-use crate::sparse::{csc_slots_from_triplets, dgcmatrix_from_buffers, ndarray_from_rmatrix, CscSlots};
-use crate::utils::{row_euclidean_dist, sort_indexes};
+use crate::sparse::{csc_slots_from_triplets, dgcmatrix_from_buffers, CscSlots};
 use extendr_api::prelude::*;
-use rayon::prelude::*;
-use std::fs::File;
-use std::io::Write;
-use std::sync::atomic::{AtomicU32, Ordering};
+use sprs::{CsMat, TriMat};
 
 #[cfg(snn_eigen)]
 extern "C" {
@@ -99,153 +95,6 @@ fn scale_and_prune(val: f64, k_f: f64, prune: f64) -> Option<f64> {
     }
 }
 
-/// Build reverse-neighbor lists: for each neighbor index v, cells that list v as a neighbor.
-fn build_reverse_neighbors(data: &[f64], n_cells: usize, k: usize) -> Vec<Vec<usize>> {
-    let mut reverse_neighbors: Vec<Vec<usize>> = vec![Vec::with_capacity(k); n_cells];
-    for j in 0..k {
-        let base = j * n_cells;
-        for i in 0..n_cells {
-            let neighbor = data[base + i] as usize - 1;
-            reverse_neighbors[neighbor].push(i);
-        }
-    }
-    reverse_neighbors
-}
-
-/// Dense shared-neighbor counts with u32 accumulation.
-fn count_snn_dense(reverse_neighbors: &[Vec<usize>], n_cells: usize) -> Vec<u32> {
-    if n_cells >= 1024 {
-        let counts: Vec<AtomicU32> = (0..n_cells * n_cells)
-            .map(|_| AtomicU32::new(0))
-            .collect();
-
-        reverse_neighbors.par_iter().for_each(|cells| {
-            for &i in cells {
-                let base = i * n_cells;
-                for &j in cells {
-                    counts[base + j].fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-
-        return counts
-            .into_iter()
-            .map(|v| v.into_inner())
-            .collect();
-    }
-
-    let mut counts = vec![0u32; n_cells * n_cells];
-    for cells in reverse_neighbors {
-        for &i in cells {
-            let base = i * n_cells;
-            for &j in cells {
-                counts[base + j] += 1;
-            }
-        }
-    }
-    counts
-}
-
-fn dense_counts_to_triplets(
-    counts: &[u32],
-    n_cells: usize,
-    k_f: f64,
-    prune: f64,
-) -> Vec<(usize, usize, f64)> {
-    let mut triplets = Vec::new();
-    for col in 0..n_cells {
-        for row in 0..n_cells {
-            let val = counts[row * n_cells + col];
-            if val > 0 {
-                if let Some(scaled) = scale_and_prune(val as f64, k_f, prune) {
-                    triplets.push((row, col, scaled));
-                }
-            }
-        }
-    }
-    triplets
-}
-
-fn dense_counts_to_r_dgcmatrix(
-    counts: &[u32],
-    n_cells: i32,
-    k_f: f64,
-    prune: f64,
-) -> extendr_api::Result<Robj> {
-    let n = n_cells as usize;
-    let dim = Integers::from_values(vec![n_cells, n_cells]);
-
-    let mut x_vec = Vec::new();
-    let mut i_vec = Vec::new();
-    let mut p_vec = vec![0i32; n + 1];
-
-    for col in 0..n {
-        p_vec[col] = i_vec.len() as i32;
-        for row in 0..n {
-            let val = counts[row * n + col];
-            if val > 0 {
-                if let Some(scaled) = scale_and_prune(val as f64, k_f, prune) {
-                    i_vec.push(row as i32);
-                    x_vec.push(scaled);
-                }
-            }
-        }
-    }
-    p_vec[n] = i_vec.len() as i32;
-
-    let mut x_out = Doubles::new(x_vec.len());
-    let mut i_out = Integers::new(i_vec.len());
-    let mut p_out = Integers::new(p_vec.len());
-
-    if !x_vec.is_empty() {
-        x_out
-            .as_robj_mut()
-            .as_real_slice_mut()
-            .expect("numeric x")
-            .copy_from_slice(&x_vec);
-        i_out
-            .as_robj_mut()
-            .as_integer_slice_mut()
-            .expect("integer i")
-            .copy_from_slice(&i_vec);
-    }
-    p_out
-        .as_robj_mut()
-        .as_integer_slice_mut()
-        .expect("integer p")
-        .copy_from_slice(&p_vec);
-
-    dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
-}
-
-fn triplets_to_csc(n_cells: i32, triplets: Vec<(usize, usize, f64)>) -> CscSlots {
-    let n = n_cells as usize;
-    let nnz = triplets.len();
-    let mut x = Vec::with_capacity(nnz);
-    let mut i = Vec::with_capacity(nnz);
-    let mut p = vec![0i32; n + 1];
-    let mut nz = 0usize;
-
-    for col in 0..n {
-        p[col] = nz as i32;
-        while nz < nnz && triplets[nz].1 == col {
-            let (row, _, val) = triplets[nz];
-            i.push(row as i32);
-            x.push(val);
-            nz += 1;
-        }
-    }
-    p[n] = nz as i32;
-
-    CscSlots {
-        x,
-        i,
-        p,
-        nrows: n_cells,
-        ncols: n_cells,
-    }
-}
-
 fn nn_ranked_data(nn_ranked: &RMatrix<f64>) -> &[f64] {
     nn_ranked
         .as_robj()
@@ -253,20 +102,58 @@ fn nn_ranked_data(nn_ranked: &RMatrix<f64>) -> &[f64] {
         .expect("numeric nn_ranked")
 }
 
-/// Core counting kernel: reverse-neighbor lists → sort-reduce → scaled CSC triplets.
-pub fn compute_snn_counting_triplets(
+/// Build neighbor matrix CSC via triplet construction, then SpGEMM.
+fn compute_snn_spgemm_triplets_from_data(
+    data: &[f64],
+    n_cells: usize,
+    k: usize,
+    prune: f64,
+) -> (i32, Vec<(usize, usize, f64)>) {
+    let k_f = k as f64;
+
+    let mut tri = TriMat::new((n_cells, n_cells));
+    for j in 0..k {
+        let base = j * n_cells;
+        for i in 0..n_cells {
+            tri.add_triplet(i, data[base + i] as usize - 1, 1.0);
+        }
+    }
+    let neighbor = tri.to_csc::<usize>();
+    let neighbor_t = neighbor.transpose_view().to_csc();
+    let snn: CsMat<f64> = &neighbor * &neighbor_t;
+
+    let mut triplets = Vec::new();
+    for (col, col_vec) in snn.outer_iterator().enumerate() {
+        for (row, &val) in col_vec.iter() {
+            if let Some(scaled) = scale_and_prune(val, k_f, prune) {
+                triplets.push((row, col, scaled));
+            }
+        }
+    }
+    triplets.sort_unstable_by_key(|&(r, c, _)| (c, r));
+    (n_cells as i32, triplets)
+}
+
+fn compute_snn_spgemm_triplets(
     nn_ranked: &RMatrix<f64>,
     prune: f64,
 ) -> (i32, Vec<(usize, usize, f64)>) {
     let n_cells = nn_ranked.nrows();
     let k = nn_ranked.ncols();
     let data = nn_ranked_data(nn_ranked);
-    let k_f = k as f64;
+    compute_snn_spgemm_triplets_from_data(data, n_cells, k, prune)
+}
 
-    let reverse = build_reverse_neighbors(data, n_cells, k);
-    let dense = count_snn_dense(&reverse, n_cells);
-    let triplets = dense_counts_to_triplets(&dense, n_cells, k_f, prune);
-    (n_cells as i32, triplets)
+fn triplets_to_csc(n_cells: i32, triplets: Vec<(usize, usize, f64)>) -> CscSlots {
+    csc_slots_from_triplets(n_cells, n_cells, triplets)
+}
+
+/// Core counting kernel: SpGEMM → scaled CSC triplets.
+pub fn compute_snn_counting_triplets(
+    nn_ranked: &RMatrix<f64>,
+    prune: f64,
+) -> (i32, Vec<(usize, usize, f64)>) {
+    compute_snn_spgemm_triplets(nn_ranked, prune)
 }
 
 /// Compute SNN and return a dgCMatrix with slots written directly in R memory.
@@ -276,23 +163,27 @@ pub fn compute_snn_to_r_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_ap
         return compute_snn_eigen_to_r(nn_ranked, prune);
     }
 
-    let n_cells = nn_ranked.nrows();
-    let k = nn_ranked.ncols();
-    let data = nn_ranked_data(nn_ranked);
-    let k_f = k as f64;
-
-    let reverse = build_reverse_neighbors(data, n_cells, k);
-    let dense = count_snn_dense(&reverse, n_cells);
-    dense_counts_to_r_dgcmatrix(&dense, n_cells as i32, k_f, prune)
+    let (n_cells, triplets) = compute_snn_spgemm_triplets(nn_ranked, prune);
+    let csc = csc_slots_from_triplets(n_cells, n_cells, triplets);
+    let dim = Integers::from_values(vec![n_cells, n_cells]);
+    dgcmatrix_from_buffers(
+        Doubles::from_values(csc.x),
+        Integers::from_values(csc.i),
+        Integers::from_values(csc.p),
+        dim,
+    )
 }
 
 /// Compute SNN = (neighbor_matrix * neighbor_matrix^T), scaled and pruned.
 pub fn compute_snn_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> CscSlots {
-    let (n_cells, triplets) = compute_snn_counting_triplets(nn_ranked, prune);
+    let (n_cells, triplets) = compute_snn_spgemm_triplets(nn_ranked, prune);
     triplets_to_csc(n_cells, triplets)
 }
 
 pub fn write_edge_file_impl(snn: &CscSlots, filename: &str, _display_progress: bool) {
+    use std::fs::File;
+    use std::io::Write;
+
     let mut file = File::create(filename).expect("failed to create edge file");
     let ncols = snn.ncols as usize;
     for col in 0..ncols {
@@ -324,6 +215,9 @@ pub fn snn_smallest_nonzero_dist_impl(
     n: i32,
     nearest_dist: &[f64],
 ) -> Doubles {
+    use crate::sparse::ndarray_from_rmatrix;
+    use crate::utils::{row_euclidean_dist, sort_indexes};
+
     let mat_arr = ndarray_from_rmatrix(mat);
     let ncols = snn.ncols as usize;
     let mut results = Vec::with_capacity(ncols);
@@ -390,36 +284,30 @@ mod tests {
     }
 
     #[test]
-    fn counting_kernel_matches_sprs_reference() {
-        // Small fixture: 4 cells, k=2 neighbors (1-based indices in columns).
+    fn spgemm_kernel_matches_sprs_reference() {
         let n = 4usize;
         let k = 2usize;
         let mut data = vec![0.0; n * k];
-        // col 0: cell0->1, cell1->2, cell2->1, cell3->3
         data[0] = 1.0;
         data[1] = 2.0;
         data[2] = 1.0;
         data[3] = 3.0;
-        // col 1: cell0->2, cell1->1, cell2->3, cell3->4
         data[4] = 2.0;
         data[5] = 1.0;
         data[6] = 3.0;
         data[7] = 4.0;
 
-        let reverse = build_reverse_neighbors(&data, n, k);
-        let dense = count_snn_dense(&reverse, n);
-        let triplets = dense_counts_to_triplets(&dense, n, k as f64, 0.0);
+        let (_, triplets) = compute_snn_spgemm_triplets_from_data(&data, n, k, 0.0);
         let csc = triplets_to_csc(n as i32, triplets);
 
-        // Reference via sprs SpGEMM on the same neighbor matrix.
-        let mut tri = sprs::TriMat::new((n, n));
+        let mut tri = TriMat::new((n, n));
         for j in 0..k {
             let base = j * n;
             for i in 0..n {
                 tri.add_triplet(i, data[base + i] as usize - 1, 1.0);
             }
         }
-        let neighbor = tri.to_csc();
+        let neighbor = tri.to_csc::<usize>();
         let neighbor_t = neighbor.transpose_view().to_csc();
         let snn = &neighbor * &neighbor_t;
 
@@ -432,7 +320,7 @@ mod tests {
                 }
             }
         }
-        ref_triplets.sort_by_key(|&(r, c, _)| (c, r));
+        ref_triplets.sort_unstable_by_key(|&(r, c, _)| (c, r));
         let ref_csc = csc_slots_from_triplets(n as i32, n as i32, ref_triplets);
 
         let dense_got = csc_to_dense(&csc);

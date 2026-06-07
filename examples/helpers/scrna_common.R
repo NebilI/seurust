@@ -183,8 +183,20 @@ digest_vector <- function(x) {
   digest::digest(x, algo = "xxhash64")
 }
 
+# Native kernel steps (Rust/C++ backends only; excludes load, PCA, UMAP).
+native_kernel_steps <- c(
+  "02_qc_native_stats",
+  "03_log_normalize",
+  "04_variable_features",
+  "05_scale_hvgs",
+  "07_snn_graph",
+  "08_clustering",
+  "10_batch_integration"
+)
+
 print_timing_table <- function(timings, backend_name) {
   total <- sum(unlist(timings))
+  native_total <- sum(unlist(timings[native_kernel_steps]))
   cat("\nTiming summary (", backend_name, ")\n", sep = "")
   cat(sprintf("%-28s %8s\n", "Step", "Seconds"))
   cat(strrep("-", 40), "\n", sep = "")
@@ -192,8 +204,9 @@ print_timing_table <- function(timings, backend_name) {
     cat(sprintf("%-28s %8.3f\n", nm, timings[[nm]]))
   }
   cat(strrep("-", 40), "\n", sep = "")
-  cat(sprintf("%-28s %8.3f\n", "Total (native steps)", total))
-  invisible(total)
+  cat(sprintf("%-28s %8.3f\n", "Total (all steps)", total))
+  cat(sprintf("%-28s %8.3f\n", "Total (native kernels)", native_total))
+  invisible(list(all = total, native = native_total))
 }
 
 run_scrna_workflow <- function(backend, output_file = NULL) {
@@ -350,7 +363,7 @@ run_scrna_workflow <- function(backend, output_file = NULL) {
 
   # --- UMAP for visualization (shared Seurat path) ----------------------------
   step <- timed_step("09_umap", {
-    seu <- RunUMAP(seu, dims = dims_use, verbose = FALSE)
+    seu <- RunUMAP(seu, dims = dims_use, verbose = FALSE, seed.use = 42L)
     seu
   }, timings)
   seu <- step$result
@@ -434,7 +447,8 @@ run_scrna_workflow <- function(backend, output_file = NULL) {
     umap_digest = digest_matrix(Embeddings(seu, "umap")),
     integration = integration_summary,
     timings = timings,
-    total_native_seconds = sum(unlist(timings))
+    total_native_seconds = sum(unlist(timings)),
+    total_kernel_seconds = sum(unlist(timings[native_kernel_steps]))
   )
 
   print_timing_table(timings, backend$name)

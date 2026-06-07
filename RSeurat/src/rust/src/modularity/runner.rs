@@ -4,6 +4,34 @@ use super::network::{network_from_snn_csc, read_input_file, Network};
 use super::vos::VOSClusteringTechnique;
 use std::sync::Arc;
 
+fn run_single_start(
+    network: &Arc<Network>,
+    resolution2: f64,
+    algorithm: i32,
+    n_iterations: i32,
+    random: &mut JavaRandom,
+) -> (Clustering, f64) {
+    let mut vos = VOSClusteringTechnique::new(Arc::clone(network), resolution2);
+    let mut j = 0;
+    let mut update = true;
+    let mut modularity = 0.0;
+
+    while j < n_iterations && update {
+        match algorithm {
+            1 => update = vos.run_louvain_algorithm(random),
+            2 => update = vos.run_louvain_algorithm_with_multilevel_refinement(random),
+            3 => {
+                vos.run_smart_local_moving_algorithm(random);
+            }
+            _ => {}
+        }
+        j += 1;
+        modularity = vos.calc_quality_function();
+    }
+
+    (vos.clustering, modularity)
+}
+
 /// Run modularity clustering; mirrors the former `modularity_bridge.cpp` logic.
 ///
 /// Random starts run sequentially with a shared `JavaRandom` for exact C++ parity.
@@ -58,26 +86,16 @@ pub fn run_modularity_clustering(
     let mut random = JavaRandom::new(random_seed as u64);
 
     for _start in 0..n_random_starts {
-        let mut vos = VOSClusteringTechnique::new(Arc::clone(&network), resolution2);
-        let mut j = 0;
-        let mut update = true;
-        let mut modularity = 0.0;
-
-        while j < n_iterations && update {
-            match algorithm {
-                1 => update = vos.run_louvain_algorithm(&mut random),
-                2 => update = vos.run_louvain_algorithm_with_multilevel_refinement(&mut random),
-                3 => {
-                    vos.run_smart_local_moving_algorithm(&mut random);
-                }
-                _ => {}
-            }
-            j += 1;
-            modularity = vos.calc_quality_function();
-        }
+        let (clustering, modularity) = run_single_start(
+            &network,
+            resolution2,
+            algorithm,
+            n_iterations,
+            &mut random,
+        );
 
         if modularity > max_modularity {
-            best_clustering = Some(vos.clustering);
+            best_clustering = Some(clustering);
             max_modularity = modularity;
         }
     }

@@ -153,6 +153,61 @@ impl<'a> CscView<'a> {
     }
 }
 
+/// Row-oriented index into CSC storage (shares `x` with the source view).
+pub struct RowIndex {
+    pub row_ptr: Vec<usize>,
+    pub row_cols: Vec<usize>,
+    pub row_x_idx: Vec<usize>,
+}
+
+impl RowIndex {
+    pub fn from_csc_view(view: &CscView<'_>) -> Self {
+        let nrows = view.nrows as usize;
+        let ncols = view.ncols as usize;
+        let mut row_counts = vec![0usize; nrows];
+        for col in 0..ncols {
+            for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                row_counts[view.i[idx] as usize] += 1;
+            }
+        }
+
+        let mut row_ptr = vec![0usize; nrows + 1];
+        for row in 0..nrows {
+            row_ptr[row + 1] = row_ptr[row] + row_counts[row];
+        }
+
+        let nnz_rows = row_ptr[nrows];
+        let mut row_cols = vec![0usize; nnz_rows];
+        let mut row_x_idx = vec![0usize; nnz_rows];
+        let mut cursor = row_ptr.clone();
+
+        for col in 0..ncols {
+            for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                let row = view.i[idx] as usize;
+                let pos = cursor[row];
+                row_cols[pos] = col;
+                row_x_idx[pos] = idx;
+                cursor[row] += 1;
+            }
+        }
+
+        Self {
+            row_ptr,
+            row_cols,
+            row_x_idx,
+        }
+    }
+
+    pub fn row_range(&self, row: usize) -> std::ops::Range<usize> {
+        self.row_ptr[row]..self.row_ptr[row + 1]
+    }
+}
+
+pub fn rmatrix_from_column_major(data: &[f64], nrows: usize, ncols: usize) -> RMatrix<f64> {
+    debug_assert_eq!(data.len(), nrows * ncols);
+    RMatrix::new_matrix(nrows, ncols, |r, c| data[r + c * nrows])
+}
+
 /// Column-compressed sparse matrix slots (dgCMatrix).
 #[derive(Clone, Debug)]
 pub struct CscSlots {

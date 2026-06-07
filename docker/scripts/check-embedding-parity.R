@@ -1,0 +1,20 @@
+#!/usr/bin/env Rscript
+system2("Rscript", "docker/scripts/bootstrap-dev-env.R", stdout = "", stderr = "")
+source("examples/helpers/scrna_common.R", local = TRUE)
+bootstrap_example_env()
+cpp <- run_scrna_workflow(make_backend("cpp"), output_file = NULL)
+rust <- run_scrna_workflow(make_backend("rust"), output_file = NULL)
+cpp_umap <- Embeddings(cpp$seurat, "umap")
+rust_umap <- Embeddings(rust$seurat, "umap")
+cpp_pca <- Embeddings(cpp$seurat, "pca")[, 1:30]
+rust_pca <- Embeddings(rust$seurat, "pca")[, 1:30]
+cpp_norm <- GetAssayData(cpp$seurat, layer = "data")
+rust_norm <- GetAssayData(rust$seurat, layer = "data")
+cpp_scale <- GetAssayData(cpp$seurat, layer = "scale.data")
+rust_scale <- GetAssayData(rust$seurat, layer = "scale.data")
+cat("norm max diff:", max(abs(cpp_norm - rust_norm)), "\n")
+cat("scale max diff:", max(abs(cpp_scale - rust_scale)), "\n")
+cat("pca max diff:", max(abs(cpp_pca - rust_pca)), "\n")
+cat("umap max diff:", max(abs(cpp_umap - rust_umap)), "\n")
+cat("pca all.equal:", isTRUE(all.equal(cpp_pca, rust_pca)), "\n")
+cat("umap all.equal:", isTRUE(all.equal(cpp_umap, rust_umap)), "\n")
