@@ -110,8 +110,8 @@ fn fast_exp_mean(
     ncols: i32,
     display_progress: bool,
 ) -> Doubles {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
-    fast_exp_mean_impl(mat, display_progress)
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    fast_exp_mean_impl(view, display_progress)
 }
 
 #[extendr]
@@ -123,8 +123,8 @@ fn sparse_row_var(
     ncols: i32,
     display_progress: bool,
 ) -> Doubles {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
-    sparse_row_var_impl(mat, display_progress)
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    sparse_row_var_impl(view, display_progress)
 }
 
 #[extendr]
@@ -137,9 +137,9 @@ fn sparse_row_var2(
     mu: Doubles,
     display_progress: bool,
 ) -> Doubles {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
     let mu_vec = vec_from_doubles(&mu);
-    sparse_row_var2_impl(mat, &mu_vec, display_progress)
+    sparse_row_var2_impl(view, &mu_vec, display_progress)
 }
 
 #[extendr]
@@ -154,10 +154,10 @@ fn sparse_row_var_std(
     vmax: f64,
     display_progress: bool,
 ) -> Doubles {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
     let mu_vec = vec_from_doubles(&mu);
     let sd_vec = vec_from_doubles(&sd);
-    sparse_row_var_std_impl(mat, &mu_vec, &sd_vec, vmax, display_progress)
+    sparse_row_var_std_impl(view, &mu_vec, &sd_vec, vmax, display_progress)
 }
 
 #[extendr]
@@ -169,8 +169,8 @@ fn fast_log_vmr(
     ncols: i32,
     display_progress: bool,
 ) -> Doubles {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
-    fast_log_vmr_impl(mat, display_progress)
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    fast_log_vmr_impl(view, display_progress)
 }
 
 #[extendr]
@@ -185,8 +185,8 @@ fn fast_sparse_row_scale(
     scale_max: f64,
     display_progress: bool,
 ) -> RMatrix<f64> {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
-    fast_sparse_row_scale_impl(mat, scale, center, scale_max, display_progress)
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    fast_sparse_row_scale_impl(view, scale, center, scale_max, display_progress)
 }
 
 #[extendr]
@@ -203,11 +203,11 @@ fn fast_sparse_row_scale_with_known_stats(
     scale_max: f64,
     display_progress: bool,
 ) -> RMatrix<f64> {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
     let mu_vec = vec_from_doubles(&mu);
     let sigma_vec = vec_from_doubles(&sigma);
     fast_sparse_row_scale_with_known_stats_impl(
-        mat,
+        view,
         &mu_vec,
         &sigma_vec,
         scale,

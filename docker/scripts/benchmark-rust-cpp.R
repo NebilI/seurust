@@ -74,6 +74,47 @@ run_bench(
   rust_fn = function() RSeurat::LogNorm(mat, 1e4, display_progress = FALSE)
 )
 
+cat("\n==> FastSparseRowScale\n")
+scale_mat <- as(
+  Matrix::rsparsematrix(nrow = 2000, ncol = 2500, density = 0.12, rand.x = stats::runif),
+  "dgCMatrix"
+)
+run_bench(
+  "FastSparseRowScale (2000x2500 sparse)",
+  cpp_fn = function() {
+    Seurat:::FastSparseRowScale(
+      scale_mat, scale = TRUE, center = TRUE, scale_max = 10, display_progress = FALSE
+    )
+  },
+  rust_fn = function() {
+    RSeurat::FastSparseRowScale(
+      scale_mat, scale = TRUE, center = TRUE, scale_max = 10, display_progress = FALSE
+    )
+  },
+  n_warmup = 1L,
+  n_reps = 10L,
+  tolerance = 0.95
+)
+
+cat("\n==> SparseRowVar2\n")
+var_mat <- as(
+  Matrix::rsparsematrix(nrow = 2000, ncol = 2500, density = 0.12, rand.x = stats::runif),
+  "dgCMatrix"
+)
+mu <- Matrix::rowMeans(var_mat)
+run_bench(
+  "SparseRowVar2 (2000x2500 sparse)",
+  cpp_fn = function() {
+    Seurat:::SparseRowVar2(var_mat, mu = mu, display_progress = FALSE)
+  },
+  rust_fn = function() {
+    RSeurat::SparseRowVar2(var_mat, mu = mu, display_progress = FALSE)
+  },
+  n_warmup = 1L,
+  n_reps = 10L,
+  tolerance = 0.95
+)
+
 cat("\n==> ComputeSNN\n")
 run_compute_snn_bench(500L, n_warmup = 2L, n_reps = 20L, enforce_faster = FALSE)
 run_compute_snn_bench(2000L, n_warmup = 1L, n_reps = 10L, enforce_faster = TRUE, tolerance = 0.95)

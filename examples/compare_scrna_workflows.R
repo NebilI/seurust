@@ -78,10 +78,19 @@ total_cpp <- cpp$total_native_seconds
 total_rust <- rust$total_native_seconds
 cat(sprintf(
   "%-28s %10.3f %10.3f %10.2fx\n",
-  "Total",
+  "Total (all steps)",
   total_cpp,
   total_rust,
   total_rust / total_cpp
+))
+kernel_cpp <- cpp$total_kernel_seconds
+kernel_rust <- rust$total_kernel_seconds
+cat(sprintf(
+  "%-28s %10.3f %10.3f %10.2fx\n",
+  "Total (native kernels)",
+  kernel_cpp,
+  kernel_rust,
+  kernel_rust / kernel_cpp
 ))
 
 if (!all_ok) {

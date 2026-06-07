@@ -1,7 +1,9 @@
-use crate::sparse::{csc_from_triplets, rmatrix_from_ndarray, CscSlots, CscView, CsrSlots};
+use crate::sparse::{
+    csc_from_triplets, rmatrix_from_column_major, CscSlots, CscView, CsrSlots, RowIndex,
+};
 use extendr_api::prelude::*;
 use extendr_ffi::Rf_runif;
-use ndarray::Array2;
+use rayon::prelude::*;
 use std::collections::HashMap;
 
 fn log1p(x: f64) -> f64 {
@@ -152,60 +154,87 @@ pub fn row_merge_matrices_impl(
     csc_from_triplets(num_rows, num_col1 + num_col2, &triplets)
 }
 
+fn scale_clip(value: f64, scale_max: f64) -> f64 {
+    if value > scale_max {
+        scale_max
+    } else {
+        value
+    }
+}
+
+fn gene_mean_sdev(
+    view: &CscView<'_>,
+    row_index: &RowIndex,
+    gene: usize,
+    n_cells: usize,
+    scale: bool,
+    center: bool,
+) -> (f64, f64) {
+    let range = row_index.row_range(gene);
+    let col_mean: f64 = (range.start..range.end)
+        .map(|pos| view.x[row_index.row_x_idx[pos]])
+        .sum::<f64>()
+        / n_cells as f64;
+
+    let mut col_sdev = 1.0;
+    if scale {
+        let nn_zero = range.len();
+        let mut var_sum = 0.0;
+        if center {
+            for pos in range.clone() {
+                let val = view.x[row_index.row_x_idx[pos]];
+                var_sum += (val - col_mean).powi(2);
+            }
+            var_sum += col_mean.powi(2) * (n_cells - nn_zero) as f64;
+        } else {
+            var_sum = (range.start..range.end)
+                .map(|pos| view.x[row_index.row_x_idx[pos]].powi(2))
+                .sum();
+        }
+        col_sdev = (var_sum / (n_cells - 1) as f64).sqrt();
+    }
+
+    let mean = if center { col_mean } else { 0.0 };
+    (mean, col_sdev)
+}
+
 pub fn fast_sparse_row_scale_impl(
-    mat: CscSlots,
+    view: CscView<'_>,
     scale: bool,
     center: bool,
     scale_max: f64,
     _display_progress: bool,
 ) -> RMatrix<f64> {
-    let n_genes = mat.nrows as usize;
-    let n_cells = mat.ncols as usize;
-    let transposed = mat.to_cs_mat().transpose_view().to_csc();
-    let mut scaled = Array2::zeros((n_genes, n_cells));
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let row_index = RowIndex::from_csc_view(&view);
+    let mut data = vec![0.0; n_genes * n_cells];
+    let out_addr = data.as_mut_ptr() as usize;
 
-    for (gene_idx, col_vec) in transposed.outer_iterator().enumerate() {
-        let col_mean: f64 = col_vec.data().iter().sum::<f64>() / n_cells as f64;
-        let mut col_sdev = 1.0;
-
-        if scale {
-            let mut nn_zero = 0usize;
-            let mut var_sum = 0.0;
-            if center {
-                for &val in col_vec.data() {
-                    nn_zero += 1;
-                    var_sum += (val - col_mean).powi(2);
-                }
-                var_sum += col_mean.powi(2) * (n_cells - nn_zero) as f64;
-            } else {
-                var_sum = col_vec.data().iter().map(|v| v.powi(2)).sum();
+    (0..n_genes).into_par_iter().for_each(|gene| {
+        let (mean, col_sdev) =
+            gene_mean_sdev(&view, &row_index, gene, n_cells, scale, center);
+        let inv_sdev = 1.0 / col_sdev;
+        let out_ptr = out_addr as *mut f64;
+        unsafe {
+            for cell in 0..n_cells {
+                let value = scale_clip((0.0 - mean) * inv_sdev, scale_max);
+                *out_ptr.add(gene + cell * n_genes) = value;
             }
-            col_sdev = (var_sum / (n_cells - 1) as f64).sqrt();
-        }
-
-        let mean = if center { col_mean } else { 0.0 };
-
-        for cell in 0..n_cells {
-            let mut value = (0.0 - mean) / col_sdev;
-            if value > scale_max {
-                value = scale_max;
+            for pos in row_index.row_range(gene) {
+                let cell = row_index.row_cols[pos];
+                let val = view.x[row_index.row_x_idx[pos]];
+                let value = scale_clip((val - mean) * inv_sdev, scale_max);
+                *out_ptr.add(gene + cell * n_genes) = value;
             }
-            scaled[[gene_idx, cell]] = value;
         }
-        for (cell, &val) in col_vec.iter() {
-            let mut value = (val - mean) / col_sdev;
-            if value > scale_max {
-                value = scale_max;
-            }
-            scaled[[gene_idx, cell]] = value;
-        }
-    }
+    });
 
-    rmatrix_from_ndarray(scaled.view())
+    rmatrix_from_column_major(&data, n_genes, n_cells)
 }
 
 pub fn fast_sparse_row_scale_with_known_stats_impl(
-    mat: CscSlots,
+    view: CscView<'_>,
     mu: &[f64],
     sigma: &[f64],
     scale: bool,
@@ -213,140 +242,158 @@ pub fn fast_sparse_row_scale_with_known_stats_impl(
     scale_max: f64,
     _display_progress: bool,
 ) -> RMatrix<f64> {
-    let n_genes = mat.nrows as usize;
-    let n_cells = mat.ncols as usize;
-    let transposed = mat.to_cs_mat().transpose_view().to_csc();
-    let mut scaled = Array2::zeros((n_genes, n_cells));
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let row_index = RowIndex::from_csc_view(&view);
+    let mut data = vec![0.0; n_genes * n_cells];
+    let out_addr = data.as_mut_ptr() as usize;
 
-    for (gene_idx, col_vec) in transposed.outer_iterator().enumerate() {
-        let col_mean = if center { mu[gene_idx] } else { 0.0 };
-        let col_sdev = if scale { sigma[gene_idx] } else { 1.0 };
-
-        for cell in 0..n_cells {
-            let mut value = (0.0 - col_mean) / col_sdev;
-            if value > scale_max {
-                value = scale_max;
+    (0..n_genes).into_par_iter().for_each(|gene| {
+        let col_mean = if center { mu[gene] } else { 0.0 };
+        let col_sdev = if scale { sigma[gene] } else { 1.0 };
+        let inv_sdev = 1.0 / col_sdev;
+        let out_ptr = out_addr as *mut f64;
+        unsafe {
+            for cell in 0..n_cells {
+                let value = scale_clip((0.0 - col_mean) * inv_sdev, scale_max);
+                *out_ptr.add(gene + cell * n_genes) = value;
             }
-            scaled[[gene_idx, cell]] = value;
-        }
-        for (cell, &val) in col_vec.iter() {
-            let mut value = (val - col_mean) / col_sdev;
-            if value > scale_max {
-                value = scale_max;
+            for pos in row_index.row_range(gene) {
+                let cell = row_index.row_cols[pos];
+                let val = view.x[row_index.row_x_idx[pos]];
+                let value = scale_clip((val - col_mean) * inv_sdev, scale_max);
+                *out_ptr.add(gene + cell * n_genes) = value;
             }
-            scaled[[gene_idx, cell]] = value;
         }
-    }
+    });
 
-    rmatrix_from_ndarray(scaled.view())
+    rmatrix_from_column_major(&data, n_genes, n_cells)
 }
 
-pub fn fast_exp_mean_impl(mat: CscSlots, _display_progress: bool) -> Doubles {
-    let nrows = mat.nrows as usize;
-    let ncols_f = mat.ncols as f64;
-    let cs = mat.to_cs_mat();
-    let transposed = cs.transpose_view();
-    let mut rowmeans = Vec::with_capacity(nrows);
+pub fn fast_exp_mean_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+    let nrows = view.nrows as usize;
+    let ncols_f = view.ncols as f64;
+    let row_index = RowIndex::from_csc_view(&view);
 
-    for row in transposed.outer_iterator() {
-        let rm: f64 = row.data().iter().map(|v| expm1(*v)).sum::<f64>() / ncols_f;
-        rowmeans.push(log1p(rm));
-    }
+    let rowmeans: Vec<f64> = (0..nrows)
+        .map(|row| {
+            let sum: f64 = row_index
+                .row_range(row)
+                .map(|pos| expm1(view.x[row_index.row_x_idx[pos]]))
+                .sum();
+            log1p(sum / ncols_f)
+        })
+        .collect();
 
     Doubles::from_values(rowmeans)
 }
 
-pub fn sparse_row_var2_impl(mat: CscSlots, mu: &[f64], _display_progress: bool) -> Doubles {
-    let n_genes = mat.nrows as usize;
-    let n_cells = mat.ncols as usize;
-    let csr = mat.to_cs_mat().to_csr();
-    let mut all_vars = Vec::with_capacity(n_genes);
+pub fn sparse_row_var2_impl(view: CscView<'_>, mu: &[f64], _display_progress: bool) -> Doubles {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let row_index = RowIndex::from_csc_view(&view);
 
-    for (gene_idx, row) in csr.outer_iterator().enumerate() {
-        let mut col_sum = 0.0;
-        let mut n_zero = n_cells;
-        for &val in row.data() {
-            n_zero -= 1;
-            col_sum += (val - mu[gene_idx]).powi(2);
-        }
-        col_sum += mu[gene_idx].powi(2) * n_zero as f64;
-        all_vars.push(col_sum / (n_cells as f64 - 1.0));
-    }
+    let all_vars: Vec<f64> = (0..n_genes)
+        .map(|gene_idx| {
+            let range = row_index.row_range(gene_idx);
+            let n_zero = n_cells - range.len();
+            let mut col_sum = 0.0;
+            for pos in range {
+                let val = view.x[row_index.row_x_idx[pos]];
+                col_sum += (val - mu[gene_idx]).powi(2);
+            }
+            col_sum += mu[gene_idx].powi(2) * n_zero as f64;
+            col_sum / (n_cells as f64 - 1.0)
+        })
+        .collect();
 
     Doubles::from_values(all_vars)
 }
 
 pub fn sparse_row_var_std_impl(
-    mat: CscSlots,
+    view: CscView<'_>,
     mu: &[f64],
     sd: &[f64],
     vmax: f64,
     _display_progress: bool,
 ) -> Doubles {
-    let n_genes = mat.nrows as usize;
-    let n_cells = mat.ncols as usize;
-    let csr = mat.to_cs_mat().to_csr();
-    let mut all_vars = vec![0.0; n_genes];
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let row_index = RowIndex::from_csc_view(&view);
 
-    for (gene_idx, row) in csr.outer_iterator().enumerate() {
-        if sd[gene_idx] == 0.0 {
-            continue;
-        }
-        let mut col_sum = 0.0;
-        let mut n_zero = n_cells;
-        for &val in row.data() {
-            n_zero -= 1;
-            let standardized = ((val - mu[gene_idx]) / sd[gene_idx]).min(vmax);
-            col_sum += standardized.powi(2);
-        }
-        col_sum += ((0.0 - mu[gene_idx]) / sd[gene_idx]).powi(2) * n_zero as f64;
-        all_vars[gene_idx] = col_sum / (n_cells as f64 - 1.0);
-    }
+    let all_vars: Vec<f64> = (0..n_genes)
+        .map(|gene_idx| {
+            if sd[gene_idx] == 0.0 {
+                return 0.0;
+            }
+            let range = row_index.row_range(gene_idx);
+            let n_zero = n_cells - range.len();
+            let mut col_sum = 0.0;
+            for pos in range {
+                let val = view.x[row_index.row_x_idx[pos]];
+                let standardized = ((val - mu[gene_idx]) / sd[gene_idx]).min(vmax);
+                col_sum += standardized.powi(2);
+            }
+            col_sum += ((0.0 - mu[gene_idx]) / sd[gene_idx]).powi(2) * n_zero as f64;
+            col_sum / (n_cells as f64 - 1.0)
+        })
+        .collect();
 
     Doubles::from_values(all_vars)
 }
 
-pub fn fast_log_vmr_impl(mat: CscSlots, _display_progress: bool) -> Doubles {
-    let nrows = mat.nrows as usize;
-    let ncols = mat.ncols as usize;
+pub fn fast_log_vmr_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+    let nrows = view.nrows as usize;
+    let ncols = view.ncols as usize;
     let ncols_f = ncols as f64;
-    let cs = mat.to_cs_mat();
-    let transposed = cs.transpose_view();
-    let mut rowdisp = Vec::with_capacity(nrows);
+    let row_index = RowIndex::from_csc_view(&view);
 
-    for row in transposed.outer_iterator() {
-        let rm: f64 = row.data().iter().map(|v| expm1(*v)).sum::<f64>() / ncols_f;
-        let mut v = 0.0;
-        let mut nn_zero = 0usize;
-        for &val in row.data() {
-            v += (expm1(val) - rm).powi(2);
-            nn_zero += 1;
-        }
-        v = (v + (ncols - nn_zero) as f64 * rm.powi(2)) / (ncols - 1) as f64;
-        rowdisp.push((v / rm).ln());
-    }
+    let rowdisp: Vec<f64> = (0..nrows)
+        .map(|row| {
+            let range = row_index.row_range(row);
+            let rm: f64 = range
+                .clone()
+                .map(|pos| expm1(view.x[row_index.row_x_idx[pos]]))
+                .sum::<f64>()
+                / ncols_f;
+            let mut v = 0.0;
+            let nn_zero = range.len();
+            for pos in range {
+                let val = view.x[row_index.row_x_idx[pos]];
+                v += (expm1(val) - rm).powi(2);
+            }
+            v = (v + (ncols - nn_zero) as f64 * rm.powi(2)) / (ncols - 1) as f64;
+            (v / rm).ln()
+        })
+        .collect();
 
     Doubles::from_values(rowdisp)
 }
 
-pub fn sparse_row_var_impl(mat: CscSlots, _display_progress: bool) -> Doubles {
-    let n_genes = mat.nrows as usize;
-    let n_cells = mat.ncols as usize;
+pub fn sparse_row_var_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
     let n_cells_f = n_cells as f64;
-    let csr = mat.to_cs_mat().to_csr();
-    let mut rowdisp = Vec::with_capacity(n_genes);
+    let row_index = RowIndex::from_csc_view(&view);
 
-    for row in csr.outer_iterator() {
-        let rm: f64 = row.data().iter().sum::<f64>() / n_cells_f;
-        let mut v = 0.0;
-        let mut nn_zero = 0usize;
-        for &val in row.data() {
-            v += (val - rm).powi(2);
-            nn_zero += 1;
-        }
-        v = (v + (n_cells - nn_zero) as f64 * rm.powi(2)) / (n_cells as f64 - 1.0);
-        rowdisp.push(v);
-    }
+    let rowdisp: Vec<f64> = (0..n_genes)
+        .map(|row| {
+            let range = row_index.row_range(row);
+            let rm: f64 = range
+                .clone()
+                .map(|pos| view.x[row_index.row_x_idx[pos]])
+                .sum::<f64>()
+                / n_cells_f;
+            let mut v = 0.0;
+            let nn_zero = range.len();
+            for pos in range {
+                let val = view.x[row_index.row_x_idx[pos]];
+                v += (val - rm).powi(2);
+            }
+            v = (v + (n_cells - nn_zero) as f64 * rm.powi(2)) / (n_cells as f64 - 1.0);
+            v
+        })
+        .collect();
 
     Doubles::from_values(rowdisp)
 }
@@ -385,6 +432,9 @@ pub fn replace_cols_impl(
 }
 
 pub fn graph_to_neighbor_helper_impl(mat: CscSlots) -> Robj {
+    use crate::sparse::rmatrix_from_ndarray;
+    use ndarray::Array2;
+
     let cs = mat.to_cs_mat();
     let transposed = cs.transpose_view();
     let n_neighbors = transposed
@@ -439,10 +489,29 @@ mod tests {
         }
     }
 
+    fn toy_view<'a>(mat: &'a CscSlots) -> CscView<'a> {
+        CscView {
+            x: &mat.x,
+            i: &mat.i,
+            p: &mat.p,
+            nrows: mat.nrows,
+            ncols: mat.ncols,
+        }
+    }
+
     #[test]
     fn log_norm_scales_columns() {
         let mut mat = toy_csc();
         log_norm_owned_impl(&mut mat, 10_000, false);
         assert!(mat.x.iter().all(|v| v.is_finite() && *v >= 0.0));
+    }
+
+    #[test]
+    fn fast_sparse_row_scale_computes_finite_stats() {
+        let mat = toy_csc();
+        let view = toy_view(&mat);
+        let row_index = RowIndex::from_csc_view(&view);
+        let (mean, sdev) = gene_mean_sdev(&view, &row_index, 0, 3, true, true);
+        assert!(mean.is_finite() && sdev.is_finite() && sdev > 0.0);
     }
 }
