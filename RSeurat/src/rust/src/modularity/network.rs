@@ -39,7 +39,7 @@ impl Network {
         let node_weight_vec = if let Some(nw) = node_weight {
             nw.to_vec()
         } else {
-            let mut net = Self {
+            let net = Self {
                 n_nodes,
                 n_edges,
                 node_weight: Vec::new(),
@@ -106,7 +106,7 @@ impl Network {
         let node_weight_vec = if let Some(nw) = node_weight {
             nw.to_vec()
         } else {
-            let mut net = Self {
+            let net = Self {
                 n_nodes,
                 n_edges,
                 node_weight: Vec::new(),

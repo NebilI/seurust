@@ -39,7 +39,6 @@ impl JavaRandom {
 }
 
 pub fn generate_random_permutation(n_elements: i32, random: &mut JavaRandom) -> Vec<i32> {
-    let n = n_elements as usize;
     let mut permutation: Vec<i32> = (0..n_elements).collect();
     for i in 0..n_elements {
         let j = random.next_int(n_elements);

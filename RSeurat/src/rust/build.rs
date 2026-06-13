@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 fn rcpp_eigen_include() -> Option<PathBuf> {
@@ -51,6 +51,8 @@ fn rcpp_eigen_include() -> Option<PathBuf> {
 }
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(snn_eigen)");
+
     if let Some(eigen_inc) = rcpp_eigen_include() {
         println!("cargo:rerun-if-env-changed=RCPP_EIGEN_INCLUDE");
         println!("cargo:rerun-if-env-changed=R_HOME");
@@ -59,15 +61,12 @@ fn main() {
         build
             .cpp(true)
             .flag_if_supported("-std=c++17")
+            .flag_if_supported("-Wno-ignored-attributes")
             .file("cpp/snn_bridge.cpp")
             .include(&eigen_inc);
         build.compile("snn_eigen_bridge");
-        println!(
-            "cargo:warning=ComputeSNN Eigen bridge enabled ({})",
-            eigen_inc.display()
-        );
     } else {
-        println!("cargo:warning=RcppEigen not found; ComputeSNN uses pure Rust counting");
+        // Pure Rust fallback when RcppEigen headers are unavailable.
     }
 
     if cfg!(target_os = "macos") {

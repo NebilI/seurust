@@ -1,3 +1,5 @@
+#![allow(dead_code, non_snake_case)]
+
 mod data_manipulation;
 mod fast_nn_dist;
 mod integration;
@@ -20,10 +22,10 @@ use fast_nn_dist::fast_dist_impl;
 use integration::{find_weights_impl, integrate_data_impl, score_helper_impl};
 use modularity::run_modularity_clustering_impl;
 use snn::{
-    compute_snn_impl, compute_snn_to_r_impl, direct_snn_to_file_impl,
-    snn_smallest_nonzero_dist_impl, write_edge_file_impl,
+    compute_snn_to_r_impl, direct_snn_to_file_impl, snn_smallest_nonzero_dist_impl,
+    write_edge_file_impl,
 };
-use sparse::{strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView, CsrSlots};
+use sparse::{strings_to_str_vec, vec_from_doubles, CscSlots, CscView, CsrSlots};
 use stats::{
     row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl,
 };
