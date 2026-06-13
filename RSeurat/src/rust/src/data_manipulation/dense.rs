@@ -54,7 +54,7 @@ pub fn fast_cov_mats_impl(mat1: &RMatrix<f64>, mat2: &RMatrix<f64>, center: bool
 pub fn fast_rbind_impl(mat1: &RMatrix<f64>, mat2: &RMatrix<f64>) -> RMatrix<f64> {
     let values1 = ndarray_from_rmatrix(mat1);
     let values2 = ndarray_from_rmatrix(mat2);
-    let mut combined = ndarray::concatenate![Axis(0), values1, values2];
+    let combined = ndarray::concatenate![Axis(0), values1, values2];
     rmatrix_from_ndarray(combined.view())
 }
 

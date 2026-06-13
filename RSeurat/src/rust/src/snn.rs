@@ -163,15 +163,18 @@ pub fn compute_snn_to_r_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_ap
         return compute_snn_eigen_to_r(nn_ranked, prune);
     }
 
-    let (n_cells, triplets) = compute_snn_spgemm_triplets(nn_ranked, prune);
-    let csc = csc_slots_from_triplets(n_cells, n_cells, triplets);
-    let dim = Integers::from_values(vec![n_cells, n_cells]);
-    dgcmatrix_from_buffers(
-        Doubles::from_values(csc.x),
-        Integers::from_values(csc.i),
-        Integers::from_values(csc.p),
-        dim,
-    )
+    #[cfg(not(snn_eigen))]
+    {
+        let (n_cells, triplets) = compute_snn_spgemm_triplets(nn_ranked, prune);
+        let csc = csc_slots_from_triplets(n_cells, n_cells, triplets);
+        let dim = Integers::from_values(vec![n_cells, n_cells]);
+        dgcmatrix_from_buffers(
+            Doubles::from_values(csc.x),
+            Integers::from_values(csc.i),
+            Integers::from_values(csc.p),
+            dim,
+        )
+    }
 }
 
 /// Compute SNN = (neighbor_matrix * neighbor_matrix^T), scaled and pruned.
