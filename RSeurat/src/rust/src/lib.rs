@@ -140,8 +140,8 @@ fn sparse_row_var2(
     display_progress: bool,
 ) -> Doubles {
     let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
-    let mu_vec = vec_from_doubles(&mu);
-    sparse_row_var2_impl(view, &mu_vec, display_progress)
+    let mu_slice = mu.as_robj().as_real_slice().expect("numeric mu");
+    sparse_row_var2_impl(view, mu_slice, display_progress)
 }
 
 #[extendr]
