@@ -9,8 +9,8 @@ Description: Rust/extendr reimplementation of performance-critical Seurat native
     routines. Install alongside Seurat to compare C++ and Rust backends during
     the migration.
 License: MIT + file LICENSE
-URL: https://github.com/satijalab/seurat
-BugReports: https://github.com/satijalab/seurat/issues
+URL: https://github.com/NebilI/Rust-Seurat, https://github.com/NebilI/Rust-Seurat/tree/main/RSeurat
+BugReports: https://github.com/NebilI/Rust-Seurat/issues
 Depends:
     R (>= 4.0.0)
 Imports:

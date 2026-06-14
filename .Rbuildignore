@@ -12,6 +12,9 @@ CODE_OF_CONDUCT.md
 ^index\.md$
 ^vignettes$
 ^LICENSE\.md$
+^RSeurat$
+^r-universe$
+^docker$
 Rplots.pdf
 revdep/
 Seurat.Rcheck/

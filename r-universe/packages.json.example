@@ -1,0 +1,8 @@
+[
+  {
+    "package": "RSeurat",
+    "url": "https://github.com/NebilI/Rust-Seurat",
+    "subdir": "RSeurat",
+    "branch": "main"
+  }
+]

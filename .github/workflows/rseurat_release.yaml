@@ -1,0 +1,64 @@
+name: RSeurat Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-source-tarball:
+    name: "build RSeurat source tarball"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+          extra-repositories: 'https://satijalab.r-universe.dev'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libclang-dev \
+            llvm-dev \
+            patchelf
+
+      - name: Install R build dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: RSeurat
+          dependencies: '"hard"'
+
+      - name: Configure RSeurat
+        working-directory: RSeurat
+        run: Rscript tools/config.R
+        env:
+          NOT_CRAN: true
+
+      - name: Build source tarball
+        run: R CMD build RSeurat
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RSeurat_*.tar.gz
+
+      - name: Upload workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RSeurat-source
+          path: RSeurat_*.tar.gz

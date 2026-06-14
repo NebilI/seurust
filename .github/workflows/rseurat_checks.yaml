@@ -1,0 +1,72 @@
+name: RSeurat Checks
+
+on:
+  pull_request:
+    paths:
+      - 'RSeurat/**'
+      - '.github/workflows/rseurat_checks.yaml'
+  push:
+    branches:
+      - main
+      - feature/rust-rewrite
+    paths:
+      - 'RSeurat/**'
+      - '.github/workflows/rseurat_checks.yaml'
+  workflow_dispatch:
+
+jobs:
+  check-rseurat:
+    name: "check RSeurat (ubuntu)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+          extra-repositories: 'https://satijalab.r-universe.dev'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libclang-dev \
+            llvm-dev \
+            patchelf
+
+      - name: Install R dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: RSeurat
+          extra-packages: any::rcmdcheck
+          dependencies: '"hard"'
+
+      - name: Configure RSeurat
+        working-directory: RSeurat
+        run: Rscript tools/config.R
+        env:
+          NOT_CRAN: true
+          SEURAT_KEEP_RUST_TARGET: true
+
+      - name: Build source tarball
+        run: R CMD build RSeurat
+
+      - name: Check source tarball
+        run: |
+          R CMD check RSeurat_*.tar.gz --as-cran --no-manual
+        env:
+          NOT_CRAN: true
+          _R_CHECK_CRAN_INCOMING_: false
+          _R_CHECK_PACKAGE_SIZES_: false
+
+      - name: Run RSeurat tests
+        run: |
+          R CMD INSTALL RSeurat_*.tar.gz
+          Rscript -e 'testthat::test_dir("RSeurat/tests/testthat")'

@@ -4,9 +4,56 @@ Rust/extendr backend for Seurat's performance-critical native routines. Install
 alongside [Seurat](../) to compare C++ and Rust implementations during the
 migration.
 
+## Requirements
+
+- R (>= 4.0.0)
+- Rust toolchain: [rustc](https://www.rust-lang.org/tools/install) and Cargo (>= 1.65)
+- On Windows: [Rtools](https://cran.r-project.org/bin/windows/Rtools/) plus Rust
+
 ## Install
 
-From the repo root (requires Rust toolchain):
+### From GitHub (recommended)
+
+```r
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+
+remotes::install_github("NebilI/Rust-Seurat", subdir = "RSeurat")
+```
+
+Install a specific branch or tag:
+
+```r
+remotes::install_github(
+  "NebilI/Rust-Seurat",
+  subdir = "RSeurat",
+  ref = "feature/rust-rewrite"
+)
+```
+
+### From a release tarball
+
+Download `RSeurat_*.tar.gz` from [GitHub Releases](https://github.com/NebilI/Rust-Seurat/releases), then:
+
+```r
+install.packages("path/to/RSeurat_0.1.0.tar.gz", repos = NULL, type = "source")
+```
+
+### From r-universe
+
+After registering this package in your [r-universe](https://r-universe.dev) registry (see [`r-universe/`](../r-universe/README.md)):
+
+```r
+install.packages(
+  "RSeurat",
+  repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+### Local development
+
+From the repo root:
 
 ```r
 devtools::install("RSeurat")
