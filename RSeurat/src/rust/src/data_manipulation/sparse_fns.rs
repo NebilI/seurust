@@ -291,19 +291,38 @@ pub fn fast_exp_mean_impl(view: CscView<'_>, _display_progress: bool) -> Doubles
 pub fn sparse_row_var2_impl(view: CscView<'_>, mu: &[f64], _display_progress: bool) -> Doubles {
     let n_genes = view.nrows as usize;
     let n_cells = view.ncols as usize;
-    let row_index = RowIndex::from_csc_view(&view);
+    let denom = (n_cells as f64) - 1.0;
+
+    let (sums, nnz_rows): (Vec<f64>, Vec<usize>) = (0..n_cells)
+        .into_par_iter()
+        .fold(
+            || (vec![0.0; n_genes], vec![0usize; n_genes]),
+            |mut acc, col| {
+                for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                    let row = view.i[idx] as usize;
+                    acc.1[row] += 1;
+                    let diff = view.x[idx] - mu[row];
+                    acc.0[row] += diff * diff;
+                }
+                acc
+            },
+        )
+        .reduce(
+            || (vec![0.0; n_genes], vec![0usize; n_genes]),
+            |mut left, right| {
+                for gene in 0..n_genes {
+                    left.0[gene] += right.0[gene];
+                    left.1[gene] += right.1[gene];
+                }
+                left
+            },
+        );
 
     let all_vars: Vec<f64> = (0..n_genes)
         .map(|gene_idx| {
-            let range = row_index.row_range(gene_idx);
-            let n_zero = n_cells - range.len();
-            let mut col_sum = 0.0;
-            for pos in range {
-                let val = view.x[row_index.row_x_idx[pos]];
-                col_sum += (val - mu[gene_idx]).powi(2);
-            }
-            col_sum += mu[gene_idx].powi(2) * n_zero as f64;
-            col_sum / (n_cells as f64 - 1.0)
+            let n_zero = n_cells - nnz_rows[gene_idx];
+            let mu_i = mu[gene_idx];
+            (sums[gene_idx] + mu_i * mu_i * n_zero as f64) / denom
         })
         .collect();
 

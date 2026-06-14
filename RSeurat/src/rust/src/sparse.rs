@@ -51,6 +51,56 @@ pub fn dgcmatrix_from_buffers(
     )
 }
 
+/// Write CSC slots from column-sorted, already-merged triplets.
+pub fn dgcmatrix_from_merged_triplets(
+    nrows: i32,
+    ncols: i32,
+    triplets: Vec<(usize, usize, f64)>,
+) -> extendr_api::Result<Robj> {
+    let ncols_usize = ncols as usize;
+    let dim = Integers::from_values(vec![nrows, ncols]);
+
+    if triplets.is_empty() {
+        let mut p = Integers::new(ncols_usize + 1);
+        p.as_robj_mut()
+            .as_integer_slice_mut()
+            .expect("p")
+            .fill(0);
+        return dgcmatrix_from_buffers(Doubles::new(0), Integers::new(0), p, dim);
+    }
+
+    let nnz = triplets.len();
+    let mut x_out = Doubles::new(nnz);
+    let mut i_out = Integers::new(nnz);
+    let mut p_out = Integers::new(ncols_usize + 1);
+
+    let x = x_out
+        .as_robj_mut()
+        .as_real_slice_mut()
+        .expect("numeric x");
+    let i = i_out
+        .as_robj_mut()
+        .as_integer_slice_mut()
+        .expect("integer i");
+    let p = p_out
+        .as_robj_mut()
+        .as_integer_slice_mut()
+        .expect("integer p");
+
+    let mut nz = 0usize;
+    for col in 0..ncols_usize {
+        p[col] = nz as i32;
+        while nz < nnz && triplets[nz].1 == col {
+            i[nz] = triplets[nz].0 as i32;
+            x[nz] = triplets[nz].2;
+            nz += 1;
+        }
+    }
+    p[ncols_usize] = nnz as i32;
+
+    dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
+}
+
 /// Sort/merge coordinate triplets and write CSC slots directly into R memory.
 pub fn dgcmatrix_from_triplets(
     nrows: i32,
@@ -109,7 +159,7 @@ pub fn dgcmatrix_from_triplets(
             nz += 1;
         }
     }
-    p[ncols_usize] = nnz as i32;
+    p[ncols_usize] = nz as i32;
 
     dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
 }
@@ -153,11 +203,54 @@ impl<'a> CscView<'a> {
     }
 }
 
-/// Row-oriented index into CSC storage (shares `x` with the source view).
+/// Row-oriented x-index into CSC storage (shares `x` with the source view).
 pub struct RowIndex {
     pub row_ptr: Vec<usize>,
     pub row_cols: Vec<usize>,
     pub row_x_idx: Vec<usize>,
+}
+
+/// Like `RowIndex` but omits column indices when only values are needed.
+pub struct RowValueIndex {
+    pub row_ptr: Vec<usize>,
+    pub row_x_idx: Vec<usize>,
+}
+
+impl RowValueIndex {
+    pub fn from_csc_view(view: &CscView<'_>) -> Self {
+        let nrows = view.nrows as usize;
+        let ncols = view.ncols as usize;
+        let mut row_counts = vec![0usize; nrows];
+        for col in 0..ncols {
+            for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                row_counts[view.i[idx] as usize] += 1;
+            }
+        }
+
+        let mut row_ptr = vec![0usize; nrows + 1];
+        for row in 0..nrows {
+            row_ptr[row + 1] = row_ptr[row] + row_counts[row];
+        }
+
+        let nnz_rows = row_ptr[nrows];
+        let mut row_x_idx = vec![0usize; nnz_rows];
+        let mut cursor = row_ptr.clone();
+
+        for col in 0..ncols {
+            for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                let row = view.i[idx] as usize;
+                let pos = cursor[row];
+                row_x_idx[pos] = idx;
+                cursor[row] += 1;
+            }
+        }
+
+        Self { row_ptr, row_x_idx }
+    }
+
+    pub fn row_range(&self, row: usize) -> std::ops::Range<usize> {
+        self.row_ptr[row]..self.row_ptr[row + 1]
+    }
 }
 
 impl RowIndex {
@@ -349,9 +442,28 @@ pub fn csc_from_triplets(
 pub fn csc_slots_from_triplets(
     nrows: i32,
     ncols: i32,
-    mut triplets: Vec<(usize, usize, f64)>,
+    triplets: Vec<(usize, usize, f64)>,
+) -> CscSlots {
+    csc_slots_from_triplets_inner(nrows, ncols, triplets, true)
+}
+
+/// Like `csc_slots_from_triplets` but skips sorting when triplets are already column-major.
+pub fn csc_slots_from_sorted_triplets(
+    nrows: i32,
+    ncols: i32,
+    triplets: Vec<(usize, usize, f64)>,
+) -> CscSlots {
+    csc_slots_from_triplets_inner(nrows, ncols, triplets, false)
+}
+
+fn csc_slots_from_triplets_inner(
+    nrows: i32,
+    ncols: i32,
+    triplets: Vec<(usize, usize, f64)>,
+    sort_input: bool,
 ) -> CscSlots {
     let ncols_usize = ncols as usize;
+    let mut triplets = triplets;
     if triplets.is_empty() {
         return CscSlots {
             x: Vec::new(),
@@ -362,7 +474,9 @@ pub fn csc_slots_from_triplets(
         };
     }
 
-    triplets.sort_unstable_by_key(|&(r, c, _)| (c, r));
+    if sort_input {
+        triplets.sort_unstable_by_key(|&(r, c, _)| (c, r));
+    }
 
     // Sum duplicate (row, col) entries — matches Eigen::setFromTriplets behavior.
     let mut merged: Vec<(usize, usize, f64)> = Vec::with_capacity(triplets.len());

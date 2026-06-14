@@ -50,6 +50,61 @@ fn rcpp_eigen_include() -> Option<PathBuf> {
     None
 }
 
+fn r_home() -> Option<String> {
+    std::env::var("R_HOME").ok().or_else(|| {
+        Command::new("R")
+            .arg("RHOME")
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            })
+    })
+}
+
+fn r_include() -> Option<PathBuf> {
+    if let Some(r_home) = r_home() {
+        let path = PathBuf::from(&r_home).join("include");
+        if path.join("R.h").exists() {
+            return Some(path);
+        }
+    }
+
+    for path in [
+        PathBuf::from("/usr/share/R/include"),
+        PathBuf::from("/usr/local/lib/R/include"),
+    ] {
+        if path.join("R.h").exists() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn rcpp_include() -> Option<PathBuf> {
+    let r_home = r_home()?;
+    let path = PathBuf::from(&r_home).join("library/Rcpp/include");
+    if path.join("Rcpp").exists() {
+        return Some(path);
+    }
+
+    for path in [
+        PathBuf::from("/usr/lib/R/site-library/Rcpp/include"),
+        PathBuf::from("/usr/local/lib/R/site-library/Rcpp/include"),
+    ] {
+        if path.join("Rcpp").exists() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(snn_eigen)");
 
@@ -61,9 +116,17 @@ fn main() {
         build
             .cpp(true)
             .flag_if_supported("-std=c++17")
+            .flag_if_supported("-O3")
             .flag_if_supported("-Wno-ignored-attributes")
+            .define("SNN_BRIDGE_RCPP", None)
             .file("cpp/snn_bridge.cpp")
             .include(&eigen_inc);
+        if let Some(r_inc) = r_include() {
+            build.include(r_inc);
+        }
+        if let Some(rcpp_inc) = rcpp_include() {
+            build.include(rcpp_inc);
+        }
         build.compile("snn_eigen_bridge");
     } else {
         // Pure Rust fallback when RcppEigen headers are unavailable.
