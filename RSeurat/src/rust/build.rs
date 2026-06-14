@@ -10,17 +10,13 @@ fn rcpp_eigen_include() -> Option<PathBuf> {
     }
 
     let r_home = std::env::var("R_HOME").ok().or_else(|| {
-        Command::new("R")
-            .arg("RHOME")
-            .output()
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                } else {
-                    None
-                }
-            })
+        Command::new("R").arg("RHOME").output().ok().and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
     })?;
 
     let candidates = [
@@ -52,17 +48,13 @@ fn rcpp_eigen_include() -> Option<PathBuf> {
 
 fn r_home() -> Option<String> {
     std::env::var("R_HOME").ok().or_else(|| {
-        Command::new("R")
-            .arg("RHOME")
-            .output()
-            .ok()
-            .and_then(|o| {
-                if o.status.success() {
-                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                } else {
-                    None
-                }
-            })
+        Command::new("R").arg("RHOME").output().ok().and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
     })
 }
 

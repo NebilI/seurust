@@ -212,8 +212,7 @@ pub fn fast_sparse_row_scale_impl(
     let out_addr = data.as_mut_ptr() as usize;
 
     (0..n_genes).into_par_iter().for_each(|gene| {
-        let (mean, col_sdev) =
-            gene_mean_sdev(&view, &row_index, gene, n_cells, scale, center);
+        let (mean, col_sdev) = gene_mean_sdev(&view, &row_index, gene, n_cells, scale, center);
         let inv_sdev = 1.0 / col_sdev;
         let out_ptr = out_addr as *mut f64;
         unsafe {
@@ -417,11 +416,7 @@ pub fn sparse_row_var_impl(view: CscView<'_>, _display_progress: bool) -> Double
     Doubles::from_values(rowdisp)
 }
 
-pub fn replace_cols_impl(
-    mat: CscSlots,
-    col_idx: &[i32],
-    replacement: CscSlots,
-) -> CscSlots {
+pub fn replace_cols_impl(mat: CscSlots, col_idx: &[i32], replacement: CscSlots) -> CscSlots {
     let nrows = mat.nrows as usize;
     let ncols = mat.ncols as usize;
     let mut triplets = Vec::new();
@@ -434,11 +429,7 @@ pub fn replace_cols_impl(
     for col in 0..ncols {
         if let Some(&rep_idx) = replace_map.get(&col) {
             for idx in replacement.p[rep_idx] as usize..replacement.p[rep_idx + 1] as usize {
-                triplets.push((
-                    replacement.i[idx] as usize,
-                    col,
-                    replacement.x[idx],
-                ));
+                triplets.push((replacement.i[idx] as usize, col, replacement.x[idx]));
             }
         } else {
             for idx in mat.p[col] as usize..mat.p[col + 1] as usize {
