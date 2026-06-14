@@ -31,14 +31,61 @@ test_that("RSeurat fast_dist matches Seurat fast_dist", {
 
 context("RSeurat/Seurat parity: ComputeSNN")
 
-test_that("RSeurat ComputeSNN matches Seurat ComputeSNN", {
-  skip_if_no_rseurat()
-  set.seed(2)
-  nn <- matrix(sample(x = 1:6, size = 18, replace = TRUE), nrow = 6, ncol = 3)
-  prune <- 0.01
+expect_compute_snn_equal <- function(nn, prune) {
   cpp <- Seurat:::ComputeSNN(nn_ranked = nn, prune = prune)
   rust <- RSeurat::ComputeSNN(nn_ranked = nn, prune = prune)
+
+  expect_s4_class(rust, "dgCMatrix")
+  expect_equal(dim(rust), dim(cpp))
+  expect_equal(slot(rust, "p"), slot(cpp, "p"))
+  expect_equal(slot(rust, "i"), slot(cpp, "i"))
+  expect_equal(slot(rust, "x"), slot(cpp, "x"), tolerance = 1e-10)
   expect_equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10)
+}
+
+test_that("RSeurat ComputeSNN matches Seurat ComputeSNN", {
+  skip_if_no_rseurat()
+
+  no_duplicates <- matrix(
+    c(
+      1, 2, 3, 4, 5, 6,
+      2, 3, 4, 5, 6, 1,
+      3, 4, 5, 6, 1, 2
+    ),
+    nrow = 6,
+    ncol = 3
+  )
+  storage.mode(no_duplicates) <- "double"
+
+  duplicate_ranks <- matrix(
+    c(
+      1, 2, 3, 4, 5, 6,
+      1, 2, 1, 4, 4, 6,
+      2, 3, 3, 5, 5, 1,
+      2, 2, 3, 5, 1, 1
+    ),
+    nrow = 6,
+    ncol = 4
+  )
+  storage.mode(duplicate_ranks) <- "double"
+
+  set.seed(2)
+  random_small <- matrix(sample(x = 1:6, size = 18, replace = TRUE), nrow = 6, ncol = 3)
+  storage.mode(random_small) <- "double"
+
+  set.seed(22)
+  random_larger <- matrix(
+    sample.int(200L, 200L * 20L, replace = TRUE),
+    nrow = 200L,
+    ncol = 20L
+  )
+  storage.mode(random_larger) <- "double"
+
+  for (nn in list(no_duplicates, duplicate_ranks, random_small, random_larger)) {
+    for (prune in c(0, 0.01, 0.5)) {
+      expect_compute_snn_equal(nn = nn, prune = prune)
+    }
+  }
 })
 
 context("RSeurat/Seurat parity: IntegrateDataC")
@@ -47,22 +94,25 @@ test_that("RSeurat IntegrateDataC matches Seurat IntegrateDataC", {
   skip_if_no_rseurat()
   set.seed(3)
   expr <- as(sparseMatrix(
-    i = c(0, 1, 2, 0, 1),
-    p = c(0, 2, 4, 5),
-    x = c(1, 2, 3, 4, 5),
-    dims = c(3L, 2L)
+    i = c(0, 1, 1, 2),
+    p = c(0, 2, 4),
+    x = c(1, 2, 3, 4),
+    dims = c(3L, 2L),
+    index1 = FALSE
   ), "dgCMatrix")
   im <- as(sparseMatrix(
     i = c(0, 1, 0),
     p = c(0, 2, 3),
     x = c(0.5, 0.3, 0.2),
-    dims = c(2L, 2L)
+    dims = c(2L, 2L),
+    index1 = FALSE
   ), "dgCMatrix")
   w <- as(sparseMatrix(
     i = c(0, 1, 0),
     p = c(0, 2, 3),
     x = c(0.4, 0.6, 0.1),
-    dims = c(2L, 3L)
+    dims = c(2L, 3L),
+    index1 = FALSE
   ), "dgCMatrix")
   cpp <- Seurat:::IntegrateDataC(
     integration_matrix = im,
@@ -82,7 +132,7 @@ context("RSeurat/Seurat parity: FindWeightsC")
 test_that("RSeurat FindWeightsC matches Seurat FindWeightsC (min_dist = 0)", {
   skip_if_no_rseurat()
   set.seed(4)
-  cells2 <- 0:1
+  cells2 <- as.numeric(0:1)
   distances <- matrix(c(0.1, 0.2, 0.3, 0.4), nrow = 2, byrow = TRUE)
   anchor_cells2 <- c("a", "b")
   rownames <- c("g1", "g2", "g1")
