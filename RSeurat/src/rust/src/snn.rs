@@ -1,20 +1,13 @@
-use crate::sparse::{
-    csc_slots_from_sorted_triplets, dgcmatrix_from_buffers, dgcmatrix_from_merged_triplets,
-    dgcmatrix_from_triplets, CscSlots,
-};
+use crate::sparse::{csc_slots_from_sorted_triplets, dgcmatrix_from_buffers, CscSlots};
 use extendr_api::prelude::*;
 use extendr_ffi::SEXP;
-use sprs::CsMat;
+use rayon::prelude::*;
+use sprs::{CsMat, TriMat};
 
 #[cfg(snn_eigen)]
 extern "C" {
     fn compute_snn_rcpp(nn_ranked: SEXP, prune: f64) -> SEXP;
-    fn compute_snn_rcpp_fast(
-        nn_ranked: *const f64,
-        nrows: i32,
-        ncols: i32,
-        prune: f64,
-    ) -> SEXP;
+    fn compute_snn_rcpp_fast(nn_ranked: *const f64, nrows: i32, ncols: i32, prune: f64) -> SEXP;
     fn compute_snn_csc(
         nn_ranked: *const f64,
         nrows: i32,
@@ -156,10 +149,7 @@ fn compute_snn_eigen_into_to_r(
     let mut p_out = Integers::new(n + 1);
 
     let x_slice = if nnz > 0 {
-        x_out
-            .as_robj_mut()
-            .as_real_slice_mut()
-            .expect("numeric x")
+        x_out.as_robj_mut().as_real_slice_mut().expect("numeric x")
     } else {
         &mut []
     };
@@ -240,16 +230,38 @@ fn nn_ranked_data(nn_ranked: &RMatrix<f64>) -> &[f64] {
         .expect("numeric nn_ranked")
 }
 
-/// Per-cell neighbor lists with duplicate ranks collapsed (matches Eigen setFromTriplets).
-fn neighbors_per_cell_deduped(data: &[f64], n_cells: usize, k: usize) -> Vec<Vec<usize>> {
+fn validate_nn_ranked_data(data: &[f64], n_cells: usize, k: usize) -> extendr_api::Result<()> {
+    if n_cells == 0 || k == 0 {
+        return Err(extendr_api::Error::Other(
+            "nn_ranked must have at least one row and one column.".into(),
+        ));
+    }
+    for &idx in data {
+        if !idx.is_finite() || idx < 1.0 || idx > n_cells as f64 {
+            return Err(extendr_api::Error::Other(format!(
+                "nn_ranked contains an invalid neighbor index: {idx}."
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Per-cell neighbor lists with duplicate ranks summed, matching Eigen setFromTriplets.
+fn neighbors_per_cell_with_counts(
+    data: &[f64],
+    n_cells: usize,
+    k: usize,
+) -> Vec<Vec<(usize, u32)>> {
     let mut neighbors = vec![Vec::with_capacity(k); n_cells];
     for rank in 0..k {
         let base = rank * n_cells;
         for i in 0..n_cells {
             let m = data[base + i] as usize - 1;
             let row = &mut neighbors[i];
-            if !row.contains(&m) {
-                row.push(m);
+            if let Some((_, count)) = row.iter_mut().find(|(idx, _)| *idx == m) {
+                *count += 1;
+            } else {
+                row.push((m, 1));
             }
         }
     }
@@ -336,12 +348,7 @@ fn compute_snn_counting_from_data(
         col_buckets[col].push((row, val));
     }
 
-    let mut triplets = Vec::with_capacity(
-        col_buckets
-            .iter()
-            .map(|entries| entries.len())
-            .sum(),
-    );
+    let mut triplets = Vec::with_capacity(col_buckets.iter().map(|entries| entries.len()).sum());
     for (col, mut entries) in col_buckets.into_iter().enumerate() {
         entries.sort_unstable_by_key(|&(row, _)| row);
         for (row, val) in entries {
@@ -352,34 +359,254 @@ fn compute_snn_counting_from_data(
     (n_cells as i32, triplets)
 }
 
-/// Build the k-NN neighbor matrix directly in CSC form (n_cells x n_cells).
+/// Build the k-NN neighbor matrix in CSC form, summing duplicate ranks like Eigen.
 fn neighbor_csc_from_data(data: &[f64], n_cells: usize, k: usize) -> CsMat<f64> {
-    let neighbors = neighbors_per_cell_deduped(data, n_cells, k);
-    let nnz: usize = neighbors.iter().map(|nbrs| nbrs.len()).sum();
-    let mut col_counts = vec![0usize; n_cells];
+    let mut tri = TriMat::new((n_cells, n_cells));
+    for rank in 0..k {
+        let base = rank * n_cells;
+        for i in 0..n_cells {
+            tri.add_triplet(i, data[base + i] as usize - 1, 1.0);
+        }
+    }
+
+    tri.to_csc::<usize>()
+}
+
+fn compute_snn_sprs_triplets_from_data(
+    data: &[f64],
+    n_cells: usize,
+    k: usize,
+    prune: f64,
+) -> (i32, Vec<(usize, usize, f64)>) {
+    let neighbor = neighbor_csc_from_data(data, n_cells, k);
+    let neighbor_t = neighbor.transpose_view().to_csc();
+    let snn = (&neighbor * &neighbor_t).to_csc();
+    let k_f = k as f64;
+    let mut triplets = Vec::with_capacity(snn.nnz());
+    for (col, col_vec) in snn.outer_iterator().enumerate() {
+        for (row, &val) in col_vec.iter() {
+            if let Some(scaled) = scale_and_prune(val, k_f, prune) {
+                triplets.push((row, col, scaled));
+            }
+        }
+    }
+    (n_cells as i32, triplets)
+}
+
+fn csc_slots_to_triplets(slots: &CscSlots) -> Vec<(usize, usize, f64)> {
+    let ncols = slots.ncols as usize;
+    let mut triplets = Vec::with_capacity(slots.x.len());
+    for col in 0..ncols {
+        for idx in slots.p[col] as usize..slots.p[col + 1] as usize {
+            triplets.push((slots.i[idx] as usize, col, slots.x[idx]));
+        }
+    }
+    triplets
+}
+
+/// Custom SNN kernel that avoids materializing and globally sorting every pair key.
+fn compute_snn_accumulating_csc_from_data(
+    data: &[f64],
+    n_cells: usize,
+    k: usize,
+    prune: f64,
+) -> CscSlots {
+    let neighbors = neighbors_per_cell_with_counts(data, n_cells, k);
+    let mut inv_count = vec![0usize; n_cells];
     for nbrs in &neighbors {
-        for &m in nbrs {
-            col_counts[m] += 1;
+        for &(m, _) in nbrs {
+            inv_count[m] += 1;
         }
     }
 
-    let mut col_ptr = vec![0usize; n_cells + 1];
+    let mut inv_ptr = vec![0usize; n_cells + 1];
+    for m in 0..n_cells {
+        inv_ptr[m + 1] = inv_ptr[m] + inv_count[m];
+    }
+
+    let total = inv_ptr[n_cells];
+    let mut inv_cells = vec![0usize; total];
+    let mut inv_weights = vec![0u32; total];
+    let mut inv_next = inv_ptr.clone();
+    for (cell, nbrs) in neighbors.iter().enumerate() {
+        for &(m, weight) in nbrs {
+            let pos = inv_next[m];
+            inv_next[m] += 1;
+            inv_cells[pos] = cell;
+            inv_weights[pos] = weight;
+        }
+    }
+
+    let k_f = k as f64;
+    let mut accum = vec![0u32; n_cells];
+    let mut marks = vec![0u32; n_cells];
+    let mut stamp = 1u32;
+    let mut touched = Vec::new();
+    let mut x = Vec::new();
+    let mut i = Vec::new();
+    let mut p = Vec::with_capacity(n_cells + 1);
+
     for col in 0..n_cells {
-        col_ptr[col + 1] = col_ptr[col] + col_counts[col];
-    }
+        p.push(x.len() as i32);
+        stamp = stamp.wrapping_add(1);
+        if stamp == 0 {
+            marks.fill(0);
+            stamp = 1;
+        }
 
-    let mut col_next = col_ptr.clone();
-    let mut indices = vec![0usize; nnz];
-    let data_vals = vec![1.0f64; nnz];
-    for (i, nbrs) in neighbors.iter().enumerate() {
-        for &m in nbrs {
-            let pos = col_next[m];
-            col_next[m] += 1;
-            indices[pos] = i;
+        for &(m, col_weight) in &neighbors[col] {
+            for pos in inv_ptr[m]..inv_ptr[m + 1] {
+                let row = inv_cells[pos];
+                let weight = inv_weights[pos] * col_weight;
+                if marks[row] == stamp {
+                    accum[row] += weight;
+                } else {
+                    marks[row] = stamp;
+                    accum[row] = weight;
+                    touched.push(row);
+                }
+            }
+        }
+
+        touched.sort_unstable();
+        for row in touched.drain(..) {
+            if let Some(scaled) = scale_and_prune(accum[row] as f64, k_f, prune) {
+                i.push(row as i32);
+                x.push(scaled);
+            }
+        }
+    }
+    p.push(x.len() as i32);
+
+    CscSlots {
+        x,
+        i,
+        p,
+        nrows: n_cells as i32,
+        ncols: n_cells as i32,
+    }
+}
+
+fn compute_snn_accumulating_csc_parallel_from_data(
+    data: &[f64],
+    n_cells: usize,
+    k: usize,
+    prune: f64,
+) -> CscSlots {
+    let neighbors = neighbors_per_cell_with_counts(data, n_cells, k);
+    let mut inv_count = vec![0usize; n_cells];
+    for nbrs in &neighbors {
+        for &(m, _) in nbrs {
+            inv_count[m] += 1;
         }
     }
 
-    CsMat::new_csc((n_cells, n_cells), col_ptr, indices, data_vals)
+    let mut inv_ptr = vec![0usize; n_cells + 1];
+    for m in 0..n_cells {
+        inv_ptr[m + 1] = inv_ptr[m] + inv_count[m];
+    }
+
+    let total = inv_ptr[n_cells];
+    let mut inv_cells = vec![0usize; total];
+    let mut inv_weights = vec![0u32; total];
+    let mut inv_next = inv_ptr.clone();
+    for (cell, nbrs) in neighbors.iter().enumerate() {
+        for &(m, weight) in nbrs {
+            let pos = inv_next[m];
+            inv_next[m] += 1;
+            inv_cells[pos] = cell;
+            inv_weights[pos] = weight;
+        }
+    }
+
+    struct Scratch {
+        accum: Vec<u32>,
+        marks: Vec<u32>,
+        touched: Vec<usize>,
+        stamp: u32,
+    }
+
+    let k_f = k as f64;
+    let columns: Vec<(Vec<i32>, Vec<f64>)> = (0..n_cells)
+        .into_par_iter()
+        .map_init(
+            || Scratch {
+                accum: vec![0u32; n_cells],
+                marks: vec![0u32; n_cells],
+                touched: Vec::new(),
+                stamp: 1,
+            },
+            |scratch, col| {
+                scratch.stamp = scratch.stamp.wrapping_add(1);
+                if scratch.stamp == 0 {
+                    scratch.marks.fill(0);
+                    scratch.stamp = 1;
+                }
+
+                for &(m, col_weight) in &neighbors[col] {
+                    for pos in inv_ptr[m]..inv_ptr[m + 1] {
+                        let row = inv_cells[pos];
+                        let weight = inv_weights[pos] * col_weight;
+                        if scratch.marks[row] == scratch.stamp {
+                            scratch.accum[row] += weight;
+                        } else {
+                            scratch.marks[row] = scratch.stamp;
+                            scratch.accum[row] = weight;
+                            scratch.touched.push(row);
+                        }
+                    }
+                }
+
+                scratch.touched.sort_unstable();
+                let mut i_col = Vec::with_capacity(scratch.touched.len());
+                let mut x_col = Vec::with_capacity(scratch.touched.len());
+                for row in scratch.touched.drain(..) {
+                    if let Some(scaled) = scale_and_prune(scratch.accum[row] as f64, k_f, prune) {
+                        i_col.push(row as i32);
+                        x_col.push(scaled);
+                    }
+                }
+                (i_col, x_col)
+            },
+        )
+        .collect();
+
+    let nnz: usize = columns.iter().map(|(_, x_col)| x_col.len()).sum();
+    let mut i = Vec::with_capacity(nnz);
+    let mut x = Vec::with_capacity(nnz);
+    let mut p = Vec::with_capacity(n_cells + 1);
+    for (i_col, x_col) in columns {
+        p.push(x.len() as i32);
+        i.extend(i_col);
+        x.extend(x_col);
+    }
+    p.push(x.len() as i32);
+
+    CscSlots {
+        x,
+        i,
+        p,
+        nrows: n_cells as i32,
+        ncols: n_cells as i32,
+    }
+}
+
+fn compute_snn_best_csc_from_data(data: &[f64], n_cells: usize, k: usize, prune: f64) -> CscSlots {
+    if n_cells >= 1000 {
+        compute_snn_accumulating_csc_parallel_from_data(data, n_cells, k, prune)
+    } else {
+        compute_snn_accumulating_csc_from_data(data, n_cells, k, prune)
+    }
+}
+
+fn compute_snn_accumulating_from_data(
+    data: &[f64],
+    n_cells: usize,
+    k: usize,
+    prune: f64,
+) -> (i32, Vec<(usize, usize, f64)>) {
+    let slots = compute_snn_best_csc_from_data(data, n_cells, k, prune);
+    (slots.nrows, csc_slots_to_triplets(&slots))
 }
 
 fn compute_snn_spgemm_triplets_from_data(
@@ -388,7 +615,7 @@ fn compute_snn_spgemm_triplets_from_data(
     k: usize,
     prune: f64,
 ) -> (i32, Vec<(usize, usize, f64)>) {
-    compute_snn_counting_from_data(data, n_cells, k, prune)
+    compute_snn_accumulating_from_data(data, n_cells, k, prune)
 }
 
 fn compute_snn_spgemm_triplets(
@@ -415,22 +642,19 @@ pub fn compute_snn_counting_triplets(
 
 /// Compute SNN and return a dgCMatrix with slots written directly in R memory.
 pub fn compute_snn_to_r_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_api::Result<Robj> {
-    #[cfg(snn_eigen)]
-    {
-        return compute_snn_eigen_fast_to_r(nn_ranked, prune);
-    }
-
-    #[cfg(not(snn_eigen))]
-    {
-        let (n_cells, triplets) = compute_snn_spgemm_triplets(nn_ranked, prune);
-        dgcmatrix_from_merged_triplets(n_cells, n_cells, triplets)
-    }
+    let n_cells = nn_ranked.nrows();
+    let k = nn_ranked.ncols();
+    let data = nn_ranked_data(nn_ranked);
+    validate_nn_ranked_data(data, n_cells, k)?;
+    compute_snn_best_csc_from_data(data, n_cells, k, prune).into_r_dgcmatrix()
 }
 
 /// Compute SNN = (neighbor_matrix * neighbor_matrix^T), scaled and pruned.
 pub fn compute_snn_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> CscSlots {
-    let (n_cells, triplets) = compute_snn_spgemm_triplets(nn_ranked, prune);
-    triplets_to_csc(n_cells, triplets)
+    let n_cells = nn_ranked.nrows();
+    let k = nn_ranked.ncols();
+    let data = nn_ranked_data(nn_ranked);
+    compute_snn_best_csc_from_data(data, n_cells, k, prune)
 }
 
 pub fn write_edge_file_impl(snn: &CscSlots, filename: &str, _display_progress: bool) {
@@ -526,9 +750,45 @@ pub fn snn_smallest_nonzero_dist_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::csc_to_dense;
     use crate::sparse::csc_slots_from_triplets;
-    use sprs::{CsMat, TriMat};
+    use crate::utils::csc_to_dense;
+
+    fn assert_triplets_close(
+        got: &[(usize, usize, f64)],
+        expected: &[(usize, usize, f64)],
+        tolerance: f64,
+    ) {
+        assert_eq!(got.len(), expected.len(), "triplet lengths differ");
+        for (idx, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert_eq!((g.0, g.1), (e.0, e.1), "triplet index mismatch at {idx}");
+            if g.2.is_infinite() || e.2.is_infinite() {
+                assert_eq!(g.2, e.2, "triplet value mismatch at {idx}");
+                continue;
+            }
+            assert!(
+                (g.2 - e.2).abs() <= tolerance,
+                "triplet value mismatch at {idx}: {} vs {}",
+                g.2,
+                e.2
+            );
+        }
+    }
+
+    fn patterned_nn_data(n: usize, k: usize, seed: usize) -> Vec<f64> {
+        let mut data = vec![0.0; n * k];
+        for rank in 0..k {
+            let base = rank * n;
+            for cell in 0..n {
+                let val = (cell
+                    .wrapping_mul(1_103_515_245)
+                    .wrapping_add(rank.wrapping_mul(12_345))
+                    .wrapping_add(seed))
+                    % n;
+                data[base + cell] = (val + 1) as f64;
+            }
+        }
+        data
+    }
 
     #[test]
     fn scale_and_prune_matches_formula() {
@@ -646,6 +906,73 @@ mod tests {
                     dense_ref[[r, c]]
                 );
             }
+        }
+    }
+
+    #[test]
+    fn accumulating_kernel_matches_sprs_with_duplicate_neighbor_ranks_and_pruning() {
+        let n = 5usize;
+        let k = 4usize;
+        let data = vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 1.0, 2.0, 1.0, 4.0, 4.0, 2.0, 3.0, 3.0, 5.0, 5.0, 2.0, 2.0,
+            3.0, 5.0, 1.0,
+        ];
+
+        for prune in [0.0, 0.01, 0.5] {
+            let (_, got) = compute_snn_accumulating_from_data(&data, n, k, prune);
+            let (_, expected) = compute_snn_sprs_triplets_from_data(&data, n, k, prune);
+            assert_triplets_close(&got, &expected, 1e-12);
+        }
+    }
+
+    #[test]
+    fn accumulating_kernel_matches_sprs_for_larger_patterned_inputs() {
+        for &(n, k, seed, prune) in &[(50usize, 20usize, 7usize, 0.0), (200, 20, 19, 0.01)] {
+            let data = patterned_nn_data(n, k, seed);
+            let (_, got) = compute_snn_accumulating_from_data(&data, n, k, prune);
+            let (_, expected) = compute_snn_sprs_triplets_from_data(&data, n, k, prune);
+            assert_triplets_close(&got, &expected, 1e-12);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark_snn_rust_kernels() {
+        use std::time::Instant;
+
+        for &(n, k, reps) in &[(500usize, 20usize, 10usize), (2000, 20, 5)] {
+            let data = patterned_nn_data(n, k, 11);
+
+            let start = Instant::now();
+            let mut sprs_nnz = 0usize;
+            for _ in 0..reps {
+                let (_, triplets) = compute_snn_sprs_triplets_from_data(&data, n, k, 0.01);
+                sprs_nnz += triplets.len();
+            }
+            let sprs_elapsed = start.elapsed();
+
+            let start = Instant::now();
+            let mut counting_nnz = 0usize;
+            for _ in 0..reps {
+                let (_, triplets) = compute_snn_counting_from_data(&data, n, k, 0.01);
+                counting_nnz += triplets.len();
+            }
+            let counting_elapsed = start.elapsed();
+
+            let start = Instant::now();
+            let mut accumulating_nnz = 0usize;
+            for _ in 0..reps {
+                let (_, triplets) = compute_snn_accumulating_from_data(&data, n, k, 0.01);
+                accumulating_nnz += triplets.len();
+            }
+            let accumulating_elapsed = start.elapsed();
+
+            assert_eq!(sprs_nnz, counting_nnz);
+            assert_eq!(sprs_nnz, accumulating_nnz);
+            eprintln!(
+                "ComputeSNN Rust kernels n={n}, k={k}, reps={reps}: sprs={:?}, counting={:?}, accumulating={:?}",
+                sprs_elapsed, counting_elapsed, accumulating_elapsed
+            );
         }
     }
 }
