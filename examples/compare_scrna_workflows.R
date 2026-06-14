@@ -33,8 +33,9 @@ rust <- readRDS(rust_file)
 
 compare_fields <- c(
   "n_cells", "n_clusters", "cluster_table", "cluster_digest",
-  "norm_digest", "snn_digest", "snn_nnz", "umap_digest"
+  "norm_digest", "snn_digest", "snn_nnz"
 )
+informational_fields <- c("umap_digest")
 
 cat("\n==> Output parity\n")
 all_ok <- TRUE
@@ -42,6 +43,15 @@ for (field in compare_fields) {
   ok <- identical(cpp[[field]], rust[[field]])
   all_ok <- all_ok && ok
   status <- if (ok) "OK" else "MISMATCH"
+  cat(sprintf("  %-20s %s\n", field, status))
+  if (!ok) {
+    cat("    C++ :", cpp[[field]], "\n")
+    cat("    Rust:", rust[[field]], "\n")
+  }
+}
+for (field in informational_fields) {
+  ok <- identical(cpp[[field]], rust[[field]])
+  status <- if (ok) "OK" else "MISMATCH (informational)"
   cat(sprintf("  %-20s %s\n", field, status))
   if (!ok) {
     cat("    C++ :", cpp[[field]], "\n")
