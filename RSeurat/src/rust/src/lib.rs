@@ -12,8 +12,8 @@ mod utils;
 use extendr_api::prelude::*;
 
 use data_manipulation::{
-    fast_cov_impl, fast_cov_mats_impl, fast_exp_mean_impl, fast_log_vmr_impl,
-    fast_rbind_impl, fast_sparse_row_scale_impl, fast_sparse_row_scale_with_known_stats_impl,
+    fast_cov_impl, fast_cov_mats_impl, fast_exp_mean_impl, fast_log_vmr_impl, fast_rbind_impl,
+    fast_sparse_row_scale_impl, fast_sparse_row_scale_with_known_stats_impl,
     graph_to_neighbor_helper_impl, log_norm_impl, replace_cols_impl, row_merge_matrices_impl,
     row_var_impl, run_umi_sampling_impl, run_umi_sampling_per_cell_impl, sparse_row_var2_impl,
     sparse_row_var_impl, sparse_row_var_std_impl, standardize_impl,
@@ -26,9 +26,7 @@ use snn::{
     write_edge_file_impl,
 };
 use sparse::{strings_to_str_vec, vec_from_doubles, CscSlots, CscView, CsrSlots};
-use stats::{
-    row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl,
-};
+use stats::{row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl};
 
 #[extendr]
 fn row_sum_dgcmatrix(x: Doubles, i: Integers, rows: i32, _cols: i32) -> Doubles {
@@ -298,13 +296,7 @@ fn replace_cols(
 }
 
 #[extendr]
-fn graph_to_neighbor_helper(
-    x: Doubles,
-    i: Integers,
-    p: Integers,
-    nrows: i32,
-    ncols: i32,
-) -> Robj {
+fn graph_to_neighbor_helper(x: Doubles, i: Integers, p: Integers, nrows: i32, ncols: i32) -> Robj {
     let mat = CscSlots::from_r(x, i, p, nrows, ncols);
     graph_to_neighbor_helper_impl(mat)
 }

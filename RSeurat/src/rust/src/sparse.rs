@@ -41,14 +41,7 @@ pub fn dgcmatrix_from_buffers(
     p: Integers,
     dim: Integers,
 ) -> extendr_api::Result<Robj> {
-    call!(
-        "methods::new",
-        "dgCMatrix",
-        x = x,
-        i = i,
-        p = p,
-        Dim = dim
-    )
+    call!("methods::new", "dgCMatrix", x = x, i = i, p = p, Dim = dim)
 }
 
 /// Write CSC slots from column-sorted, already-merged triplets.
@@ -62,10 +55,7 @@ pub fn dgcmatrix_from_merged_triplets(
 
     if triplets.is_empty() {
         let mut p = Integers::new(ncols_usize + 1);
-        p.as_robj_mut()
-            .as_integer_slice_mut()
-            .expect("p")
-            .fill(0);
+        p.as_robj_mut().as_integer_slice_mut().expect("p").fill(0);
         return dgcmatrix_from_buffers(Doubles::new(0), Integers::new(0), p, dim);
     }
 
@@ -74,10 +64,7 @@ pub fn dgcmatrix_from_merged_triplets(
     let mut i_out = Integers::new(nnz);
     let mut p_out = Integers::new(ncols_usize + 1);
 
-    let x = x_out
-        .as_robj_mut()
-        .as_real_slice_mut()
-        .expect("numeric x");
+    let x = x_out.as_robj_mut().as_real_slice_mut().expect("numeric x");
     let i = i_out
         .as_robj_mut()
         .as_integer_slice_mut()
@@ -112,10 +99,7 @@ pub fn dgcmatrix_from_triplets(
 
     if triplets.is_empty() {
         let mut p = Integers::new(ncols_usize + 1);
-        p.as_robj_mut()
-            .as_integer_slice_mut()
-            .expect("p")
-            .fill(0);
+        p.as_robj_mut().as_integer_slice_mut().expect("p").fill(0);
         return dgcmatrix_from_buffers(Doubles::new(0), Integers::new(0), p, dim);
     }
 
@@ -137,10 +121,7 @@ pub fn dgcmatrix_from_triplets(
     let mut i_out = Integers::new(nnz);
     let mut p_out = Integers::new(ncols_usize + 1);
 
-    let x = x_out
-        .as_robj_mut()
-        .as_real_slice_mut()
-        .expect("numeric x");
+    let x = x_out.as_robj_mut().as_real_slice_mut().expect("numeric x");
     let i = i_out
         .as_robj_mut()
         .as_integer_slice_mut()
@@ -426,11 +407,7 @@ impl CsrSlots {
     }
 }
 
-pub fn csc_from_triplets(
-    nrows: usize,
-    ncols: usize,
-    triplets: &[(usize, usize, f64)],
-) -> CscSlots {
+pub fn csc_from_triplets(nrows: usize, ncols: usize, triplets: &[(usize, usize, f64)]) -> CscSlots {
     let mut tri = TriMat::new((nrows, ncols));
     for &(r, c, v) in triplets {
         tri.add_triplet(r, c, v);
@@ -507,7 +484,13 @@ fn csc_slots_from_triplets_inner(
     }
     p[ncols_usize] = nnz as i32;
 
-    CscSlots { x, i, p, nrows, ncols }
+    CscSlots {
+        x,
+        i,
+        p,
+        nrows,
+        ncols,
+    }
 }
 
 pub fn rmatrix_from_ndarray(values: ndarray::ArrayView2<f64>) -> RMatrix<f64> {
