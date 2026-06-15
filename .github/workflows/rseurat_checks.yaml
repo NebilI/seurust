@@ -65,7 +65,7 @@ jobs:
 
       - name: Check source tarball
         run: |
-          set -o pipefail
+          set +e
           R CMD check RSeurat_*.tar.gz --as-cran --no-manual 2>&1 | tee RSeurat-check.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
