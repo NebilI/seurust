@@ -13,7 +13,7 @@ NULL\n\
 \n\
 ";
     let footer = "# nolint end\n";
-    let wrappers = RSeurat::get_RSeurat_metadata()
+    let wrappers = rseurat::get_rseurat_metadata()
         .make_r_wrappers(true, "RSeurat")
         .map_err(|e| format!("failed to generate wrappers: {e}"))?;
     std::fs::write(wrapper_path, format!("{header}{wrappers}{footer}"))

@@ -3,9 +3,9 @@
 
 TARGET_DIR = ./rust/target
 LIBDIR = $(TARGET_DIR)/@LIBDIR@
-STATLIB = $(LIBDIR)/libRSeurat.a
+STATLIB = $(LIBDIR)/librseurat.a
 # LTO can strip unreferenced Rust registration symbols; whole-archive keeps them.
-PKG_LIBS = -Wl,--whole-archive -L$(LIBDIR) -lRSeurat -Wl,--no-whole-archive
+PKG_LIBS = -Wl,--whole-archive -L$(LIBDIR) -lrseurat -Wl,--no-whole-archive
 
 all: $(SHLIB) rust_clean
 
