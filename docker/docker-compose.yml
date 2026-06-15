@@ -23,6 +23,9 @@ services:
       args:
         RCPP_IMAGE: rust-seurat-rcpp:dev
     image: rust-seurat-rust:dev
+    environment:
+      NOT_CRAN: "1"
+      SEURAT_KEEP_RUST_TARGET: "1"
     volumes:
       - ..:/workspace
       - rust-seurat-cargo:/usr/local/cargo/registry

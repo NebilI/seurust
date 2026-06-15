@@ -58,7 +58,7 @@ if (!rseurat_ok()) {
         "sed -i 's/\\r$//' RSeurat/configure RSeurat/cleanup",
         "RSeurat/DESCRIPTION RSeurat/src/entrypoint.c 2>/dev/null || true;",
         "cd RSeurat && Rscript tools/config.R && cd ..;",
-        "R CMD INSTALL --preclean RSeurat"
+        "env NOT_CRAN=1 SEURAT_KEEP_RUST_TARGET=1 R CMD INSTALL --preclean RSeurat"
       )
     )
   )
