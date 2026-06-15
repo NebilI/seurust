@@ -122,6 +122,7 @@ fn main() {
             .flag_if_supported("-std=c++17")
             .flag_if_supported("-O3")
             .flag_if_supported("-Wno-ignored-attributes")
+            .flag_if_supported("-Wno-cast-function-type")
             .define("SNN_BRIDGE_RCPP", None)
             .file("cpp/snn_bridge.cpp")
             .include(&eigen_inc);

@@ -24,7 +24,14 @@ if (!is_not_cran) {
 )
 
 .profile <- ifelse(is_debug, "", "--release")
-.keep_rust_target <- Sys.getenv("SEURAT_KEEP_RUST_TARGET") != ""
+.keep_rust_target <- {
+  val <- Sys.getenv("SEURAT_KEEP_RUST_TARGET", unset = "")
+  if (nzchar(val)) {
+    !identical(tolower(val), "0") && !identical(tolower(val), "false")
+  } else {
+    is_not_cran || is_debug
+  }
+}
 .clean_targets <- ifelse(is_debug || .keep_rust_target, "", "$(TARGET_DIR)")
 
 webr_target <- "wasm32-unknown-emscripten"

@@ -5,6 +5,7 @@ use rayon::prelude::*;
 use sprs::{CsMat, TriMat};
 
 #[cfg(snn_eigen)]
+#[allow(improper_ctypes)]
 extern "C" {
     fn compute_snn_rcpp(nn_ranked: SEXP, prune: f64) -> SEXP;
     fn compute_snn_rcpp_fast(nn_ranked: *const f64, nrows: i32, ncols: i32, prune: f64) -> SEXP;
