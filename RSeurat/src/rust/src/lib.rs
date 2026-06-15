@@ -473,7 +473,7 @@ fn snn_smallest_nonzero_dist(
 }
 
 extendr_module! {
-    mod RSeurat;
+    mod rseurat;
     fn row_sum_dgcmatrix;
     fn row_mean_dgcmatrix;
     fn row_var_dgcmatrix;

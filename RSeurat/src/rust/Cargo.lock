@@ -3,18 +3,6 @@
 version = 3
 
 [[package]]
-name = "RSeurat"
-version = "0.1.0"
-dependencies = [
- "cc",
- "extendr-api",
- "extendr-ffi",
- "ndarray",
- "rayon",
- "sprs",
-]
-
-[[package]]
 name = "alga"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -295,6 +283,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "rseurat"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "extendr-api",
+ "extendr-ffi",
+ "ndarray",
+ "rayon",
+ "sprs",
 ]
 
 [[package]]
