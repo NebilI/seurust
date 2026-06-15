@@ -94,6 +94,18 @@ fn rcpp_include() -> Option<PathBuf> {
         }
     }
 
+    if let Ok(output) = Command::new(format!("{}/bin/Rscript", r_home))
+        .args(["-e", "cat(system.file('include', package='Rcpp'))"])
+        .output()
+    {
+        if output.status.success() {
+            let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+            if path.join("Rcpp").exists() {
+                return Some(path);
+            }
+        }
+    }
+
     None
 }
 
