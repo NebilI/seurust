@@ -18,6 +18,8 @@ jobs:
   check-rseurat:
     name: "check RSeurat (ubuntu)"
     runs-on: ubuntu-latest
+    env:
+      NOT_CRAN: true
 
     steps:
       - name: Checkout
@@ -32,6 +34,9 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust to PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Install system dependencies
         run: |
@@ -60,11 +65,19 @@ jobs:
 
       - name: Check source tarball
         run: |
-          R CMD check RSeurat_*.tar.gz --as-cran --no-manual
+          set -o pipefail
+          R CMD check RSeurat_*.tar.gz --as-cran --no-manual 2>&1 | tee RSeurat-check.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::group::R CMD check install log"
+            cat RSeurat.Rcheck/00install.out || true
+            echo "::endgroup::"
+            exit "$status"
+          fi
         env:
-          NOT_CRAN: true
           _R_CHECK_CRAN_INCOMING_: false
           _R_CHECK_PACKAGE_SIZES_: false
+          SEURAT_KEEP_RUST_TARGET: true
 
       - name: Run RSeurat tests
         run: |
