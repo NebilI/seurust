@@ -37,8 +37,7 @@ test_that("Modularity clustering timing", {
   bench <- benchmark_rust_cpp(
     cpp_fn = run_cpp,
     rust_fn = run_rust,
-    n_warmup = 2L,
-    n_reps = 10L
+    n_warmup = 2L
   )
   expect_timing_report(bench, "Modularity clustering")
   if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {

@@ -3,11 +3,11 @@
 #' @param cpp_fn Zero-argument function calling Seurat's C++ backend (`Seurat:::`).
 #' @param rust_fn Zero-argument function calling RSeurat (`RSeurat::`).
 #' @param n_warmup Warmup iterations (not timed).
-#' @param n_reps Timed repetitions; mean, sd, and median elapsed seconds are reported.
-#' @return A list with per-backend summaries, raw `times` vectors, and `rust_vs_cpp`
-#'   ratio from medians (>1 means Rust is faster).
+#' @param n_reps Timed repetitions; mean, sd, and median elapsed microseconds are reported.
+#' @return A list with per-backend summaries, raw `times` vectors (microseconds), and
+#'   `rust_vs_cpp` ratio from medians (>1 means Rust is faster).
 #' @keywords internal
-benchmark_rust_cpp <- function(cpp_fn, rust_fn, n_warmup = 3L, n_reps = 20L) {
+benchmark_rust_cpp <- function(cpp_fn, rust_fn, n_warmup = 3L, n_reps = 100L) {
   n_warmup <- as.integer(n_warmup)
   n_reps <- as.integer(n_reps)
   stopifnot(n_warmup >= 0L, n_reps >= 1L)
@@ -18,28 +18,38 @@ benchmark_rust_cpp <- function(cpp_fn, rust_fn, n_warmup = 3L, n_reps = 20L) {
   }
 
   time_fn <- function(fn) {
-    times <- vapply(
-      X = seq_len(n_reps),
-      FUN = function(i) {
-        t0 <- proc.time()[["elapsed"]]
-        fn()
-        proc.time()[["elapsed"]] - t0
-      },
-      FUN.VALUE = numeric(1)
-    )
+    times_us <- if (requireNamespace("microbenchmark", quietly = TRUE)) {
+      as.numeric(
+        microbenchmark::microbenchmark(
+          fn(),
+          times = n_reps,
+          warmup = 0L
+        )$time
+      ) / 1000
+    } else {
+      vapply(
+        X = seq_len(n_reps),
+        FUN = function(i) {
+          t0 <- proc.time()[["elapsed"]]
+          fn()
+          (proc.time()[["elapsed"]] - t0) * 1e6
+        },
+        FUN.VALUE = numeric(1)
+      )
+    }
     list(
-      times = times,
-      median = stats::median(times),
-      mean = mean(times),
-      sd = stats::sd(times),
-      min = min(times),
-      max = max(times)
+      times = times_us,
+      median = stats::median(times_us),
+      mean = mean(times_us),
+      sd = stats::sd(times_us),
+      min = min(times_us),
+      max = max(times_us)
     )
   }
 
   cpp <- time_fn(cpp_fn)
   rust <- time_fn(rust_fn)
-  # Medians can be 0 when proc.time() resolution exceeds runtime; fall back to means.
+  # Medians can be 0 when timer resolution exceeds runtime; fall back to means.
   cpp_basis <- if (cpp$median > 0) cpp$median else cpp$mean
   rust_basis <- if (rust$median > 0) rust$median else rust$mean
   if (rust_basis <= 0) {
@@ -68,8 +78,8 @@ format_benchmark <- function(bench, label) {
   sprintf(
     paste0(
       "%s (n=%d): ",
-      "C++ mean=%.4fs (sd=%.4f), median=%.4fs; ",
-      "Rust mean=%.4fs (sd=%.4f), median=%.4fs; ",
+      "C++ mean=%.2f us (sd=%.2f), median=%.2f us; ",
+      "Rust mean=%.2f us (sd=%.2f), median=%.2f us; ",
       "Rust/C++=%.2fx (%s)"
     ),
     label,
@@ -129,7 +139,7 @@ benchmark_compute_snn <- function(
     prune = 0.01,
     label = NULL,
     n_warmup = 5L,
-    n_reps = 20L,
+    n_reps = 100L,
     seed = 1L) {
   if (is.null(label)) {
     label <- sprintf("ComputeSNN (%d cells, k=%d)", n_cells, k)

@@ -62,7 +62,6 @@ run_bench(
   cpp_fn = function() do.call(Seurat:::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
   rust_fn = function() do.call(RSeurat::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
   n_warmup = 2L,
-  n_reps = 10L,
   tolerance = 0.95
 )
 
@@ -92,7 +91,6 @@ run_bench(
     )
   },
   n_warmup = 1L,
-  n_reps = 10L,
   tolerance = 0.95
 )
 
@@ -111,13 +109,12 @@ run_bench(
     RSeurat::SparseRowVar2(var_mat, mu = mu, display_progress = FALSE)
   },
   n_warmup = 1L,
-  n_reps = 10L,
   tolerance = 0.95
 )
 
 cat("\n==> ComputeSNN\n")
-run_compute_snn_bench(500L, n_warmup = 2L, n_reps = 20L, enforce_faster = FALSE)
-run_compute_snn_bench(2000L, n_warmup = 1L, n_reps = 10L, enforce_faster = TRUE, tolerance = 0.95)
+run_compute_snn_bench(500L, n_warmup = 2L, enforce_faster = FALSE)
+run_compute_snn_bench(2000L, n_warmup = 1L, enforce_faster = TRUE, tolerance = 0.95)
 
 cat("\n==> row_sum_dgcmatrix\n")
 big <- sparseMatrix(

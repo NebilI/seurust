@@ -12,8 +12,7 @@ test_that("LogNorm timing", {
   bench <- benchmark_rust_cpp(
     cpp_fn = function() Seurat:::LogNorm(mat, 1e4, display_progress = FALSE),
     rust_fn = function() RSeurat::LogNorm(mat, 1e4, display_progress = FALSE),
-    n_warmup = 2L,
-    n_reps = 10L
+    n_warmup = 2L
   )
   expect_timing_report(bench, "LogNorm")
   if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {
@@ -25,8 +24,7 @@ test_that("ComputeSNN timing (500 cells)", {
   skip_if_no_rseurat()
   bench <- benchmark_compute_snn(
     n_cells = 500L,
-    n_warmup = 2L,
-    n_reps = 10L
+    n_warmup = 2L
   )
   expect_timing_report(bench, attr(bench, "label"))
 })
@@ -35,8 +33,7 @@ test_that("ComputeSNN timing (2000 cells)", {
   skip_if_no_rseurat()
   bench <- benchmark_compute_snn(
     n_cells = 2000L,
-    n_warmup = 1L,
-    n_reps = 10L
+    n_warmup = 1L
   )
   expect_timing_report(bench, attr(bench, "label"))
   if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {
@@ -64,8 +61,7 @@ test_that("row_sum_dgcmatrix timing", {
   bench <- benchmark_rust_cpp(
     cpp_fn = function() Seurat:::row_sum_dgcmatrix(x, i, nr, nc),
     rust_fn = function() RSeurat::row_sum_dgcmatrix(x, i, nr, nc),
-    n_warmup = 2L,
-    n_reps = 10L
+    n_warmup = 2L
   )
   expect_timing_report(bench, "row_sum_dgcmatrix")
   if (identical(Sys.getenv("SEURAT_REQUIRE_RUST_FASTER"), "1")) {

@@ -23,6 +23,7 @@ build_pkgs <- c(
   "devtools",
   "roxygen2",
   "testthat",
+  "microbenchmark",
   "rcmdcheck",
   "withr",
   "cli"
