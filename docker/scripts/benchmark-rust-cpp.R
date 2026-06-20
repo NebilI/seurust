@@ -73,6 +73,47 @@ run_bench(
   rust_fn = function() RSeurat::LogNorm(mat, 1e4, display_progress = FALSE)
 )
 
+cat("\n==> Dense matrix kernels\n")
+set.seed(11)
+dense_mat <- matrix(rnorm(2000 * 300), nrow = 2000, ncol = 300)
+run_bench(
+  "Standardize (2000x300 dense)",
+  cpp_fn = function() Seurat:::Standardize(dense_mat, display_progress = FALSE),
+  rust_fn = function() RSeurat::Standardize(dense_mat, display_progress = FALSE),
+  n_warmup = 1L,
+  n_reps = 25L,
+  tolerance = 0.95
+)
+run_bench(
+  "FastCov (2000x120 dense)",
+  cpp_fn = function() Seurat:::FastCov(dense_mat[, 1:120], center = TRUE),
+  rust_fn = function() RSeurat::FastCov(dense_mat[, 1:120], center = TRUE),
+  n_warmup = 1L,
+  n_reps = 25L
+)
+run_bench(
+  "RowVar (2000x300 dense)",
+  cpp_fn = function() Seurat:::RowVar(dense_mat),
+  rust_fn = function() RSeurat::RowVar(dense_mat),
+  n_warmup = 1L,
+  n_reps = 25L,
+  tolerance = 0.95
+)
+
+cat("\n==> fast_dist\n")
+set.seed(12)
+dist_x <- matrix(rnorm(2500 * 30), nrow = 2500, ncol = 30)
+dist_y <- matrix(rnorm(2500 * 30), nrow = 2500, ncol = 30)
+dist_neighbors <- replicate(2500, as.numeric(sample.int(2500, 20)), simplify = FALSE)
+run_bench(
+  "fast_dist (2500 cells x 30 dims, k=20)",
+  cpp_fn = function() Seurat:::fast_dist(x = dist_x, y = dist_y, n = dist_neighbors),
+  rust_fn = function() RSeurat::fast_dist(x = dist_x, y = dist_y, n = dist_neighbors),
+  n_warmup = 1L,
+  n_reps = 25L,
+  tolerance = 0.95
+)
+
 cat("\n==> FastSparseRowScale\n")
 scale_mat <- as(
   Matrix::rsparsematrix(nrow = 2000, ncol = 2500, density = 0.12, rand.x = stats::runif),
@@ -129,6 +170,67 @@ run_bench(
   "row_sum_dgcmatrix (3000x800 sparse)",
   cpp_fn = function() Seurat:::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big)),
   rust_fn = function() RSeurat::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big))
+)
+
+cat("\n==> Integration helpers\n")
+set.seed(13)
+n_cells <- 1200L
+n_anchors <- 1800L
+k_weight <- 20L
+cells2 <- as.numeric(seq_len(n_cells) - 1L)
+distances <- matrix(runif(n_cells * k_weight), nrow = n_cells, ncol = k_weight)
+cell_index <- matrix(sample.int(n_anchors, n_cells * k_weight, replace = TRUE), nrow = n_cells)
+storage.mode(cell_index) <- "double"
+anchor_cells2 <- paste0("cell", sample.int(500L, n_anchors, replace = TRUE))
+integration_rownames <- paste0("cell", sample.int(500L, n_anchors, replace = TRUE))
+anchor_score <- runif(n_anchors, min = 0.1, max = 1)
+run_bench(
+  "FindWeightsC (1200 cells, 1800 anchors, min_dist=0)",
+  cpp_fn = function() {
+    Seurat:::FindWeightsC(
+      cells2 = cells2, distances = distances, anchor_cells2 = anchor_cells2,
+      integration_matrix_rownames = integration_rownames, cell_index = cell_index,
+      anchor_score = anchor_score, min_dist = 0, sd = 1, display_progress = FALSE
+    )
+  },
+  rust_fn = function() {
+    RSeurat::FindWeightsC(
+      cells2 = cells2, distances = distances, anchor_cells2 = anchor_cells2,
+      integration_matrix_rownames = integration_rownames, cell_index = cell_index,
+      anchor_score = anchor_score, min_dist = 0, sd = 1, display_progress = FALSE
+    )
+  },
+  n_warmup = 1L,
+  n_reps = 10L,
+  tolerance = 0.95
+)
+
+score_nn <- matrix(sample.int(800L, 800L * 20L, replace = TRUE), nrow = 800L, ncol = 20L)
+storage.mode(score_nn) <- "double"
+score_snn <- Seurat:::ComputeSNN(score_nn, prune = 0.01)
+query_pca <- matrix(rnorm(30L * 800L), nrow = 30L, ncol = 800L)
+query_dists <- matrix(abs(rnorm(800L * 20L)), nrow = 800L, ncol = 20L)
+corrected_nns <- matrix(sample.int(800L, 800L * 20L, replace = TRUE), nrow = 800L, ncol = 20L)
+storage.mode(corrected_nns) <- "double"
+run_bench(
+  "ScoreHelper (800 cells x 30 dims, k=20)",
+  cpp_fn = function() {
+    Seurat:::ScoreHelper(
+      snn = score_snn, query_pca = query_pca, query_dists = query_dists,
+      corrected_nns = corrected_nns, k_snn = 20L, subtract_first_nn = FALSE,
+      display_progress = FALSE
+    )
+  },
+  rust_fn = function() {
+    RSeurat::ScoreHelper(
+      snn = score_snn, query_pca = query_pca, query_dists = query_dists,
+      corrected_nns = corrected_nns, k_snn = 20L, subtract_first_nn = FALSE,
+      display_progress = FALSE
+    )
+  },
+  n_warmup = 1L,
+  n_reps = 10L,
+  tolerance = 0.95
 )
 
 if (length(failures) > 0) {

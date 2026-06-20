@@ -40,8 +40,70 @@ ensure_upstream_repo <- function(upstream_root) {
   invisible(upstream_root)
 }
 
+empty_native_timings <- function() {
+  new.env(parent = emptyenv())
+}
+
+record_native_timing <- function(store, fn_name, elapsed) {
+  if (exists(fn_name, envir = store, inherits = FALSE)) {
+    entry <- get(fn_name, envir = store, inherits = FALSE)
+  } else {
+    entry <- list(calls = 0L, seconds = 0)
+  }
+  entry$calls <- entry$calls + 1L
+  entry$seconds <- entry$seconds + elapsed
+  assign(fn_name, entry, envir = store)
+}
+
+native_timing_summary <- function(store) {
+  names <- ls(store, all.names = TRUE)
+  if (length(names) == 0L) {
+    return(data.frame(function_name = character(), calls = integer(), seconds = numeric()))
+  }
+  rows <- lapply(names, function(fn_name) {
+    entry <- get(fn_name, envir = store, inherits = FALSE)
+    data.frame(
+      function_name = fn_name,
+      calls = entry$calls,
+      seconds = entry$seconds,
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, rows)
+  out[order(out$seconds, decreasing = TRUE), , drop = FALSE]
+}
+
+wrap_patched_native_timings <- function(patched_fns, store) {
+  seurat_ns <- asNamespace("Seurat")
+  for (fn_name in patched_fns) {
+    if (!exists(fn_name, envir = seurat_ns, inherits = FALSE)) {
+      next
+    }
+    target <- get(fn_name, envir = seurat_ns, inherits = FALSE)
+    wrapper <- local({
+      name <- fn_name
+      fn <- target
+      function(...) {
+        call_args <- as.list(match.call(expand.dots = FALSE))[-1L]
+        timing <- system.time(result <- do.call(fn, call_args, envir = parent.frame()))
+        record_native_timing(store, name, unname(timing[["elapsed"]]))
+        result
+      }
+    })
+    formals(wrapper) <- formals(target)
+    if (bindingIsLocked(fn_name, seurat_ns)) {
+      unlockBinding(fn_name, seurat_ns)
+    }
+    assign(fn_name, wrapper, envir = seurat_ns)
+    lockBinding(fn_name, seurat_ns)
+  }
+  invisible(store)
+}
+
 run_timed_script <- function(script_path, engine, code_dir) {
-  patch_seurat_backend(engine)
+  patched <- patch_seurat_backend(engine)
+  native_timing_store <- empty_native_timings()
+  wrap_patched_native_timings(patched, native_timing_store)
   old_wd <- getwd()
   on.exit(setwd(old_wd), add = TRUE)
   setwd(code_dir)
@@ -74,6 +136,7 @@ run_timed_script <- function(script_path, engine, code_dir) {
     backend = backend_label(engine),
     engine = engine,
     seconds = unname(timing[["elapsed"]]),
+    native_timings = native_timing_summary(native_timing_store),
     success = is.null(error_msg),
     error = error_msg
   )
@@ -126,6 +189,36 @@ print_timing_table <- function(results) {
       rust_total,
       if (rust_total > 0) cpp_total / rust_total else NA_real_
     ))
+  }
+}
+
+native_seconds <- function(result) {
+  timings <- result$native_timings
+  if (is.null(timings) || nrow(timings) == 0L) {
+    return(0)
+  }
+  sum(timings$seconds)
+}
+
+print_native_timing_table <- function(results) {
+  scripts <- unique(vapply(results, `[[`, "", "script"))
+  cat("\n==> Patched native timing breakdown (seconds)\n")
+  cat(sprintf("%-32s %-12s %12s %12s %12s\n", "Script", "Backend", "Total", "Native", "Residual"))
+  cat(strrep("-", 86), "\n", sep = "")
+  for (script in scripts) {
+    rows <- Filter(function(x) identical(x$script, script) && isTRUE(x$success), results)
+    for (row in rows) {
+      native <- native_seconds(row)
+      residual <- max(0, row$seconds - native)
+      cat(sprintf(
+        "%-32s %-12s %12.1f %12.1f %12.1f\n",
+        script,
+        row$backend,
+        row$seconds,
+        native,
+        residual
+      ))
+    }
   }
 }
 
@@ -215,6 +308,7 @@ for (script in scripts) {
 
 saveRDS(results, file.path(output_root, "script_timing_results.rds"))
 print_timing_table(results)
+print_native_timing_table(results)
 
 if (length(parity_failures) > 0L) {
   stop(

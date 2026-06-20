@@ -163,6 +163,44 @@ test_that("RSeurat FindWeightsC matches Seurat FindWeightsC (min_dist = 0)", {
   expect_equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10)
 })
 
+test_that("RSeurat FindWeightsC matches Seurat FindWeightsC (min_dist > 0)", {
+  skip_if_no_rseurat()
+  set.seed(44)
+  cells2 <- as.numeric(0:2)
+  distances <- matrix(
+    c(0.1, 0.2, 0.3, 0.4, 0.2, 0.5, 0.3, 0.6, 0.9),
+    nrow = 3,
+    byrow = TRUE
+  )
+  anchor_cells2 <- c("a", "b", "a")
+  rownames <- c("g1", "g2", "g1", "g3")
+  cell_index <- matrix(c(1, 2, 3, 2, 1, 3, 3, 1, 2), nrow = 3, byrow = TRUE)
+  anchor_score <- c(1, 0.5, 0.8, 0.6)
+  cpp <- Seurat:::FindWeightsC(
+    cells2 = cells2,
+    distances = distances,
+    anchor_cells2 = anchor_cells2,
+    integration_matrix_rownames = rownames,
+    cell_index = cell_index,
+    anchor_score = anchor_score,
+    min_dist = 0.05,
+    sd = 1,
+    display_progress = FALSE
+  )
+  rust <- RSeurat::FindWeightsC(
+    cells2 = cells2,
+    distances = distances,
+    anchor_cells2 = anchor_cells2,
+    integration_matrix_rownames = rownames,
+    cell_index = cell_index,
+    anchor_score = anchor_score,
+    min_dist = 0.05,
+    sd = 1,
+    display_progress = FALSE
+  )
+  expect_equal(as.matrix(cpp), as.matrix(rust), tolerance = 1e-10)
+})
+
 context("RSeurat/Seurat parity: SNN_SmallestNonzero_Dist")
 
 test_that("RSeurat SNN_SmallestNonzero_Dist matches Seurat", {

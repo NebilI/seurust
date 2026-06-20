@@ -8,7 +8,10 @@ pub fn sort_indexes(v: &[f64]) -> Vec<usize> {
 pub fn euclidean_rows(a: &[f64], b: &[f64]) -> f64 {
     a.iter()
         .zip(b.iter())
-        .map(|(&x, &y)| (x - y).powi(2))
+        .map(|(&x, &y)| {
+            let d = x - y;
+            d * d
+        })
         .sum::<f64>()
         .sqrt()
 }
