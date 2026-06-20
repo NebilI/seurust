@@ -49,6 +49,26 @@ jobs:
       - name: Install SeuratObject from CRAN (source)
         run: Rscript -e "install.packages('SeuratObject', type = 'source', repos = 'https://cloud.r-project.org')"
 
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "${GITHUB_PATH}"
+
+      - name: Install RSeurat build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libclang-dev llvm-dev patchelf
+
+      - name: Install RSeurat
+        run: |
+          cd RSeurat
+          Rscript tools/config.R
+          cd ..
+          R CMD INSTALL RSeurat
+        env:
+          NOT_CRAN: true
+          SEURAT_KEEP_RUST_TARGET: true
+
       # Run CRAN checks, if any ERRORs or WARNINGs are raised the check fails.
       # Certain tests are skipped when running as CRAN—skip all tests so they
       # can be run together in a subsequent step.
