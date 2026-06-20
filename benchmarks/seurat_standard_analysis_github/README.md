@@ -1,17 +1,21 @@
 # Seurat Standard Analysis Benchmark
 
-This benchmark runs the PBMC 3K Satija tutorial from [ajtimon/seurat-standard-analysis](https://github.com/ajtimon/seurat-standard-analysis) (`code/01_pbmc_satija_tutorial.R`) and compares:
+Times the executable scripts from [ajtimon/seurat-standard-analysis](https://github.com/ajtimon/seurat-standard-analysis) unchanged, comparing:
 
-- `Seurat:::` native C++/Rcpp kernels
-- `RSeurat::` native Rust/extendr kernels
+- **Seurat C++** — default Seurat Rcpp kernels
+- **RSeurat Rust** — same scripts after patching Seurat's native entry points to RSeurat
 
-Upstream script: <https://github.com/ajtimon/seurat-standard-analysis/blob/master/code/01_pbmc_satija_tutorial.R>
+Scripts timed:
 
-Data source: <https://cf.10xgenomics.com/samples/cell/pbmc3k/pbmc3k_filtered_gene_bc_matrices.tar.gz>
+| Script | Description |
+|--------|-------------|
+| `01_pbmc_satija_tutorial.R` | PBMC 3K Satija tutorial |
+| `02_gbm_seurat_adapted.R` | GBM object + Harmony integration |
+| `03_gbmap_exploration.R` | GBMap atlas exploration |
 
-The benchmark follows the upstream workflow shape: QC/filter cells, log-normalize, VST variable features, scale all genes, PCA, SNN graph, clustering at resolution 0.5, and UMAP. High-level Seurat object steps stay the same; only ported native kernel calls are swapped between backends.
+The runner clones the upstream repo into `upstream/` on first run (or uses an existing clone). Script outputs land in the upstream tree's `output/` and `plots/` directories and are overwritten between backend passes.
 
-## Run With Existing Dev Container
+## Run With Dev Container
 
 From the repository root:
 
@@ -31,19 +35,15 @@ docker build \
 docker run --rm rust-seurat-standard-analysis-benchmark
 ```
 
-For faster iteration against your working tree, mount the repo:
+Mount the working tree for faster iteration:
 
 ```sh
 docker run --rm -v "${PWD}:/workspace" -w /workspace \
   rust-seurat-standard-analysis-benchmark
 ```
 
-On Windows PowerShell, `${PWD}` works for the bind mount.
-
 ## Outputs
 
-The script downloads PBMC 3K once into `data/` and writes results into `output/`. Both directories are ignored by git.
+Timing summary is printed to stdout. Full results are saved to `output/script_timing_results.rds`.
 
-Parity checks include cell/gene counts, variable-feature digest, normalized data digest, rounded scaled-data digest, SNN digest, cluster digest, cluster sizes, and SNN non-zero count. The exact scaled-data digest and UMAP digest are reported as informational.
-
-The timing table reports `Seurat / RSeurat`, so values above `1.0x` mean the Rust-backed step was faster.
+The timing table reports `Seurat / RSeurat` speedup; values above `1.0x` mean the Rust-backed run was faster.
