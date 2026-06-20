@@ -49,18 +49,17 @@ jobs:
       - name: Install SeuratObject from CRAN (source)
         run: Rscript -e "install.packages('SeuratObject', type = 'source', repos = 'https://cloud.r-project.org')"
 
-      - name: Install Rust toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "${GITHUB_PATH}"
-
       - name: Install RSeurat build dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libclang-dev llvm-dev patchelf
+          apt-get install -y --no-install-recommends \
+            curl ca-certificates \
+            libclang-dev llvm-dev patchelf
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 
       - name: Install RSeurat
         run: |
+          . "$HOME/.cargo/env"
           cd RSeurat
           Rscript tools/config.R
           cd ..
