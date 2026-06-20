@@ -16,8 +16,7 @@ impl JavaRandom {
     }
 
     fn next(&mut self, bits: i32) -> i32 {
-        self.seed = (self.seed.wrapping_mul(0x5DEECE66D).wrapping_add(0xB))
-            & ((1u64 << 48) - 1);
+        self.seed = (self.seed.wrapping_mul(0x5DEECE66D).wrapping_add(0xB)) & ((1u64 << 48) - 1);
         (self.seed >> (48 - bits)) as i32
     }
 

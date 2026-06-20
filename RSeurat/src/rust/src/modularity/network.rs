@@ -88,12 +88,10 @@ impl Network {
                     }
                 }
                 neighbor[n_edges as usize] = edge[1][j];
-                edge_weight2[n_edges as usize] =
-                    edge_weight.map(|ew| ew[j]).unwrap_or(1.0);
+                edge_weight2[n_edges as usize] = edge_weight.map(|ew| ew[j]).unwrap_or(1.0);
                 n_edges += 1;
             } else {
-                total_edge_weight_self_links +=
-                    edge_weight.map(|ew| ew[j]).unwrap_or(1.0);
+                total_edge_weight_self_links += edge_weight.map(|ew| ew[j]).unwrap_or(1.0);
             }
         }
         for idx in i..=n_nodes {
@@ -226,12 +224,10 @@ impl Network {
             reduced_network.first_neighbor_index[(i + 1) as usize] = reduced_network.n_edges;
         }
 
-        reduced_network.neighbor = reduced_network_neighbor1
-            [..reduced_network.n_edges as usize]
-            .to_vec();
-        reduced_network.edge_weight = reduced_network_edge_weight1
-            [..reduced_network.n_edges as usize]
-            .to_vec();
+        reduced_network.neighbor =
+            reduced_network_neighbor1[..reduced_network.n_edges as usize].to_vec();
+        reduced_network.edge_weight =
+            reduced_network_edge_weight1[..reduced_network.n_edges as usize].to_vec();
         reduced_network
     }
 
@@ -284,18 +280,15 @@ impl Network {
                     if clustering.cluster[self.neighbor[k] as usize] == cluster {
                         subnetwork_neighbor[subnetwork.n_edges as usize] =
                             subnetwork_node[self.neighbor[k] as usize];
-                        subnetwork_edge_weight[subnetwork.n_edges as usize] =
-                            self.edge_weight[k];
+                        subnetwork_edge_weight[subnetwork.n_edges as usize] = self.edge_weight[k];
                         subnetwork.n_edges += 1;
                     }
                 }
                 subnetwork.first_neighbor_index[(i + 1) as usize] = subnetwork.n_edges;
             }
 
-            subnetwork.neighbor =
-                subnetwork_neighbor[..subnetwork.n_edges as usize].to_vec();
-            subnetwork.edge_weight =
-                subnetwork_edge_weight[..subnetwork.n_edges as usize].to_vec();
+            subnetwork.neighbor = subnetwork_neighbor[..subnetwork.n_edges as usize].to_vec();
+            subnetwork.edge_weight = subnetwork_edge_weight[..subnetwork.n_edges as usize].to_vec();
         }
 
         subnetwork.total_edge_weight_self_links = 0.0;
@@ -417,8 +410,7 @@ pub fn matrix_to_network(
 
     for i in 0..node1.len() {
         if node1[i] < node2[i] {
-            let mut j =
-                first_neighbor_index[node1[i] as usize] + n_neighbors[node1[i] as usize];
+            let mut j = first_neighbor_index[node1[i] as usize] + n_neighbors[node1[i] as usize];
             neighbor[j as usize] = node2[i];
             edge_weight2[j as usize] = edge_weight1[i];
             n_neighbors[node1[i] as usize] += 1;
@@ -455,8 +447,8 @@ pub fn split(s: &str, delimiter: char) -> Vec<String> {
 }
 
 pub fn read_input_file(fname: &str, modularity_function: i32) -> Result<Network, String> {
-    let content = std::fs::read_to_string(fname)
-        .map_err(|_| "File could not be opened.".to_string())?;
+    let content =
+        std::fs::read_to_string(fname).map_err(|_| "File could not be opened.".to_string())?;
 
     let lines: Vec<&str> = content.lines().collect();
     let n_lines = lines.len();

@@ -54,9 +54,7 @@ pub fn run_modularity_clustering(
         return Err("Modularity parameter must be equal to 1 or 2.".to_string());
     }
     if algorithm != 1 && algorithm != 2 && algorithm != 3 && algorithm != 4 {
-        return Err(
-            "Algorithm for modularity optimization must be 1, 2, 3, or 4".to_string(),
-        );
+        return Err("Algorithm for modularity optimization must be 1, 2, 3, or 4".to_string());
     }
     if n_random_starts < 1 {
         return Err("Have to have at least one start".to_string());
@@ -75,8 +73,7 @@ pub fn run_modularity_clustering(
     });
 
     let resolution2 = if modularity_function == 1 {
-        resolution
-            / (2.0 * network.get_total_edge_weight() + network.total_edge_weight_self_links)
+        resolution / (2.0 * network.get_total_edge_weight() + network.total_edge_weight_self_links)
     } else {
         resolution
     };
@@ -86,13 +83,8 @@ pub fn run_modularity_clustering(
     let mut random = JavaRandom::new(random_seed as u64);
 
     for _start in 0..n_random_starts {
-        let (clustering, modularity) = run_single_start(
-            &network,
-            resolution2,
-            algorithm,
-            n_iterations,
-            &mut random,
-        );
+        let (clustering, modularity) =
+            run_single_start(&network, resolution2, algorithm, n_iterations, &mut random);
 
         if modularity > max_modularity {
             best_clustering = Some(clustering);

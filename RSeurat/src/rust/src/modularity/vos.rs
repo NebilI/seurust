@@ -45,8 +45,7 @@ impl VOSClusteringTechnique {
 
         let mut cluster_weight = vec![0.0; self.clustering.n_clusters as usize];
         for i in 0..self.network.n_nodes as usize {
-            cluster_weight[self.clustering.cluster[i] as usize] +=
-                self.network.node_weight[i];
+            cluster_weight[self.clustering.cluster[i] as usize] += self.network.node_weight[i];
         }
         for i in 0..self.clustering.n_clusters as usize {
             quality_function -= cluster_weight[i] * cluster_weight[i] * self.resolution;
@@ -294,13 +293,11 @@ impl VOSClusteringTechnique {
 
     pub fn remove_cluster(&mut self, cluster: i32) -> i32 {
         let mut cluster_weight = vec![0.0; self.clustering.n_clusters as usize];
-        let mut total_edge_weight_per_cluster =
-            vec![0.0; self.clustering.n_clusters as usize];
+        let mut total_edge_weight_per_cluster = vec![0.0; self.clustering.n_clusters as usize];
 
         for i in 0..self.network.n_nodes {
             let iu = i as usize;
-            cluster_weight[self.clustering.cluster[iu] as usize] +=
-                self.network.node_weight[iu];
+            cluster_weight[self.clustering.cluster[iu] as usize] += self.network.node_weight[iu];
             if self.clustering.cluster[iu] == cluster {
                 let start = self.network.first_neighbor_index[i as usize] as usize;
                 let end = self.network.first_neighbor_index[(i + 1) as usize] as usize;
@@ -363,8 +360,7 @@ impl VOSClusteringTechnique {
 
             let merged = vos.remove_cluster(best);
             if merged >= 0 {
-                n_nodes_per_cluster[merged as usize] +=
-                    n_nodes_per_cluster[best as usize];
+                n_nodes_per_cluster[merged as usize] += n_nodes_per_cluster[best as usize];
             }
             n_nodes_per_cluster[best as usize] = 0;
         }
