@@ -1,27 +1,27 @@
-# Rust-Seurat
+# seurust
 
 **A faster native backend for [Seurat](https://satijalab.org/seurat) — same workflows, same outputs, less time in the hot path.**
 
-This repository is a development fork of Seurat v5 that adds **[RSeurat](RSeurat/)**, a companion R package with Rust/extendr reimplementations of Seurat's performance-critical native routines. Install both packages, keep your existing analysis code, and swap the backend where kernels have been ported.
+This repository is a development fork of Seurat v5 that adds **[seurust](seurust/)**, a companion R package with Rust/extendr reimplementations of Seurat's performance-critical native routines. Install both packages, keep your existing analysis code, and swap the backend where kernels have been ported.
 
-> **Drop-in by design.** RSeurat exposes the same function signatures as Seurat's internal C++ layer (`LogNorm`, `FastSparseRowScale`, `ComputeSNN`, `IntegrateDataC`, and more). Parity tests assert bit-for-bit agreement with the original implementation on every ported routine.
+> **Drop-in by design.** seurust exposes the same function signatures as Seurat's internal C++ layer (`LogNorm`, `FastSparseRowScale`, `ComputeSNN`, `IntegrateDataC`, and more). Parity tests assert bit-for-bit agreement with the original implementation on every ported routine.
 
-[![RSeurat CI](https://github.com/NebilI/Rust-Seurat/actions/workflows/rseurat_checks.yaml/badge.svg)](https://github.com/NebilI/Rust-Seurat/actions/workflows/rseurat_checks.yaml)
+[![seurust CI](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml/badge.svg)](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml)
 
 ---
 
-## Why use Rust-Seurat?
+## Why use seurust?
 
 Single-cell pipelines spend a surprising amount of time in a handful of native kernels: log-normalization, variable-feature statistics, scaling sparse matrices, building shared-nearest-neighbor graphs, and batch-integration weighting. Those routines dominate preprocessing and graph construction on large datasets.
 
-Rust-Seurat targets exactly that layer:
+seurust targets exactly that layer:
 
 - **Same Seurat API** — no new object model, no workflow rewrite
 - **Validated parity** — automated C++ vs Rust tests on every ported kernel ([`tests/testthat/test_rust_cpp_*.R`](tests/testthat/))
 - **Measurable speedups** — Rust wins on the preprocessing kernels that run on every dataset (see benchmarks below)
 - **Open development** — install from GitHub, run benchmarks locally, contribute kernel ports
 
-Seurat itself remains the user-facing package. **RSeurat** is the engine upgrade you install alongside it.
+Seurat itself remains the user-facing package. **seurust** is the engine upgrade you install alongside it.
 
 ---
 
@@ -35,7 +35,7 @@ Seurat itself remains the user-facing package. **RSeurat** is the engine upgrade
               ┌─────────────┴─────────────┐
               ▼                           ▼
      ┌─────────────────┐         ┌─────────────────┐
-     │  Seurat (root)  │         │     RSeurat     │
+     │  Seurat (root)  │         │     seurust     │
      │  C++ / Rcpp     │         │  Rust / extendr │
      │  production API │         │  ported kernels │
      └─────────────────┘         └─────────────────┘
@@ -44,7 +44,7 @@ Seurat itself remains the user-facing package. **RSeurat** is the engine upgrade
 | Package | Location | Backend | Rust required? |
 |---------|----------|---------|----------------|
 | **Seurat** | repo root | C++/Rcpp | No |
-| **RSeurat** | [`RSeurat/`](RSeurat/) | Rust/extendr | Yes (build time) |
+| **seurust** | [`seurust/`](seurust/) | Rust/extendr | Yes (build time) |
 
 ---
 
@@ -97,7 +97,7 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 
 ## What's ported
 
-| Module | Seurat (C++) | RSeurat (Rust) | Status |
+| Module | Seurat (C++) | seurust (Rust) | Status |
 |--------|--------------|----------------|--------|
 | Sparse row stats | `src/stats.cpp` | `stats.rs` | ✅ Ported |
 | Data manipulation | `src/data_manipulation.cpp` | `data_manipulation/` | ✅ Ported |
@@ -109,7 +109,7 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 
 ## Quick start
 
-### Install RSeurat
+### Install seurust
 
 Requires R ≥ 4.0 and a [Rust toolchain](https://rustup.rs) (rustc + Cargo ≥ 1.65).
 
@@ -117,19 +117,19 @@ Requires R ≥ 4.0 and a [Rust toolchain](https://rustup.rs) (rustc + Cargo ≥ 
 if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
 
 # Rust backend
-remotes::install_github("NebilI/Rust-Seurat", subdir = "RSeurat")
+remotes::install_github("NebilI/seurust", subdir = "seurust")
 
 # Seurat from this fork (or use CRAN Seurat for comparison)
-remotes::install_github("NebilI/Rust-Seurat")
+remotes::install_github("NebilI/seurust")
 ```
 
-See [`RSeurat/README.md`](RSeurat/README.md) for local build instructions and [r-universe setup](r-universe/README.md) for publishing pre-built packages.
+See [`seurust/README.md`](seurust/README.md) for local build instructions and [r-universe setup](r-universe/README.md) for publishing pre-built packages.
 
 ### Verify parity in one line
 
 ```r
 library(Seurat)
-library(RSeurat)
+library(seurust)
 library(Matrix)
 
 mat <- Matrix::sparseMatrix(
@@ -138,7 +138,7 @@ mat <- Matrix::sparseMatrix(
 
 all.equal(
   Seurat:::LogNorm(mat, 1e4, FALSE),
-  RSeurat::LogNorm(mat, 1e4, FALSE)
+  seurust::LogNorm(mat, 1e4, FALSE)
 )
 # [1] TRUE
 ```
@@ -171,12 +171,12 @@ Full developer docs: [`docker/README.md`](docker/README.md).
 
 ## Relationship to upstream Seurat
 
-This fork tracks [satijalab/seurat](https://github.com/satijalab/seurat) and adds the Rust migration layer under [`RSeurat/`](RSeurat/). Upstream Seurat documentation and vignettes still apply for analysis workflows:
+This fork tracks [satijalab/seurat](https://github.com/satijalab/seurat) and adds the Rust migration layer under [`seurust/`](seurust/). Upstream Seurat documentation and vignettes still apply for analysis workflows:
 
 - https://satijalab.org/seurat
 - https://cran.r-project.org/package=Seurat
 
-Contributions welcome — especially kernel ports, parity tests, and benchmark improvements. Open an [issue](https://github.com/NebilI/Rust-Seurat/issues) or PR on this repository.
+Contributions welcome — especially kernel ports, parity tests, and benchmark improvements. Open an [issue](https://github.com/NebilI/seurust/issues) or PR on this repository.
 
 ---
 

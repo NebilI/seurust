@@ -1,12 +1,12 @@
 # Development image for Seurat's original Rcpp/C++ implementation (Eigen, CXX17).
 # Build from repo root:
-#   docker build -f docker/Dockerfile.rcpp -t rust-seurat-rcpp:dev .
+#   docker build -f docker/Dockerfile.rcpp -t seurust-rcpp:dev .
 # Run with the repo mounted:
 #   docker compose -f docker/docker-compose.yml run --rm rcpp-dev
 
 FROM rocker/r2u:jammy
 
-LABEL org.opencontainers.image.title="rust-seurat-rcpp-dev"
+LABEL org.opencontainers.image.title="seurust-rcpp-dev"
 LABEL org.opencontainers.image.description="R + toolchain for Seurat Rcpp/C++ development"
 
 ENV DEBIAN_FRONTEND=noninteractive \

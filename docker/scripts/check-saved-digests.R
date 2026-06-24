@@ -2,7 +2,7 @@
 system2("Rscript", "docker/scripts/bootstrap-dev-env.R", stdout = "", stderr = "")
 suppressPackageStartupMessages({
   devtools::load_all(recompile = FALSE, quiet = TRUE)
-  library(RSeurat)
+  library(seurust)
 })
 cpp <- readRDS("examples/output/cpp_results.rds")
 rust <- readRDS("examples/output/rust_results.rds")

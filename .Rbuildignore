@@ -12,7 +12,7 @@ CODE_OF_CONDUCT.md
 ^index\.md$
 ^vignettes$
 ^LICENSE\.md$
-^RSeurat$
+^seurust$
 ^r-universe$
 ^docker$
 ^examples$

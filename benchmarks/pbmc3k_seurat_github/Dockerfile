@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=rust-seurat-rust:dev
+ARG BASE_IMAGE=seurust-rust:dev
 FROM ${BASE_IMAGE}
 
 WORKDIR /workspace

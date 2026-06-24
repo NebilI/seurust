@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Seurat (C++) and RSeurat, then run cross-package parity checks.
+# Build Seurat (C++) and seurust, then run cross-package parity checks.
 set -euo pipefail
 
 cd /workspace
@@ -13,14 +13,14 @@ Rscript docker/scripts/install-imports.R
 echo "==> Installing Seurat (C++/Rcpp only)..."
 Rscript -e "pkgbuild::compile_dll(debug = FALSE, compile_attributes = FALSE)"
 
-echo "==> Installing RSeurat..."
+echo "==> Installing seurust..."
 # Windows checkouts may have CRLF in shell/config files; strip before R CMD INSTALL.
-sed -i 's/\r$//' RSeurat/configure RSeurat/cleanup RSeurat/DESCRIPTION RSeurat/src/entrypoint.c 2>/dev/null || true
+sed -i 's/\r$//' seurust/configure seurust/cleanup seurust/DESCRIPTION seurust/src/entrypoint.c 2>/dev/null || true
 export NOT_CRAN=1 SEURAT_KEEP_RUST_TARGET=1
-cd RSeurat
+cd seurust
 Rscript tools/config.R
 cd ..
-R CMD INSTALL --preclean RSeurat
+R CMD INSTALL --preclean seurust
 
 echo "==> Running parity checks..."
 Rscript docker/scripts/run-rust-parity.R

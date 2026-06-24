@@ -3,7 +3,7 @@
 Times the executable scripts from [ajtimon/seurat-standard-analysis](https://github.com/ajtimon/seurat-standard-analysis) unchanged, comparing:
 
 - **Seurat C++** — default Seurat Rcpp kernels
-- **RSeurat Rust** — same scripts after patching Seurat's native entry points to RSeurat
+- **seurust Rust** — same scripts after patching Seurat's native entry points to seurust
 
 Scripts timed:
 
@@ -31,19 +31,19 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 docker compose -f docker/docker-compose.yml build rust-dev
 docker build \
   -f benchmarks/seurat_standard_analysis_github/Dockerfile \
-  -t rust-seurat-standard-analysis-benchmark .
-docker run --rm rust-seurat-standard-analysis-benchmark
+  -t seurust-standard-analysis-benchmark .
+docker run --rm seurust-standard-analysis-benchmark
 ```
 
 Mount the working tree for faster iteration:
 
 ```sh
 docker run --rm -v "${PWD}:/workspace" -w /workspace \
-  rust-seurat-standard-analysis-benchmark
+  seurust-standard-analysis-benchmark
 ```
 
 ## Outputs
 
 Timing summary is printed to stdout. Full results are saved to `output/script_timing_results.rds`.
 
-The timing table reports `Seurat / RSeurat` speedup; values above `1.0x` mean the Rust-backed run was faster.
+The timing table reports `Seurat / seurust` speedup; values above `1.0x` mean the Rust-backed run was faster.

@@ -12,5 +12,5 @@ docs/
 Rplots.pdf
 revdep/
 Seurat.Rcheck/
-RSeurat/src/rust/target/
+seurust/src/rust/target/
 /examples/output
