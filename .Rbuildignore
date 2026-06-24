@@ -15,6 +15,9 @@ CODE_OF_CONDUCT.md
 ^RSeurat$
 ^r-universe$
 ^docker$
+^examples$
+^benchmarks$
+^\.dockerignore$
 Rplots.pdf
 revdep/
 Seurat.Rcheck/

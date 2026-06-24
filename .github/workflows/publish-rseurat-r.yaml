@@ -1,4 +1,4 @@
-name: RSeurat Release
+name: Publish RSeurat R package
 
 on:
   release:
@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build-source-tarball:
-    name: "build RSeurat source tarball"
+  publish-r:
+    name: Build tarball and sync r-universe
     runs-on: ubuntu-latest
 
     steps:
@@ -62,3 +62,32 @@ jobs:
         with:
           name: RSeurat-source
           path: RSeurat_*.tar.gz
+
+      - name: Sync r-universe registry
+        if: github.event_name == 'release'
+        env:
+          UNIVERSE_TOKEN: ${{ secrets.R_UNIVERSE_REGISTRY_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$UNIVERSE_TOKEN" ]; then
+            echo "::warning::R_UNIVERSE_REGISTRY_TOKEN not configured; skipping r-universe sync"
+            exit 0
+          fi
+          git clone "https://x-access-token:${UNIVERSE_TOKEN}@github.com/NebilI/NebilI.r-universe.dev.git" universe-registry
+          cd universe-registry
+          cat > packages.json <<EOF
+          [
+            {
+              "package": "RSeurat",
+              "url": "https://github.com/NebilI/Rust-Seurat",
+              "subdir": "RSeurat",
+              "branch": "${RELEASE_TAG}"
+            }
+          ]
+          EOF
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add packages.json
+          git diff --cached --quiet || git commit -m "Point RSeurat at release ${RELEASE_TAG}"
+          git push
