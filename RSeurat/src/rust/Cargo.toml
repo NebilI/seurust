@@ -1,9 +1,15 @@
 [package]
 name = "rseurat"
-publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.65"
+description = "Rust native kernels for single-cell analysis (RSeurat / Seurat backend)"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/NebilI/Rust-Seurat"
+homepage = "https://github.com/NebilI/Rust-Seurat/tree/main/RSeurat"
+keywords = ["bioinformatics", "single-cell", "seurat", "sparse"]
+categories = ["science"]
 
 [lib]
 crate-type = ["rlib", "staticlib"]
