@@ -1,4 +1,4 @@
-# RSeurat
+# seurust
 
 Rust/extendr backend for Seurat's performance-critical native routines. Install
 alongside [Seurat](../) to compare C++ and Rust implementations during the
@@ -19,25 +19,25 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
   install.packages("remotes")
 }
 
-remotes::install_github("NebilI/Rust-Seurat", subdir = "RSeurat")
+remotes::install_github("NebilI/seurust", subdir = "seurust")
 ```
 
 Install a specific branch or tag:
 
 ```r
 remotes::install_github(
-  "NebilI/Rust-Seurat",
-  subdir = "RSeurat",
+  "NebilI/seurust",
+  subdir = "seurust",
   ref = "feature/rust-rewrite"
 )
 ```
 
 ### From a release tarball
 
-Download `RSeurat_*.tar.gz` from [GitHub Releases](https://github.com/NebilI/Rust-Seurat/releases), then:
+Download `seurust_*.tar.gz` from [GitHub Releases](https://github.com/NebilI/seurust/releases), then:
 
 ```r
-install.packages("path/to/RSeurat_0.1.0.tar.gz", repos = NULL, type = "source")
+install.packages("path/to/seurust_0.1.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ### From r-universe
@@ -46,7 +46,7 @@ After registering this package in your [r-universe](https://r-universe.dev) regi
 
 ```r
 install.packages(
-  "RSeurat",
+  "seurust",
   repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
 )
 ```
@@ -56,34 +56,34 @@ install.packages(
 From the repo root:
 
 ```r
-devtools::install("RSeurat")
+devtools::install("seurust")
 ```
 
 Or from the shell:
 
 ```sh
-cd RSeurat
+cd seurust
 Rscript tools/config.R
 cd ..
-R CMD INSTALL RSeurat
+R CMD INSTALL seurust
 ```
 
 ## Compare against Seurat
 
 ```r
 library(Seurat)
-library(RSeurat)
+library(seurust)
 library(Matrix)
 
 mat <- Matrix::sparseMatrix(i = c(0, 2, 1), p = c(0, 1, 2, 3), x = 1:3, dims = c(3, 3))
 all.equal(
   Seurat:::LogNorm(mat, 1e4, FALSE),
-  RSeurat::LogNorm(mat, 1e4, FALSE)
+  seurust::LogNorm(mat, 1e4, FALSE)
 )
 ```
 
 Parity and benchmark tests live in the parent package under
-`tests/testthat/test_rust_cpp_*.R` and require `RSeurat` in `Suggests`.
+`tests/testthat/test_rust_cpp_*.R` and require `seurust` in `Suggests`.
 
 ## Layout
 
@@ -91,7 +91,7 @@ Parity and benchmark tests live in the parent package under
 |------|------|
 | `src/rust/` | extendr crate (Rust kernels) |
 | `src/cpp/` | ModularityOptimizer C++ bridge |
-| `src/entrypoint.c` | Links Rust staticlib into `RSeurat.so` |
+| `src/entrypoint.c` | Links Rust staticlib into `seurust.so` |
 | `R/native.R` | High-level R API matching Seurat's RcppExports |
 | `R/extendr-wrappers.R` | Generated low-level `.Call` wrappers |
 

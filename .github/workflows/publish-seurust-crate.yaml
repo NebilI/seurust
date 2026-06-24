@@ -1,4 +1,4 @@
-name: Publish rseurat crate
+name: Publish seurust crate
 
 on:
   release:
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: RSeurat/src/rust
+        working-directory: seurust/src/rust
 
     steps:
       - name: Checkout

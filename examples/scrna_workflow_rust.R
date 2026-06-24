@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
-# Example scRNA-seq workflow using RSeurat's Rust/extendr native kernels.
+# Example scRNA-seq workflow using seurust's Rust/extendr native kernels.
 #
 # Identical analysis steps to scrna_workflow_cpp.R; only the backend namespace
-# differs (RSeurat:: vs Seurat:::). Outputs should match the C++ run bit-for-bit
+# differs (seurust:: vs Seurat:::). Outputs should match the C++ run bit-for-bit
 # on ported routines.
 #
 # Run from repo root:

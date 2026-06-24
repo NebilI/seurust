@@ -1,8 +1,8 @@
 [
   {
-    "package": "RSeurat",
-    "url": "https://github.com/NebilI/Rust-Seurat",
-    "subdir": "RSeurat",
+    "package": "seurust",
+    "url": "https://github.com/NebilI/seurust",
+    "subdir": "seurust",
     "branch": "main"
   }
 ]

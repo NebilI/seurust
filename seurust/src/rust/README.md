@@ -1,6 +1,6 @@
-# rseurat
+# seurust
 
-Rust native kernels for single-cell analysis, powering the [RSeurat](https://github.com/NebilI/Rust-Seurat/tree/main/RSeurat) R package.
+Rust native kernels for single-cell analysis, powering the [seurust](https://github.com/NebilI/seurust/tree/main/seurust) R package.
 
 This crate implements performance-critical routines used by [Seurat](https://satijalab.org/seurat): sparse matrix normalization and scaling, shared-nearest-neighbor graph construction, modularity clustering, and batch-integration helpers.
 
@@ -9,10 +9,10 @@ This crate implements performance-critical routines used by [Seurat](https://sat
 The crate is primarily consumed as an R extension via [extendr](https://github.com/extendr/extendr). Install the R package for the supported workflow:
 
 ```r
-remotes::install_github("NebilI/Rust-Seurat", subdir = "RSeurat")
+remotes::install_github("NebilI/seurust", subdir = "seurust")
 ```
 
-Building from source requires R, RcppEigen, and a Rust toolchain (see the RSeurat package documentation).
+Building from source requires R, RcppEigen, and a Rust toolchain (see the seurust package documentation).
 
 ## License
 

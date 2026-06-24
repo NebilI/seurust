@@ -1,4 +1,4 @@
-# Swap Seurat C++ RcppExports entry points with RSeurat Rust implementations.
+# Swap Seurat C++ RcppExports entry points with seurust Rust implementations.
 # Lets upstream analysis scripts run unchanged while benchmarking backends.
 
 .patch_store <- new.env(parent = emptyenv())
@@ -35,12 +35,12 @@ PORTED_NATIVE_FUNS <- c(
 
 patch_seurat_backend <- function(engine = c("cpp", "rust")) {
   engine <- match.arg(engine)
-  if (!requireNamespace("RSeurat", quietly = TRUE)) {
-    stop("RSeurat is not installed.", call. = FALSE)
+  if (!requireNamespace("seurust", quietly = TRUE)) {
+    stop("seurust is not installed.", call. = FALSE)
   }
 
   seurat_ns <- asNamespace("Seurat")
-  rseurat_ns <- asNamespace("RSeurat")
+  seurust_ns <- asNamespace("seurust")
   patched <- character()
 
   for (fn in PORTED_NATIVE_FUNS) {
@@ -51,10 +51,10 @@ patch_seurat_backend <- function(engine = c("cpp", "rust")) {
       assign(fn, get(fn, envir = seurat_ns), envir = .patch_store)
     }
     replacement <- if (identical(engine, "rust")) {
-      if (!exists(fn, envir = rseurat_ns, inherits = FALSE)) {
+      if (!exists(fn, envir = seurust_ns, inherits = FALSE)) {
         next
       }
-      get(fn, envir = rseurat_ns)
+      get(fn, envir = seurust_ns)
     } else {
       get(fn, envir = .patch_store)
     }
@@ -71,5 +71,5 @@ patch_seurat_backend <- function(engine = c("cpp", "rust")) {
 }
 
 backend_label <- function(engine) {
-  if (identical(engine, "rust")) "RSeurat Rust" else "Seurat C++"
+  if (identical(engine, "rust")) "seurust Rust" else "Seurat C++"
 }
