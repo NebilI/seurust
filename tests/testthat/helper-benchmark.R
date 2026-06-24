@@ -1,7 +1,7 @@
-#' Time a pair of Seurat (C++) and RSeurat callables with warmup and repeated runs.
+#' Time a pair of Seurat (C++) and seurust callables with warmup and repeated runs.
 #'
 #' @param cpp_fn Zero-argument function calling Seurat's C++ backend (`Seurat:::`).
-#' @param rust_fn Zero-argument function calling RSeurat (`RSeurat::`).
+#' @param rust_fn Zero-argument function calling seurust (`seurust::`).
 #' @param n_warmup Warmup iterations (not timed).
 #' @param n_reps Timed repetitions; mean, sd, and median elapsed microseconds are reported.
 #' @return A list with per-backend summaries, raw `times` vectors (microseconds), and
@@ -146,13 +146,13 @@ benchmark_compute_snn <- function(
   }
   nn <- make_compute_snn_nn(n_cells = n_cells, k = k, seed = seed)
   cpp <- Seurat:::ComputeSNN(nn, prune)
-  rust <- RSeurat::ComputeSNN(nn, prune)
+  rust <- seurust::ComputeSNN(nn, prune)
   if (!isTRUE(all.equal(as.matrix(rust), as.matrix(cpp), tolerance = 1e-10))) {
     stop("ComputeSNN parity failed for ", label, call. = FALSE)
   }
   bench <- benchmark_rust_cpp(
     cpp_fn = function() Seurat:::ComputeSNN(nn, prune),
-    rust_fn = function() RSeurat::ComputeSNN(nn, prune),
+    rust_fn = function() seurust::ComputeSNN(nn, prune),
     n_warmup = n_warmup,
     n_reps = n_reps
   )

@@ -1,5 +1,5 @@
-# Timing comparison: Seurat (C++) vs RSeurat modularity clustering.
-context("ModularityOptimizer RSeurat/Seurat timing")
+# Timing comparison: Seurat (C++) vs seurust modularity clustering.
+context("ModularityOptimizer seurust/Seurat timing")
 
 node1 <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1,
            1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 5, 6, 8, 8, 8, 9, 13,
@@ -24,12 +24,12 @@ modularity_args <- list(
 )
 
 test_that("Modularity clustering timing", {
-  skip_if_no_rseurat()
+  skip_if_no_seurust()
   run_cpp <- function() {
     do.call(Seurat:::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args))
   }
   run_rust <- function() {
-    do.call(RSeurat::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args))
+    do.call(seurust::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args))
   }
   out_cpp <- run_cpp()
   out_rust <- run_rust()

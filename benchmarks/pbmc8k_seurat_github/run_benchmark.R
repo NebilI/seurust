@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# Benchmark a Seurat PBMC 8K workflow with Seurat C++ vs RSeurat Rust kernels.
+# Benchmark a Seurat PBMC 8K workflow with Seurat C++ vs seurust Rust kernels.
 
 UPSTREAM_WORKFLOW_URL <- "https://github.com/satijalab/seurat/blob/HEAD/vignettes/pbmc3k_tutorial.Rmd"
 TENXPBMC_DATA_URL <- "https://bioconductor.org/packages/TENxPBMCData"
@@ -14,7 +14,7 @@ find_repo_root <- function() {
   )
   for (path in candidates) {
     if (file.exists(file.path(path, "DESCRIPTION")) &&
-        dir.exists(file.path(path, "RSeurat"))) {
+        dir.exists(file.path(path, "seurust"))) {
       return(path)
     }
   }
@@ -35,7 +35,7 @@ suppressPackageStartupMessages({
   library(Matrix)
   library(Seurat)
   library(SeuratObject)
-  library(RSeurat)
+  library(seurust)
 })
 
 benchmark_root <- file.path(repo_root, "benchmarks/pbmc8k_seurat_github")
@@ -132,13 +132,13 @@ make_backend <- function(engine = c("cpp", "rust")) {
     )
   } else {
     list(
-      name = "RSeurat Rust",
-      LogNorm = RSeurat::LogNorm,
-      SparseRowVar2 = RSeurat::SparseRowVar2,
-      SparseRowVarStd = RSeurat::SparseRowVarStd,
-      FastSparseRowScale = RSeurat::FastSparseRowScale,
-      ComputeSNN = RSeurat::ComputeSNN,
-      RunModularityClusteringCpp = RSeurat::RunModularityClusteringCpp
+      name = "seurust Rust",
+      LogNorm = seurust::LogNorm,
+      SparseRowVar2 = seurust::SparseRowVar2,
+      SparseRowVarStd = seurust::SparseRowVarStd,
+      FastSparseRowScale = seurust::FastSparseRowScale,
+      ComputeSNN = seurust::ComputeSNN,
+      RunModularityClusteringCpp = seurust::RunModularityClusteringCpp
     )
   }
 }
@@ -314,7 +314,7 @@ run_workflow <- function(backend, counts, output_file) {
 print_timing_comparison <- function(cpp, rust) {
   steps <- names(cpp$timings)
   cat("\n==> Timing comparison\n")
-  cat(sprintf("%-24s %10s %10s %12s\n", "Step", "Seurat", "RSeurat", "Speedup"))
+  cat(sprintf("%-24s %10s %10s %12s\n", "Step", "Seurat", "seurust", "Speedup"))
   cat(strrep("-", 62), "\n", sep = "")
   for (step in steps) {
     cpp_time <- cpp$timings[[step]]
@@ -362,7 +362,7 @@ compare_outputs <- function(cpp, rust) {
     cat(sprintf("  %-26s %s\n", field, if (ok) "OK" else "MISMATCH"))
     if (!ok) {
       cat("    Seurat :", paste(cpp[[field]], collapse = ", "), "\n")
-      cat("    RSeurat:", paste(rust[[field]], collapse = ", "), "\n")
+      cat("    seurust:", paste(rust[[field]], collapse = ", "), "\n")
     }
   }
   for (field in informational_fields) {
@@ -375,7 +375,7 @@ compare_outputs <- function(cpp, rust) {
   }
 
   if (!all_ok) {
-    stop("Output mismatch between Seurat C++ and RSeurat Rust runs.", call. = FALSE)
+    stop("Output mismatch between Seurat C++ and seurust Rust runs.", call. = FALSE)
   }
 }
 
@@ -389,16 +389,16 @@ counts <- Read10X(data.dir = pbmc_matrix_dir)
 rownames(counts) <- gsub("_", "-", rownames(counts))
 
 cpp_file <- file.path(output_root, "seurat_cpp_results.rds")
-rust_file <- file.path(output_root, "rseurat_rust_results.rds")
+rust_file <- file.path(output_root, "seurust_rust_results.rds")
 
 cat("==> Running PBMC 8K workflow with Seurat C++ kernels...\n")
 cpp <- run_workflow(make_backend("cpp"), counts, cpp_file)
 
-cat("\n==> Running PBMC 8K workflow with RSeurat Rust kernels...\n")
+cat("\n==> Running PBMC 8K workflow with seurust Rust kernels...\n")
 rust <- run_workflow(make_backend("rust"), counts, rust_file)
 
 compare_outputs(cpp, rust)
 print_timing_comparison(cpp, rust)
 
-cat("\nAll exact parity checks passed. Speedup > 1.0 means RSeurat Rust was faster.\n")
+cat("\nAll exact parity checks passed. Speedup > 1.0 means seurust Rust was faster.\n")
 cat("Results saved in: ", output_root, "\n", sep = "")

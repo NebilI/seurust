@@ -30,8 +30,8 @@ bootstrap_example_env <- function() {
     library(Matrix)
     library(ggplot2)
   })
-  if (!requireNamespace("RSeurat", quietly = TRUE)) {
-    stop("RSeurat is not installed. Run docker/scripts/bootstrap-dev-env.R first.")
+  if (!requireNamespace("seurust", quietly = TRUE)) {
+    stop("seurust is not installed. Run docker/scripts/bootstrap-dev-env.R first.")
   }
   invisible(root)
 }
@@ -87,35 +87,35 @@ make_backend <- function(engine = c("cpp", "rust")) {
     )
   } else {
     list(
-      name = "RSeurat (Rust/extendr)",
+      name = "seurust (Rust/extendr)",
       LogNorm = function(data, scale_factor, display_progress) {
-        RSeurat::LogNorm(data, scale_factor, display_progress)
+        seurust::LogNorm(data, scale_factor, display_progress)
       },
       row_sum_dgcmatrix = function(x, i, rows, cols) {
-        RSeurat::row_sum_dgcmatrix(x, i, rows, cols)
+        seurust::row_sum_dgcmatrix(x, i, rows, cols)
       },
       FastExpMean = function(mat, display_progress) {
-        RSeurat::FastExpMean(mat, display_progress)
+        seurust::FastExpMean(mat, display_progress)
       },
       FastLogVMR = function(mat, display_progress) {
-        RSeurat::FastLogVMR(mat, display_progress)
+        seurust::FastLogVMR(mat, display_progress)
       },
       SparseRowVar2 = function(mat, mu, display_progress) {
-        RSeurat::SparseRowVar2(mat, mu, display_progress)
+        seurust::SparseRowVar2(mat, mu, display_progress)
       },
       SparseRowVarStd = function(mat, mu, sd, vmax, display_progress) {
-        RSeurat::SparseRowVarStd(mat, mu, sd, vmax, display_progress)
+        seurust::SparseRowVarStd(mat, mu, sd, vmax, display_progress)
       },
       FastSparseRowScale = function(mat, scale, center, scale_max, display_progress) {
-        RSeurat::FastSparseRowScale(mat, scale, center, scale_max, display_progress)
+        seurust::FastSparseRowScale(mat, scale, center, scale_max, display_progress)
       },
       ComputeSNN = function(nn_ranked, prune) {
-        RSeurat::ComputeSNN(nn_ranked, prune)
+        seurust::ComputeSNN(nn_ranked, prune)
       },
       RunModularityClusteringCpp = function(SNN, modularityFunction, resolution,
                                             algorithm, nRandomStarts, nIterations,
                                             randomSeed, printOutput, edgefilename) {
-        RSeurat::RunModularityClusteringCpp(
+        seurust::RunModularityClusteringCpp(
           SNN, modularityFunction, resolution, algorithm,
           nRandomStarts, nIterations, randomSeed, printOutput, edgefilename
         )
@@ -123,13 +123,13 @@ make_backend <- function(engine = c("cpp", "rust")) {
       FindWeightsC = function(cells2, distances, anchor_cells2,
                               integration_matrix_rownames, cell_index,
                               anchor_score, min_dist, sd, display_progress) {
-        RSeurat::FindWeightsC(
+        seurust::FindWeightsC(
           cells2, distances, anchor_cells2, integration_matrix_rownames,
           cell_index, anchor_score, min_dist, sd, display_progress
         )
       },
       IntegrateDataC = function(integration_matrix, weights, expression_cells2) {
-        RSeurat::IntegrateDataC(integration_matrix, weights, expression_cells2)
+        seurust::IntegrateDataC(integration_matrix, weights, expression_cells2)
       }
     )
   }

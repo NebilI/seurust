@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
-# Print Seurat (C++) vs RSeurat timing for ported routines.
+# Print Seurat (C++) vs seurust timing for ported routines.
 # Optional gate: SEURAT_REQUIRE_RUST_FASTER=1 fails when Rust is slower.
 
 system2("Rscript", "docker/scripts/bootstrap-dev-env.R", stdout = "", stderr = "")
 
 suppressPackageStartupMessages({
   devtools::load_all(recompile = FALSE, quiet = TRUE)
-  library(RSeurat)
+  library(seurust)
   library(Matrix)
 })
 
@@ -60,7 +60,7 @@ modularity_args <- list(
 run_bench(
   "Modularity (alg 3, 5 starts x 50 iters)",
   cpp_fn = function() do.call(Seurat:::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
-  rust_fn = function() do.call(RSeurat::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
+  rust_fn = function() do.call(seurust::RunModularityClusteringCpp, c(list(SNN = connections), modularity_args)),
   n_warmup = 2L,
   tolerance = 0.95
 )
@@ -70,7 +70,7 @@ mat <- as(matrix(1:160000, ncol = 400, nrow = 400), "sparseMatrix")
 run_bench(
   "LogNorm (400x400 sparse)",
   cpp_fn = function() Seurat:::LogNorm(mat, 1e4, display_progress = FALSE),
-  rust_fn = function() RSeurat::LogNorm(mat, 1e4, display_progress = FALSE)
+  rust_fn = function() seurust::LogNorm(mat, 1e4, display_progress = FALSE)
 )
 
 cat("\n==> Dense matrix kernels\n")
@@ -79,7 +79,7 @@ dense_mat <- matrix(rnorm(2000 * 300), nrow = 2000, ncol = 300)
 run_bench(
   "Standardize (2000x300 dense)",
   cpp_fn = function() Seurat:::Standardize(dense_mat, display_progress = FALSE),
-  rust_fn = function() RSeurat::Standardize(dense_mat, display_progress = FALSE),
+  rust_fn = function() seurust::Standardize(dense_mat, display_progress = FALSE),
   n_warmup = 1L,
   n_reps = 25L,
   tolerance = 0.95
@@ -87,14 +87,14 @@ run_bench(
 run_bench(
   "FastCov (2000x120 dense)",
   cpp_fn = function() Seurat:::FastCov(dense_mat[, 1:120], center = TRUE),
-  rust_fn = function() RSeurat::FastCov(dense_mat[, 1:120], center = TRUE),
+  rust_fn = function() seurust::FastCov(dense_mat[, 1:120], center = TRUE),
   n_warmup = 1L,
   n_reps = 25L
 )
 run_bench(
   "RowVar (2000x300 dense)",
   cpp_fn = function() Seurat:::RowVar(dense_mat),
-  rust_fn = function() RSeurat::RowVar(dense_mat),
+  rust_fn = function() seurust::RowVar(dense_mat),
   n_warmup = 1L,
   n_reps = 25L,
   tolerance = 0.95
@@ -108,7 +108,7 @@ dist_neighbors <- replicate(2500, as.numeric(sample.int(2500, 20)), simplify = F
 run_bench(
   "fast_dist (2500 cells x 30 dims, k=20)",
   cpp_fn = function() Seurat:::fast_dist(x = dist_x, y = dist_y, n = dist_neighbors),
-  rust_fn = function() RSeurat::fast_dist(x = dist_x, y = dist_y, n = dist_neighbors),
+  rust_fn = function() seurust::fast_dist(x = dist_x, y = dist_y, n = dist_neighbors),
   n_warmup = 1L,
   n_reps = 25L,
   tolerance = 0.95
@@ -127,7 +127,7 @@ run_bench(
     )
   },
   rust_fn = function() {
-    RSeurat::FastSparseRowScale(
+    seurust::FastSparseRowScale(
       scale_mat, scale = TRUE, center = TRUE, scale_max = 10, display_progress = FALSE
     )
   },
@@ -147,7 +147,7 @@ run_bench(
     Seurat:::SparseRowVar2(var_mat, mu = mu, display_progress = FALSE)
   },
   rust_fn = function() {
-    RSeurat::SparseRowVar2(var_mat, mu = mu, display_progress = FALSE)
+    seurust::SparseRowVar2(var_mat, mu = mu, display_progress = FALSE)
   },
   n_warmup = 1L,
   tolerance = 0.95
@@ -169,7 +169,7 @@ bi <- slot(big, "i")
 run_bench(
   "row_sum_dgcmatrix (3000x800 sparse)",
   cpp_fn = function() Seurat:::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big)),
-  rust_fn = function() RSeurat::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big))
+  rust_fn = function() seurust::row_sum_dgcmatrix(bx, bi, nrow(big), ncol(big))
 )
 
 cat("\n==> Integration helpers\n")
@@ -194,7 +194,7 @@ run_bench(
     )
   },
   rust_fn = function() {
-    RSeurat::FindWeightsC(
+    seurust::FindWeightsC(
       cells2 = cells2, distances = distances, anchor_cells2 = anchor_cells2,
       integration_matrix_rownames = integration_rownames, cell_index = cell_index,
       anchor_score = anchor_score, min_dist = 0, sd = 1, display_progress = FALSE
@@ -222,7 +222,7 @@ run_bench(
     )
   },
   rust_fn = function() {
-    RSeurat::ScoreHelper(
+    seurust::ScoreHelper(
       snn = score_snn, query_pca = query_pca, query_dists = query_dists,
       corrected_nns = corrected_nns, k_snn = 20L, subtract_first_nn = FALSE,
       display_progress = FALSE

@@ -1,4 +1,4 @@
-Package: RSeurat
+Package: seurust
 Title: Rust Native Kernels for Seurat
 Version: 0.1.0.9000
 Authors@R: c(
@@ -9,8 +9,8 @@ Description: Rust/extendr reimplementation of performance-critical Seurat native
     routines. Install alongside Seurat to compare C++ and Rust backends during
     the migration.
 License: MIT + file LICENSE
-URL: https://github.com/NebilI/Rust-Seurat, https://github.com/NebilI/Rust-Seurat/tree/main/RSeurat
-BugReports: https://github.com/NebilI/Rust-Seurat/issues
+URL: https://github.com/NebilI/seurust, https://github.com/NebilI/seurust/tree/main/seurust
+BugReports: https://github.com/NebilI/seurust/issues
 Depends:
     R (>= 4.0.0)
 Imports:

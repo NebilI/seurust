@@ -286,7 +286,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rseurat"
+name = "seurust"
 version = "0.1.0"
 dependencies = [
  "cc",

@@ -1,17 +1,17 @@
-# Timing comparison: Seurat (C++/Rcpp via Seurat:::) vs RSeurat.
-context("RSeurat/Seurat timing")
+# Timing comparison: Seurat (C++/Rcpp via Seurat:::) vs seurust.
+context("seurust/Seurat timing")
 
 test_that("LogNorm timing", {
-  skip_if_no_rseurat()
+  skip_if_no_seurust()
   mat <- as(matrix(1:160000, ncol = 400, nrow = 400), "sparseMatrix")
   expect_equal(
-    as.matrix(RSeurat::LogNorm(mat, 1e4, display_progress = FALSE)),
+    as.matrix(seurust::LogNorm(mat, 1e4, display_progress = FALSE)),
     as.matrix(Seurat:::LogNorm(mat, 1e4, display_progress = FALSE)),
     tolerance = 1e-10
   )
   bench <- benchmark_rust_cpp(
     cpp_fn = function() Seurat:::LogNorm(mat, 1e4, display_progress = FALSE),
-    rust_fn = function() RSeurat::LogNorm(mat, 1e4, display_progress = FALSE),
+    rust_fn = function() seurust::LogNorm(mat, 1e4, display_progress = FALSE),
     n_warmup = 2L
   )
   expect_timing_report(bench, "LogNorm")
@@ -21,7 +21,7 @@ test_that("LogNorm timing", {
 })
 
 test_that("ComputeSNN timing (500 cells)", {
-  skip_if_no_rseurat()
+  skip_if_no_seurust()
   bench <- benchmark_compute_snn(
     n_cells = 500L,
     n_warmup = 2L
@@ -30,7 +30,7 @@ test_that("ComputeSNN timing (500 cells)", {
 })
 
 test_that("ComputeSNN timing (2000 cells)", {
-  skip_if_no_rseurat()
+  skip_if_no_seurust()
   bench <- benchmark_compute_snn(
     n_cells = 2000L,
     n_warmup = 1L
@@ -42,7 +42,7 @@ test_that("ComputeSNN timing (2000 cells)", {
 })
 
 test_that("row_sum_dgcmatrix timing", {
-  skip_if_no_rseurat()
+  skip_if_no_seurust()
   mat <- sparseMatrix(
     i = sample.int(3000, 500000, replace = TRUE),
     j = sample.int(800, 500000, replace = TRUE),
@@ -54,13 +54,13 @@ test_that("row_sum_dgcmatrix timing", {
   nr <- nrow(mat)
   nc <- ncol(mat)
   expect_equal(
-    RSeurat::row_sum_dgcmatrix(x, i, nr, nc),
+    seurust::row_sum_dgcmatrix(x, i, nr, nc),
     Seurat:::row_sum_dgcmatrix(x, i, nr, nc),
     tolerance = 1e-10
   )
   bench <- benchmark_rust_cpp(
     cpp_fn = function() Seurat:::row_sum_dgcmatrix(x, i, nr, nc),
-    rust_fn = function() RSeurat::row_sum_dgcmatrix(x, i, nr, nc),
+    rust_fn = function() seurust::row_sum_dgcmatrix(x, i, nr, nc),
     n_warmup = 2L
   )
   expect_timing_report(bench, "row_sum_dgcmatrix")

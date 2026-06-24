@@ -1,12 +1,12 @@
 * text=auto
 data/* binary
 src/* text=lf
-RSeurat/configure text eol=lf
-RSeurat/cleanup text eol=lf
-RSeurat/DESCRIPTION text eol=lf
-RSeurat/src/entrypoint.c text eol=lf
-RSeurat/src/Makevars.in text eol=lf
-RSeurat/src/Makevars.win.in text eol=lf
+seurust/configure text eol=lf
+seurust/cleanup text eol=lf
+seurust/DESCRIPTION text eol=lf
+seurust/src/entrypoint.c text eol=lf
+seurust/src/Makevars.in text eol=lf
+seurust/src/Makevars.win.in text eol=lf
 R/* text=lf
 docker/scripts/*.sh text eol=lf
 docker/Dockerfile* text eol=lf

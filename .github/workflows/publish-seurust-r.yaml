@@ -1,4 +1,4 @@
-name: Publish RSeurat R package
+name: Publish seurust R package
 
 on:
   release:
@@ -38,30 +38,30 @@ jobs:
       - name: Install R build dependencies
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: RSeurat
+          working-directory: seurust
           dependencies: '"hard"'
 
-      - name: Configure RSeurat
-        working-directory: RSeurat
+      - name: Configure seurust
+        working-directory: seurust
         run: Rscript tools/config.R
         env:
           NOT_CRAN: true
 
       - name: Build source tarball
-        run: R CMD build RSeurat
+        run: R CMD build seurust
 
       - name: Upload release asset
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: RSeurat_*.tar.gz
+          files: seurust_*.tar.gz
 
       - name: Upload workflow artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: RSeurat-source
-          path: RSeurat_*.tar.gz
+          name: seurust-source
+          path: seurust_*.tar.gz
 
       - name: Sync r-universe registry
         if: github.event_name == 'release'
@@ -79,9 +79,9 @@ jobs:
           cat > packages.json <<EOF
           [
             {
-              "package": "RSeurat",
-              "url": "https://github.com/NebilI/Rust-Seurat",
-              "subdir": "RSeurat",
+              "package": "seurust",
+              "url": "https://github.com/NebilI/seurust",
+              "subdir": "seurust",
               "branch": "${RELEASE_TAG}"
             }
           ]
@@ -89,5 +89,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add packages.json
-          git diff --cached --quiet || git commit -m "Point RSeurat at release ${RELEASE_TAG}"
+          git diff --cached --quiet || git commit -m "Point seurust at release ${RELEASE_TAG}"
           git push

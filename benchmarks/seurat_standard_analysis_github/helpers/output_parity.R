@@ -1,4 +1,4 @@
-# Capture and compare upstream script outputs between Seurat C++ and RSeurat runs.
+# Capture and compare upstream script outputs between Seurat C++ and seurust runs.
 
 ensure_digest_pkg <- function() {
   if (!requireNamespace("digest", quietly = TRUE)) {
@@ -245,13 +245,13 @@ compare_script_outputs <- function(script_name, cpp_digests, rust_digests) {
     cat(sprintf("  %-40s %s\n", key, status))
     if (!ok) {
       cat("    Seurat C++:", format_value(cpp_val), "\n")
-      cat("    RSeurat   :", format_value(rust_val), "\n")
+      cat("    seurust   :", format_value(rust_val), "\n")
     }
   }
 
   if (!all_ok) {
     stop(
-      "Output mismatch between Seurat C++ and RSeurat for ",
+      "Output mismatch between Seurat C++ and seurust for ",
       script_name,
       ".",
       call. = FALSE

@@ -1,22 +1,22 @@
-name: RSeurat Checks
+name: seurust Checks
 
 on:
   pull_request:
     paths:
-      - 'RSeurat/**'
-      - '.github/workflows/rseurat_checks.yaml'
+      - 'seurust/**'
+      - '.github/workflows/seurust_checks.yaml'
   push:
     branches:
       - main
       - feature/rust-rewrite
     paths:
-      - 'RSeurat/**'
-      - '.github/workflows/rseurat_checks.yaml'
+      - 'seurust/**'
+      - '.github/workflows/seurust_checks.yaml'
   workflow_dispatch:
 
 jobs:
-  check-rseurat:
-    name: "check RSeurat (ubuntu)"
+  check-seurust:
+    name: "check seurust (ubuntu)"
     runs-on: ubuntu-latest
     env:
       NOT_CRAN: true
@@ -49,28 +49,28 @@ jobs:
       - name: Install R dependencies
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          working-directory: RSeurat
+          working-directory: seurust
           extra-packages: any::rcmdcheck
           dependencies: '"soft"'
 
-      - name: Configure RSeurat
-        working-directory: RSeurat
+      - name: Configure seurust
+        working-directory: seurust
         run: Rscript tools/config.R
         env:
           NOT_CRAN: true
           SEURAT_KEEP_RUST_TARGET: true
 
       - name: Build source tarball
-        run: R CMD build RSeurat
+        run: R CMD build seurust
 
       - name: Check source tarball
         run: |
           set +e
-          R CMD check RSeurat_*.tar.gz --as-cran --no-manual 2>&1 | tee RSeurat-check.log
+          R CMD check seurust_*.tar.gz --as-cran --no-manual 2>&1 | tee seurust-check.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             echo "::group::R CMD check install log"
-            cat RSeurat.Rcheck/00install.out || true
+            cat seurust.Rcheck/00install.out || true
             echo "::endgroup::"
             exit "$status"
           fi
@@ -79,7 +79,7 @@ jobs:
           _R_CHECK_PACKAGE_SIZES_: false
           SEURAT_KEEP_RUST_TARGET: true
 
-      - name: Run RSeurat tests
+      - name: Run seurust tests
         run: |
-          R CMD INSTALL RSeurat_*.tar.gz
-          Rscript -e 'testthat::test_dir("RSeurat/tests/testthat")'
+          R CMD INSTALL seurust_*.tar.gz
+          Rscript -e 'testthat::test_dir("seurust/tests/testthat")'

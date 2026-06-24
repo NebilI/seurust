@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# Ensure Seurat dev DLL, RSeurat, and Imports exist (each `docker compose run`
+# Ensure Seurat dev DLL, seurust, and Imports exist (each `docker compose run`
 # starts a fresh container without prior install state).
 
 pkg_root <- if (file.exists("DESCRIPTION")) {
@@ -32,33 +32,33 @@ if (length(Sys.glob("src/Seurat.{so,dll}")) == 0) {
   compile_dll(debug = FALSE, compile_attributes = FALSE)
 }
 
-rseurat_ok <- function() {
-  if (!requireNamespace("RSeurat", quietly = TRUE)) {
+seurust_ok <- function() {
+  if (!requireNamespace("seurust", quietly = TRUE)) {
     return(FALSE)
   }
   tryCatch(
     {
       x <- c(1, 2)
       i <- c(0L, 1L)
-      out <- RSeurat::row_sum_dgcmatrix(x, i, 2L, 2L)
+      out <- seurust::row_sum_dgcmatrix(x, i, 2L, 2L)
       length(out) == 2L
     },
     error = function(e) FALSE
   )
 }
 
-if (!rseurat_ok()) {
-  message("==> Installing RSeurat...")
+if (!seurust_ok()) {
+  message("==> Installing seurust...")
   run_or_stop(
     "bash",
     c(
       "-c",
       paste(
         "export NOT_CRAN=1 SEURAT_KEEP_RUST_TARGET=1;",
-        "sed -i 's/\\r$//' RSeurat/configure RSeurat/cleanup",
-        "RSeurat/DESCRIPTION RSeurat/src/entrypoint.c 2>/dev/null || true;",
-        "cd RSeurat && Rscript tools/config.R && cd ..;",
-        "env NOT_CRAN=1 SEURAT_KEEP_RUST_TARGET=1 R CMD INSTALL --preclean RSeurat"
+        "sed -i 's/\\r$//' seurust/configure seurust/cleanup",
+        "seurust/DESCRIPTION seurust/src/entrypoint.c 2>/dev/null || true;",
+        "cd seurust && Rscript tools/config.R && cd ..;",
+        "env NOT_CRAN=1 SEURAT_KEEP_RUST_TARGET=1 R CMD INSTALL --preclean seurust"
       )
     )
   )

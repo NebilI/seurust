@@ -2,15 +2,15 @@
 # Extends the Rcpp dev image with Rust, bindgen/clang deps, and rextendr.
 #
 # Build from repo root (builds rcpp base first):
-#   docker build -f docker/Dockerfile.rcpp -t rust-seurat-rcpp:dev .
-#   docker build -f docker/Dockerfile.rust -t rust-seurat-rust:dev .
+#   docker build -f docker/Dockerfile.rcpp -t seurust-rcpp:dev .
+#   docker build -f docker/Dockerfile.rust -t seurust-rust:dev .
 # Or use compose:
 #   docker compose -f docker/docker-compose.yml build rust-dev
 
-ARG RCPP_IMAGE=rust-seurat-rcpp:dev
+ARG RCPP_IMAGE=seurust-rcpp:dev
 FROM ${RCPP_IMAGE}
 
-LABEL org.opencontainers.image.title="rust-seurat-rust-dev"
+LABEL org.opencontainers.image.title="seurust-rust-dev"
 LABEL org.opencontainers.image.description="R + Rcpp + Rust/extendr for Seurat rewrite development"
 
 ENV DEBIAN_FRONTEND=noninteractive \

@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
-# Time upstream ajtimon/seurat-standard-analysis scripts with Seurat C++ vs RSeurat Rust.
-# Upstream scripts are sourced unchanged; RSeurat is activated by patching Seurat natives.
+# Time upstream ajtimon/seurat-standard-analysis scripts with Seurat C++ vs seurust Rust.
+# Upstream scripts are sourced unchanged; seurust is activated by patching Seurat natives.
 
 UPSTREAM_REPO <- "https://github.com/ajtimon/seurat-standard-analysis"
 UPSTREAM_CLONE_URL <- "https://github.com/ajtimon/seurat-standard-analysis.git"
@@ -14,7 +14,7 @@ find_repo_root <- function() {
   )
   for (path in candidates) {
     if (file.exists(file.path(path, "DESCRIPTION")) &&
-        dir.exists(file.path(path, "RSeurat"))) {
+        dir.exists(file.path(path, "seurust"))) {
       return(path)
     }
   }
@@ -145,7 +145,7 @@ run_timed_script <- function(script_path, engine, code_dir) {
 print_timing_table <- function(results) {
   scripts <- unique(vapply(results, `[[`, "", "script"))
   cat("\n==> Timing comparison (upstream scripts, wall-clock seconds)\n")
-  cat(sprintf("%-32s %12s %12s %10s\n", "Script", "Seurat C++", "RSeurat", "Speedup"))
+  cat(sprintf("%-32s %12s %12s %10s\n", "Script", "Seurat C++", "seurust", "Speedup"))
   cat(strrep("-", 72), "\n", sep = "")
 
   for (script in scripts) {
@@ -173,7 +173,7 @@ print_timing_table <- function(results) {
       cat("  Seurat C++ failed: ", cpp$error, "\n", sep = "")
     }
     if (!isTRUE(rust$success)) {
-      cat("  RSeurat failed: ", rust$error, "\n", sep = "")
+      cat("  seurust failed: ", rust$error, "\n", sep = "")
     }
   }
 
@@ -247,7 +247,7 @@ source(file.path(helper_dir, "install_script_deps.R"), local = TRUE)
 suppressPackageStartupMessages({
   devtools::load_all(recompile = FALSE, quiet = TRUE)
   library(Seurat)
-  library(RSeurat)
+  library(seurust)
 })
 
 ensure_upstream_repo(upstream_root)
@@ -266,7 +266,7 @@ if (length(missing) > 0) {
 }
 
 cat("==> Upstream repo: ", UPSTREAM_REPO, "\n", sep = "")
-cat("==> Running upstream scripts unchanged; RSeurat enabled via Seurat native patch.\n\n")
+cat("==> Running upstream scripts unchanged; seurust enabled via Seurat native patch.\n\n")
 
 results <- list()
 parity_failures <- character()
@@ -318,6 +318,6 @@ if (length(parity_failures) > 0L) {
   )
 }
 
-cat("\nAll successful script pairs matched Seurat C++ and RSeurat outputs.\n")
-cat("Speedup > 1.0 means RSeurat was faster for that script.\n")
+cat("\nAll successful script pairs matched Seurat C++ and seurust outputs.\n")
+cat("Speedup > 1.0 means seurust was faster for that script.\n")
 cat("Detailed results: ", file.path(output_root, "script_timing_results.rds"), "\n", sep = "")
