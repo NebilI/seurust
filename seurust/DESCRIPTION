@@ -3,7 +3,7 @@ Title: Rust Native Kernels for Seurat
 Version: 0.1.0
 Authors@R: c(
     person(given = "Nebil", family = "Ibrahim",
-           email = "nebilibrahim@microsoft.com",
+           email = "nebil080298@gmail.com",
            role = c("aut", "cre")),
     person(given = "Rahul", family = "Satija",
            role = "ctb",
