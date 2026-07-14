@@ -73,6 +73,10 @@ CRAN emails the **Maintainer** address from `DESCRIPTION`
 (`nebil080298@gmail.com`). You must reply to confirm the submission.
 Without that reply, the package never enters review.
 
+If an earlier submission used a different maintainer address, **do not confirm that
+email**. Resubmit with the correct `Authors@R` email (via Docker
+`seurust-cran-submit`) and confirm only the Gmail message.
+
 ### 4. Respond to reviewer feedback
 
 CRAN may ask for changes (docs, portability, size, policies). Fix on a branch,
