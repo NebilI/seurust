@@ -8,5 +8,8 @@
 ^\.git$
 ^\.github$
 ^\.vscode$
-^README\.md$
+^cran-comments\.md$
+^CRAN\.md$
+^vignettes/.*\.html$
+^vignettes/.*\.R$
 Rplots\.pdf
