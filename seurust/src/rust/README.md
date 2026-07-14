@@ -4,6 +4,14 @@ Rust native kernels for the [seurust](https://github.com/NebilI/seurust/tree/mai
 
 ## Install the R package
 
+From [CRAN](https://cran.r-project.org/package=seurust):
+
+```r
+install.packages("seurust")
+```
+
+Or from r-universe:
+
 ```r
 install.packages(
   "seurust",

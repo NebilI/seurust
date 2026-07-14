@@ -20,7 +20,8 @@ Description: Provides Rust/extendr reimplementations of performance-critical
     vendored crates for offline compilation.
 License: MIT + file LICENSE
 URL: https://github.com/NebilI/seurust,
-    https://github.com/NebilI/seurust/tree/main/seurust
+    https://github.com/NebilI/seurust/tree/main/seurust,
+    https://cran.r-project.org/package=seurust
 BugReports: https://github.com/NebilI/seurust/issues
 Depends:
     R (>= 4.0.0)

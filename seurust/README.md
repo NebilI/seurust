@@ -12,21 +12,21 @@ signatures with a Rust backend.
 
 ## Install
 
-### From r-universe (recommended)
+### From CRAN
+
+Package page: https://cran.r-project.org/package=seurust
+
+```r
+install.packages("seurust")
+```
+
+### From r-universe
 
 ```r
 install.packages(
   "seurust",
   repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
 )
-```
-
-### From CRAN
-
-Once accepted on CRAN:
-
-```r
-install.packages("seurust")
 ```
 
 ### From GitHub
