@@ -60,7 +60,21 @@ pub fn row_var_dgcmatrix_impl(x: &Doubles, i: &Integers, rows: i32, cols: i32) -
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::row_sum_slices;
+
+    #[test]
+    fn row_sum_slices_adds_by_row_index() {
+        let x = [1.0, 2.0, 3.0, 4.0];
+        let i = [0, 0, 1, 2];
+        let sums = row_sum_slices(&x, &i, 3);
+        assert_eq!(sums, vec![3.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn row_sum_slices_handles_empty_input() {
+        let sums = row_sum_slices(&[], &[], 2);
+        assert_eq!(sums, vec![0.0, 0.0]);
+    }
 
     #[test]
     fn row_sum_matches_manual() {

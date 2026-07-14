@@ -36,9 +36,11 @@ docker compose -f docker/docker-compose.yml run --rm \
 
 https://cran.r-project.org/package=seurust
 
-`seurust` **0.1.0** has been submitted to CRAN (maintainer:
-`nebil080298@gmail.com`). The package page and `install.packages("seurust")`
-become available after CRAN acceptance and mirror sync.
+**Status: not ready to publish.** Do not upload/resubmit until the maintainer
+explicitly sets `READY_TO_PUBLISH=yes`. Earlier exploratory submissions should
+be ignored; keep iterating on a lean source package first.
+
+The CRAN page 404s until acceptance. Use r-universe/GitHub until then.
 
 ---
 

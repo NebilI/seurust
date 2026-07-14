@@ -104,8 +104,10 @@ docker compose -f docker/docker-compose.yml run --rm seurust-cran
 # dry-run: build/check only
 docker compose -f docker/docker-compose.yml run --rm seurust-cran-submit
 
-# upload tarball to CRAN incoming
-docker compose -f docker/docker-compose.yml run --rm -e SUBMIT_CRAN=yes seurust-cran-submit
+# upload only when maintainer explicitly approves publishing
+docker compose -f docker/docker-compose.yml run --rm \
+  -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes \
+  seurust-cran-submit
 ```
 
 Full process: [`seurust/CRAN.md`](../seurust/CRAN.md).

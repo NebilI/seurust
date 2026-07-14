@@ -44,13 +44,19 @@ echo "================================================================"
 
 if [ "${SUBMIT_CRAN:-}" != "yes" ]; then
   echo ""
-  echo "Dry-run only."
-  echo "To upload to CRAN from Docker:"
-  echo "  docker compose -f docker/docker-compose.yml run --rm -e SUBMIT_CRAN=yes seurust-cran-submit"
-  echo "Or upload manually at https://cran.r-project.org/submit.html"
-  echo "  - package: ${TARBALL}"
-  echo "  - comments: seurust/cran-comments.md"
+  echo "Dry-run only. Tarball ready: /workspace/${TARBALL}"
+  echo "CRAN publish is gated until explicitly approved."
+  echo "When the maintainer is ready, run with BOTH:"
+  echo "  -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes"
   exit 0
+fi
+
+if [ "${READY_TO_PUBLISH:-}" != "yes" ]; then
+  echo ""
+  echo "REFUSING CRAN upload: READY_TO_PUBLISH is not 'yes'."
+  echo "Do not publish until the maintainer says the package is ready."
+  echo "Tarball left at /workspace/${TARBALL} for inspection only."
+  exit 2
 fi
 
 echo "==> Installing curl + httr2 for CRAN upload..."

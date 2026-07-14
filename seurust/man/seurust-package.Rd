@@ -15,7 +15,6 @@ use vendored crates in \file{src/rust/vendor.tar.xz} for offline compilation.
 Useful links:
 \itemize{
   \item \url{https://github.com/NebilI/seurust}
-  \item \url{https://cran.r-project.org/package=seurust}
   \item Report bugs at \url{https://github.com/NebilI/seurust/issues}
 }
 }

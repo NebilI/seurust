@@ -12,15 +12,9 @@ signatures with a Rust backend.
 
 ## Install
 
-### From CRAN
+### From r-universe / GitHub
 
-Package page: https://cran.r-project.org/package=seurust
-
-```r
-install.packages("seurust")
-```
-
-### From r-universe
+CRAN publication is on hold until the maintainer explicitly approves a release.
 
 ```r
 install.packages(
