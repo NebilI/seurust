@@ -54,6 +54,10 @@ cfg <- if (is_debug) "debug" else "release"
   ""
 )
 
+# Dev builds may regenerate R/extendr-wrappers.R via the document binary.
+# CRAN/source installs ship committed wrappers and only build --lib.
+.run_document <- if (is_not_cran) "true" else "false"
+
 is_windows <- .Platform[["OS.type"]] == "windows"
 
 mv_fp <- ifelse(
@@ -80,7 +84,8 @@ new_txt <- gsub("@CRAN_FLAGS@", .cran_flags, mv_txt) |>
   gsub("@CLEAN_TARGET@", .clean_targets, x = _) |>
   gsub("@LIBDIR@", .libdir, x = _) |>
   gsub("@TARGET@", .target, x = _) |>
-  gsub("@PANIC_EXPORTS@", .panic_exports, x = _)
+  gsub("@PANIC_EXPORTS@", .panic_exports, x = _) |>
+  gsub("@RUN_DOCUMENT@", .run_document, x = _)
 
 message("Writing `", mv_ofp, "`.")
 con <- file(mv_ofp, open = "wb")

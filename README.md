@@ -7,10 +7,9 @@ This repository is a development fork of Seurat v5 that adds **[seurust](seurust
 > **Drop-in by design.** seurust exposes the same function signatures as Seurat's internal C++ layer (`LogNorm`, `FastSparseRowScale`, `ComputeSNN`, `IntegrateDataC`, and more). Parity tests assert bit-for-bit agreement with the original implementation on every ported routine.
 
 [![seurust CI](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml/badge.svg)](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml)
-[![CRAN status](https://www.r-pkg.org/badges/version/seurust)](https://cran.r-project.org/package=seurust)
 [![r-universe](https://NebilI.r-universe.dev/badges/seurust)](https://NebilI.r-universe.dev/seurust)
 
-**CRAN:** https://cran.r-project.org/package=seurust · Publishing notes: [`seurust/CRAN.md`](seurust/CRAN.md) (Docker Compose)
+Publishing notes: [`seurust/CRAN.md`](seurust/CRAN.md) (Docker Compose). **CRAN release is on hold until explicitly approved.**
 
 ---
 
@@ -117,31 +116,19 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 
 Requires R ≥ 4.0 and a [Rust toolchain](https://rustup.rs) (rustc + Cargo ≥ 1.81) when installing from source.
 
-**CRAN** (https://cran.r-project.org/package=seurust):
-
-```r
-install.packages("seurust")
-```
-
-**r-universe** (builds from this repo while CRAN mirrors catch up):
+**r-universe / GitHub** (current public installs; CRAN not published yet):
 
 ```r
 install.packages(
   "seurust",
   repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
 )
+
+# Or development:
+# remotes::install_github("NebilI/seurust", subdir = "seurust")
 ```
 
-**GitHub** (development):
-
-```r
-if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
-remotes::install_github("NebilI/seurust", subdir = "seurust")
-# Optional: this Seurat fork
-remotes::install_github("NebilI/seurust")
-```
-
-See [`seurust/README.md`](seurust/README.md) and [`seurust/CRAN.md`](seurust/CRAN.md) for publishing details.
+See [`seurust/README.md`](seurust/README.md) and [`seurust/CRAN.md`](seurust/CRAN.md) for packaging details.
 
 ### Verify parity in one line
 
