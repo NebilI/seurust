@@ -1,8 +1,10 @@
 ^src/rust/target$
 ^src/rust/vendor$
 ^src/rust/\.cargo$
+^src/rust/README\.md$
 ^src/Makevars$
 ^src/Makevars\.win$
+^src/.*\.(o|so|dll)$
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^\.git$
@@ -11,6 +13,6 @@
 ^cran-comments\.md$
 ^CRAN\.md$
 ^CRAN-SUBMISSION$
-^vignettes/.*\.html$
-^vignettes/.*\.R$
+^tools/vendor\.sh$
+^vignettes$
 Rplots\.pdf
