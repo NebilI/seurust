@@ -15,4 +15,4 @@ row_sum_dgcmatrix(x, i, rows, cols)
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{row_sum_dgcmatrix}.
 }
-\author{Nebil Ibrahim \email{nebilibrahim@microsoft.com}}
+\author{Nebil Ibrahim \email{nebil080298@gmail.com}}

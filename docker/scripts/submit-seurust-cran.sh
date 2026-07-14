@@ -64,10 +64,17 @@ Rscript - <<'EOF'
 tarball <- Sys.getenv("SEURUST_TARBALL")
 stopifnot(nzchar(tarball), file.exists(tarball))
 comments <- paste(readLines("seurust/cran-comments.md", warn = FALSE), collapse = "\n")
+desc <- read.dcf("seurust/DESCRIPTION")
+# Prefer Authors@R cre email when present.
+authors <- desc[1, "Authors@R"]
+email <- sub('.*email\\s*=\\s*"([^"]+)".*', "\\1", authors)
+if (!grepl("@", email)) {
+  email <- "nebil080298@gmail.com"
+}
 name <- "Nebil Ibrahim"
-email <- "nebilibrahim@microsoft.com"
 upload_url <- "https://xmpalantir.wu.ac.at/cransubmit/index2.php"
 
+message("Maintainer email for CRAN: ", email)
 message("Step 1/2: upload ", tarball)
 req <- httr2::request(upload_url)
 req <- httr2::req_body_multipart(
@@ -113,7 +120,8 @@ writeLines(
     paste0("version: ", sub("^seurust_(.*)\\.tar\\.gz$", "\\1", basename(tarball))),
     paste0("tarball: ", tarball),
     paste0("submitted_at: ", format(Sys.time(), tz = "UTC", usetz = TRUE)),
-    paste0("pkg_id: ", pkg_id)
+    paste0("pkg_id: ", pkg_id),
+    paste0("email: ", email)
   ),
   "seurust/CRAN-SUBMISSION"
 )
@@ -124,7 +132,8 @@ EOF
 
 echo ""
 echo "==> Next steps (required):"
-echo "  1. Open the confirmation link in the CRAN email to ${email:-Maintainer}."
-echo "  2. Address any reviewer follow-ups."
-echo "  3. When accepted: install.packages(\"seurust\")"
-echo "  4. Package page: https://cran.r-project.org/package=seurust"
+echo "  1. Open the confirmation link in the CRAN email (Gmail: nebil080298@gmail.com)."
+echo "  2. Do NOT confirm any older CRAN email sent to a Microsoft address."
+echo "  3. Address any reviewer follow-ups."
+echo "  4. When accepted: install.packages(\"seurust\")"
+echo "  5. Package page: https://cran.r-project.org/package=seurust"

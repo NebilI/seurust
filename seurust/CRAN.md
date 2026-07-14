@@ -70,8 +70,12 @@ docker compose -f docker/docker-compose.yml run --rm \
 ### 3. Confirm by email (required)
 
 CRAN emails the **Maintainer** address from `DESCRIPTION`
-(`nebilibrahim@microsoft.com`). You must reply to confirm the submission.
+(`nebil080298@gmail.com`). You must reply to confirm the submission.
 Without that reply, the package never enters review.
+
+If an earlier submission used a different maintainer address, **do not confirm that
+email**. Resubmit with the correct `Authors@R` email (via Docker
+`seurust-cran-submit`) and confirm only the Gmail message.
 
 ### 4. Respond to reviewer feedback
 

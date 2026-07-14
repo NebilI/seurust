@@ -8,4 +8,4 @@
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{IntegrateDataC}.
 }
-\author{Nebil Ibrahim \email{nebilibrahim@microsoft.com}}
+\author{Nebil Ibrahim \email{nebil080298@gmail.com}}
