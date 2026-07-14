@@ -14,5 +14,6 @@ revdep/
 Seurat.Rcheck/
 seurust.Rcheck/
 seurust_*.tar.gz
+seurust/CRAN-SUBMISSION
 seurust/src/rust/target/
 /examples/output
