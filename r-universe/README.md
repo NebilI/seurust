@@ -1,17 +1,16 @@
 # r-universe distribution
 
-Use this folder as a template for publishing **seurust** on [r-universe](https://r-universe.dev).
+Publish **seurust** on [r-universe](https://r-universe.dev) so users can install with
+`install.packages("seurust", repos = "https://NebilI.r-universe.dev")`.
 
 ## One-time setup
 
-1. Create a public GitHub repository named **`NebilI.r-universe.dev`** (replace `NebilI` with your GitHub username).
-2. Copy `packages.json.example` into that repo as **`packages.json`**.
-3. Adjust `branch` if you publish from a branch other than `main`.
-4. Push the file. r-universe will pick up the registry automatically within a few minutes.
+1. Create a public GitHub repository named **`NebilI.r-universe.dev`**.
+2. Add a root `packages.json` (see `packages.json.example` in this folder).
+3. Push. r-universe picks up the registry within a few minutes.
+4. Dashboard: https://NebilI.r-universe.dev/seurust
 
 ## Install for users
-
-After the universe is live:
 
 ```r
 install.packages(
@@ -20,30 +19,18 @@ install.packages(
 )
 ```
 
-Or enable the repository once per session:
-
-```r
-options(repos = c(NebilI = "https://NebilI.r-universe.dev", CRAN = "https://cloud.r-project.org"))
-install.packages("seurust")
-```
-
-## Notes
-
-- r-universe builds from source; users still need a Rust toolchain unless you publish pre-built binaries via a custom workflow.
-- For experimental branches, set `"branch": "feature/rust-rewrite"` in `packages.json`.
-- Dashboard: `https://NebilI.r-universe.dev/seurust`
-
 ## Automated publishing
 
-When you publish a [GitHub Release](https://github.com/NebilI/seurust/releases), the
-[`publish-seurust-r.yaml`](../.github/workflows/publish-seurust-r.yaml) workflow:
+When you publish a [GitHub Release](https://github.com/NebilI/seurust/releases),
+[`publish-seurust-r.yaml`](../.github/workflows/publish-seurust-r.yaml):
 
 1. Builds an R source tarball and attaches it to the release.
 2. Updates `packages.json` in `NebilI.r-universe.dev` to point at the release tag.
 
-### One-time GitHub secrets
+CRAN-oriented offline tarballs are built by
+[`build-seurust-cran.yaml`](../.github/workflows/build-seurust-cran.yaml).
 
-Add these under **Settings → Secrets and variables → Actions** in `NebilI/seurust`:
+### One-time GitHub secrets (in `NebilI/seurust`)
 
 | Secret | Used by | Purpose |
 |--------|---------|---------|
@@ -55,8 +42,14 @@ Create the crates.io token at https://crates.io/settings/tokens (needs `publish-
 
 ### Release checklist
 
-1. Bump `Version` in [`seurust/DESCRIPTION`](../seurust/DESCRIPTION) and `version` in
+1. If Rust deps changed, refresh vendoring via Docker:
+   `docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/scripts/vendor-seurust.sh`
+2. Bump `Version` in [`seurust/DESCRIPTION`](../seurust/DESCRIPTION) and `version` in
    [`seurust/src/rust/Cargo.toml`](../seurust/src/rust/Cargo.toml) together.
-2. Tag the release (for example `v0.1.0`) and publish a GitHub Release from that tag.
-3. Both publish workflows run automatically; you can also trigger them manually from the
-   Actions tab.
+3. Update [`seurust/NEWS.md`](../seurust/NEWS.md) and [`seurust/cran-comments.md`](../seurust/cran-comments.md).
+4. Validate CRAN tarball:
+   `docker compose -f docker/docker-compose.yml run --rm seurust-cran`
+5. Tag the release (for example `v0.1.0`) and publish a GitHub Release from that tag.
+6. Publish workflows run automatically; trigger `build-seurust-cran` for a CI CRAN tarball artifact.
+7. For CRAN: use the Docker-built `seurust_*.tar.gz`, then `devtools::submit_cran()` from `seurust/`
+   (or upload via the CRAN web form).

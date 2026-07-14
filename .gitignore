@@ -12,5 +12,7 @@ docs/
 Rplots.pdf
 revdep/
 Seurat.Rcheck/
+seurust.Rcheck/
+seurust_*.tar.gz
 seurust/src/rust/target/
 /examples/output

@@ -1,19 +1,19 @@
-# seurust
+# seurust (Rust crate)
 
-Rust native kernels for single-cell analysis, powering the [seurust](https://github.com/NebilI/seurust/tree/main/seurust) R package.
+Rust native kernels for the [seurust](https://github.com/NebilI/seurust/tree/main/seurust) R package.
 
-This crate implements performance-critical routines used by [Seurat](https://satijalab.org/seurat): sparse matrix normalization and scaling, shared-nearest-neighbor graph construction, modularity clustering, and batch-integration helpers.
-
-## Usage
-
-The crate is primarily consumed as an R extension via [extendr](https://github.com/extendr/extendr). Install the R package for the supported workflow:
+## Install the R package
 
 ```r
-remotes::install_github("NebilI/seurust", subdir = "seurust")
+install.packages(
+  "seurust",
+  repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
+)
 ```
 
-Building from source requires R, RcppEigen, and a Rust toolchain (see the seurust package documentation).
+## crates.io
 
-## License
-
-MIT
+This crate is published to [crates.io](https://crates.io/crates/seurust) on GitHub
+Releases via `.github/workflows/publish-seurust-crate.yaml`. It is primarily
+consumed as an R extension (`crate-type = ["rlib", "staticlib"]`), not as a
+standalone Rust library API.

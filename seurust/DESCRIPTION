@@ -1,30 +1,47 @@
 Package: seurust
 Title: Rust Native Kernels for Seurat
-Version: 0.1.0.9000
+Version: 0.1.0
 Authors@R: c(
-    person(given = "Rahul", family = "Satija", email = "seurat@nygenome.org", role = c("aut", "cre")),
-    person("Satija Lab and Collaborators", role = "cph")
+    person(given = "Nebil", family = "Ibrahim",
+           email = "nebilibrahim@microsoft.com",
+           role = c("aut", "cre")),
+    person(given = "Rahul", family = "Satija",
+           role = "ctb",
+           comment = "Original Seurat native APIs"),
+    person("Satija Lab and Collaborators",
+           role = "cph",
+           comment = "Original Seurat / ModularityOptimizer code")
     )
-Description: Rust/extendr reimplementation of performance-critical Seurat native
-    routines. Install alongside Seurat to compare C++ and Rust backends during
-    the migration.
+Description: Provides Rust/extendr reimplementations of performance-critical
+    Seurat native routines such as log-normalization, sparse row scaling,
+    shared nearest-neighbor graph construction, and integration helpers.
+    Install alongside Seurat to use the same function signatures with a
+    Rust backend. Builds require a Rust toolchain; CRAN source builds use
+    vendored crates for offline compilation.
 License: MIT + file LICENSE
-URL: https://github.com/NebilI/seurust, https://github.com/NebilI/seurust/tree/main/seurust
+URL: https://github.com/NebilI/seurust,
+    https://github.com/NebilI/seurust/tree/main/seurust
 BugReports: https://github.com/NebilI/seurust/issues
 Depends:
     R (>= 4.0.0)
 Imports:
-    Matrix (>= 1.5-0)
+    Matrix (>= 1.5-0),
+    methods
 LinkingTo:
     RcppEigen
 Suggests:
     Seurat,
-    testthat
-SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.65), RcppEigen
-BuildManual: true
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.81)
 Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
+Config/testthat/edition: 3
 Collate:
     'extendr-wrappers.R'
     'native.R'
+    'seurust-package.R'
     'zzz.R'

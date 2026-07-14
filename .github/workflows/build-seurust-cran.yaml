@@ -1,0 +1,61 @@
+name: Build CRAN tarball for seurust (Docker)
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  cran-tarball:
+    name: Docker Compose CRAN build/check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build rust-dev image
+        run: |
+          docker compose -f docker/docker-compose.yml build rcpp-dev rust-dev
+
+      - name: CRAN build and check via Compose
+        run: |
+          # Normalize scripts for Linux containers on Windows-authored checkouts.
+          sed -i 's/\r$//' docker/scripts/check-seurust-cran.sh \
+            docker/scripts/vendor-seurust.sh \
+            seurust/tools/vendor.sh \
+            seurust/configure \
+            seurust/cleanup || true
+          chmod +x docker/scripts/check-seurust-cran.sh \
+            docker/scripts/vendor-seurust.sh \
+            seurust/tools/vendor.sh \
+            seurust/configure \
+            seurust/cleanup
+          docker compose -f docker/docker-compose.yml run --rm --no-TTY seurust-cran
+
+      - name: Upload CRAN tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: seurust-cran-source
+          path: seurust_*.tar.gz
+          if-no-files-found: error
+
+      - name: Attach tarball to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: seurust_*.tar.gz
+
+      - name: Upload check log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seurust-cran-check-log
+          path: seurust.Rcheck/00check.log
+          if-no-files-found: ignore

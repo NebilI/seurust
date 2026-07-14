@@ -1,18 +1,35 @@
 # seurust
 
 Rust/extendr backend for Seurat's performance-critical native routines. Install
-alongside [Seurat](../) to compare C++ and Rust implementations during the
-migration.
+alongside [Seurat](https://satijalab.org/seurat) to use the same function
+signatures with a Rust backend.
 
 ## Requirements
 
 - R (>= 4.0.0)
-- Rust toolchain: [rustc](https://www.rust-lang.org/tools/install) and Cargo (>= 1.65)
+- Rust toolchain: [rustc](https://rust-lang.org/tools/install/) and Cargo (>= 1.81)
 - On Windows: [Rtools](https://cran.r-project.org/bin/windows/Rtools/) plus Rust
 
 ## Install
 
-### From GitHub (recommended)
+### From r-universe (recommended)
+
+```r
+install.packages(
+  "seurust",
+  repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+### From CRAN
+
+Once accepted on CRAN:
+
+```r
+install.packages("seurust")
+```
+
+### From GitHub
 
 ```r
 if (!requireNamespace("remotes", quietly = TRUE)) {
@@ -22,33 +39,12 @@ if (!requireNamespace("remotes", quietly = TRUE)) {
 remotes::install_github("NebilI/seurust", subdir = "seurust")
 ```
 
-Install a specific branch or tag:
-
-```r
-remotes::install_github(
-  "NebilI/seurust",
-  subdir = "seurust",
-  ref = "feature/rust-rewrite"
-)
-```
-
 ### From a release tarball
 
 Download `seurust_*.tar.gz` from [GitHub Releases](https://github.com/NebilI/seurust/releases), then:
 
 ```r
 install.packages("path/to/seurust_0.1.0.tar.gz", repos = NULL, type = "source")
-```
-
-### From r-universe
-
-After registering this package in your [r-universe](https://r-universe.dev) registry (see [`r-universe/`](../r-universe/README.md)):
-
-```r
-install.packages(
-  "seurust",
-  repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
-)
 ```
 
 ### Local development
@@ -75,25 +71,36 @@ library(Seurat)
 library(seurust)
 library(Matrix)
 
-mat <- Matrix::sparseMatrix(i = c(0, 2, 1), p = c(0, 1, 2, 3), x = 1:3, dims = c(3, 3))
+mat <- Matrix::sparseMatrix(i = c(1, 3, 2), j = c(1, 2, 3), x = 1:3, dims = c(3, 3))
 all.equal(
   Seurat:::LogNorm(mat, 1e4, FALSE),
   seurust::LogNorm(mat, 1e4, FALSE)
 )
 ```
 
-Parity and benchmark tests live in the parent package under
-`tests/testthat/test_rust_cpp_*.R` and require `seurust` in `Suggests`.
+## Publishing
+
+See **[`CRAN.md`](CRAN.md)** for the full r-universe / GitHub Release / CRAN process
+(all local steps use Docker Compose).
+
+```sh
+docker compose -f docker/docker-compose.yml run --rm seurust-cran
+docker compose -f docker/docker-compose.yml run --rm -e SUBMIT_CRAN=yes seurust-cran-submit
+```
+
+| Workflow | Channel |
+|----------|---------|
+| `publish-seurust-r.yaml` | GitHub Release tarball + r-universe registry sync |
+| `publish-seurust-crate.yaml` | crates.io (`seurust` crate) |
+| `build-seurust-cran.yaml` | Docker Compose CRAN tarball + `--as-cran` check |
 
 ## Layout
 
 | Path | Role |
 |------|------|
 | `src/rust/` | extendr crate (Rust kernels) |
+| `src/rust/vendor.tar.xz` | Vendored crates for offline/CRAN builds |
 | `src/cpp/` | ModularityOptimizer C++ bridge |
 | `src/entrypoint.c` | Links Rust staticlib into `seurust.so` |
 | `R/native.R` | High-level R API matching Seurat's RcppExports |
 | `R/extendr-wrappers.R` | Generated low-level `.Call` wrappers |
-
-Seurat itself is C++/Rcpp-only; no Rust toolchain is required to build the main
-package.
