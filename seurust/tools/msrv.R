@@ -25,7 +25,7 @@ rustc_ver <- parts[grepl("rustc", parts)]
 no_cargo_msg <- c(
   "----------------------- [CARGO NOT FOUND]--------------------------",
   "The 'cargo' command was not found on the PATH. Please install Cargo",
-  "from: https://www.rust-lang.org/tools/install",
+  "from: https://rust-lang.org/tools/install/",
   "",
   "Alternatively, you may install Cargo from your OS package manager:",
   " - Debian/Ubuntu: apt-get install cargo",
@@ -38,7 +38,7 @@ no_rustc_msg <- c(
   "----------------------- [RUST NOT FOUND]---------------------------",
   "The 'rustc' compiler was not found on the PATH. Please install",
   paste(rustc_ver, "or higher from:"),
-  "https://www.rust-lang.org/tools/install",
+  "https://rust-lang.org/tools/install/",
   "",
   "Alternatively, you may install Rust from your OS package manager:",
   " - Debian/Ubuntu: apt-get install rustc",

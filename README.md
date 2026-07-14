@@ -7,6 +7,9 @@ This repository is a development fork of Seurat v5 that adds **[seurust](seurust
 > **Drop-in by design.** seurust exposes the same function signatures as Seurat's internal C++ layer (`LogNorm`, `FastSparseRowScale`, `ComputeSNN`, `IntegrateDataC`, and more). Parity tests assert bit-for-bit agreement with the original implementation on every ported routine.
 
 [![seurust CI](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml/badge.svg)](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml)
+[![r-universe](https://NebilI.r-universe.dev/badges/seurust)](https://NebilI.r-universe.dev/seurust)
+
+Publishing / CRAN: see [`seurust/CRAN.md`](seurust/CRAN.md) (Docker Compose only).
 
 ---
 
@@ -111,19 +114,33 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 
 ### Install seurust
 
-Requires R ≥ 4.0 and a [Rust toolchain](https://rustup.rs) (rustc + Cargo ≥ 1.65).
+Requires R ≥ 4.0 and a [Rust toolchain](https://rustup.rs) (rustc + Cargo ≥ 1.81) when installing from source.
+
+**r-universe** (recommended public install):
+
+```r
+install.packages(
+  "seurust",
+  repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
+)
+```
+
+**CRAN** (after acceptance):
+
+```r
+install.packages("seurust")
+```
+
+**GitHub** (development):
 
 ```r
 if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
-
-# Rust backend
 remotes::install_github("NebilI/seurust", subdir = "seurust")
-
-# Seurat from this fork (or use CRAN Seurat for comparison)
+# Optional: this Seurat fork
 remotes::install_github("NebilI/seurust")
 ```
 
-See [`seurust/README.md`](seurust/README.md) for local build instructions and [r-universe setup](r-universe/README.md) for publishing pre-built packages.
+See [`seurust/README.md`](seurust/README.md) and [r-universe setup](r-universe/README.md) for release/CRAN publishing.
 
 ### Verify parity in one line
 
