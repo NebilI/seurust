@@ -32,11 +32,13 @@ docker compose -f docker/docker-compose.yml run --rm \
 | **CRAN** | Only after CRAN **accepts** the submission | `install.packages("seurust")` |
 | **crates.io** | On release (Rust crate) | mostly for packaging; users install the R package |
 
-### CRAN package page (after acceptance)
+### CRAN package page
 
 https://cran.r-project.org/package=seurust
 
-Until CRAN accepts the package, that URL will 404. Use r-universe or GitHub in the meantime.
+`seurust` **0.1.0** has been submitted to CRAN (maintainer:
+`nebil080298@gmail.com`). The package page and `install.packages("seurust")`
+become available after CRAN acceptance and mirror sync.
 
 ---
 
