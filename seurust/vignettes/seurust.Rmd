@@ -24,6 +24,12 @@ you can compare outputs directly.
 ## Install
 
 ```{r}
+install.packages("seurust")
+```
+
+From [r-universe](https://NebilI.r-universe.dev/seurust) while mirrors update:
+
+```{r}
 install.packages(
   "seurust",
   repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
