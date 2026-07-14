@@ -92,6 +92,30 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/script
 
 The first run installs many R packages from `DESCRIPTION` and can take several minutes.
 
+**CRAN-style build + check for seurust** (vendored crates, offline cargo, `--as-cran`):
+
+```sh
+docker compose -f docker/docker-compose.yml run --rm seurust-cran
+```
+
+**Submit to CRAN** (same Docker image; emails Maintainer for confirmation):
+
+```sh
+# dry-run: build/check only
+docker compose -f docker/docker-compose.yml run --rm seurust-cran-submit
+
+# upload tarball to CRAN incoming
+docker compose -f docker/docker-compose.yml run --rm -e SUBMIT_CRAN=yes seurust-cran-submit
+```
+
+Full process: [`seurust/CRAN.md`](../seurust/CRAN.md).
+
+Refresh vendored crates before a CRAN release if Rust deps changed:
+
+```sh
+docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/scripts/vendor-seurust.sh
+```
+
 Each `docker compose run` starts a **fresh container**. Standalone scripts call
 `docker/scripts/bootstrap-dev-env.R` first to install Imports, compile Seurat,
 and install seurust if needed:

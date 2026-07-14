@@ -2,7 +2,7 @@
 name = "seurust"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.81"
 description = "Rust native kernels for single-cell analysis (seurust / Seurat backend)"
 readme = "README.md"
 license = "MIT"

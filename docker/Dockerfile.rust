@@ -18,12 +18,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# bindgen / libR-sys / extendr need libclang; patchelf is used when linking Rust into R on Linux.
+# bindgen / libR-sys / extendr need libclang; patchelf links Rust into R on Linux.
+# devscripts provides checkbashisms for R CMD check --as-cran configure scripts.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libclang-dev \
     llvm-dev \
     patchelf \
+    devscripts \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust (script copied then normalized for Windows CRLF checkouts)

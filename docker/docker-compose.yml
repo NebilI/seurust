@@ -34,6 +34,31 @@ services:
     stdin_open: true
     tty: true
 
+  # One-shot CRAN offline build/check for the seurust package.
+  # Overrides NOT_CRAN so tools/config.R enables vendored --offline cargo flags.
+  seurust-cran:
+    image: seurust-rust:dev
+    environment:
+      NOT_CRAN: ""
+      SEURAT_KEEP_RUST_TARGET: ""
+    volumes:
+      - ..:/workspace
+      - seurust-cargo:/usr/local/cargo/registry
+    working_dir: /workspace
+    command: ["bash", "docker/scripts/check-seurust-cran.sh"]
+
+  # Build/check, then optionally submit to CRAN when SUBMIT_CRAN=yes is passed with -e.
+  seurust-cran-submit:
+    image: seurust-rust:dev
+    environment:
+      NOT_CRAN: ""
+      SEURAT_KEEP_RUST_TARGET: ""
+    volumes:
+      - ..:/workspace
+      - seurust-cargo:/usr/local/cargo/registry
+    working_dir: /workspace
+    command: ["bash", "docker/scripts/submit-seurust-cran.sh"]
+
 volumes:
   seurust-cargo:
   seurust-target:
