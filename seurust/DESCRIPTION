@@ -20,8 +20,7 @@ Description: Provides Rust/extendr reimplementations of performance-critical
     vendored crates for offline compilation.
 License: MIT + file LICENSE
 URL: https://github.com/NebilI/seurust,
-    https://github.com/NebilI/seurust/tree/main/seurust,
-    https://cran.r-project.org/package=seurust
+    https://github.com/NebilI/seurust/tree/main/seurust
 BugReports: https://github.com/NebilI/seurust/issues
 Depends:
     R (>= 4.0.0)
@@ -32,10 +31,7 @@ LinkingTo:
     RcppEigen
 Suggests:
     Seurat,
-    knitr,
-    rmarkdown,
     testthat (>= 3.0.0)
-VignetteBuilder: knitr
 SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.81)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

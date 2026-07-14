@@ -20,8 +20,8 @@ if ! command -v checkbashisms >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends devscripts >/dev/null
 fi
 
-echo "==> Ensuring R packages for check/vignettes..."
-Rscript -e 'pkgs <- c("Matrix", "RcppEigen", "knitr", "rmarkdown", "testthat", "Seurat");
+echo "==> Ensuring R packages for check/tests..."
+Rscript -e 'pkgs <- c("Matrix", "RcppEigen", "testthat", "Seurat");
   miss <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)];
   if (length(miss)) {
     message("Installing: ", paste(miss, collapse = ", "));
@@ -52,6 +52,9 @@ echo "==> Configuring seurust for CRAN..."
 cd seurust
 Rscript tools/config.R
 cd /workspace
+
+echo "==> Running Rust unit tests (library only)..."
+cargo test --manifest-path seurust/src/rust/Cargo.toml --lib
 
 echo "==> R CMD build seurust..."
 rm -f seurust_*.tar.gz
