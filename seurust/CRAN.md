@@ -17,9 +17,9 @@ docker compose -f docker/docker-compose.yml run --rm seurust-cran
 docker compose -f docker/docker-compose.yml run --rm rust-dev \
   bash docker/scripts/vendor-seurust.sh
 
-# Prepare a CRAN submission (builds tarball; upload only with SUBMIT_CRAN=yes)
+# Prepare a CRAN submission (builds tarball; upload only with SUBMIT_CRAN=yes READY_TO_PUBLISH=yes)
 docker compose -f docker/docker-compose.yml run --rm \
-  -e SUBMIT_CRAN=yes \
+  -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes \
   seurust-cran-submit
 ```
 
@@ -36,11 +36,9 @@ docker compose -f docker/docker-compose.yml run --rm \
 
 https://cran.r-project.org/package=seurust
 
-**Status: not ready to publish.** Do not upload/resubmit until the maintainer
-explicitly sets `READY_TO_PUBLISH=yes`. Earlier exploratory submissions should
-be ignored; keep iterating on a lean source package first.
-
-The CRAN page 404s until acceptance. Use r-universe/GitHub until then.
+**Status: submitting 0.1.0.** Upload with
+`SUBMIT_CRAN=yes READY_TO_PUBLISH=yes`. The CRAN page 404s until acceptance;
+use r-universe/GitHub until then.
 
 ---
 
@@ -67,19 +65,18 @@ Our Docker submit service wraps the check + `devtools::submit_cran()` path:
 
 ```sh
 docker compose -f docker/docker-compose.yml run --rm \
-  -e SUBMIT_CRAN=yes \
+  -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes \
   seurust-cran-submit
 ```
 
 ### 3. Confirm by email (required)
 
 CRAN emails the **Maintainer** address from `DESCRIPTION`
-(`nebil080298@gmail.com`). You must reply to confirm the submission.
+(`nbi@alumni.princeton.edu`). You must reply to confirm the submission.
 Without that reply, the package never enters review.
 
 If an earlier submission used a different maintainer address, **do not confirm that
-email**. Resubmit with the correct `Authors@R` email (via Docker
-`seurust-cran-submit`) and confirm only the Gmail message.
+email**. Confirm only the message sent to `nbi@alumni.princeton.edu`.
 
 ### 4. Respond to reviewer feedback
 
@@ -104,9 +101,25 @@ depending on reviewer load and issues found.
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `build-seurust-cran.yaml` | `workflow_dispatch`, GitHub Release | Docker Compose CRAN build/check; uploads `seurust_*.tar.gz` artifact |
+| `seurust_checks.yaml` | Pull requests / pushes touching seurust or Docker packaging | R CMD check + testthat for seurust |
+| `build-seurust-cran.yaml` | `workflow_dispatch`, GitHub Release | Docker Compose CRAN build/check; optional CRAN upload |
 | `publish-seurust-r.yaml` | GitHub Release | Release tarball + sync `NebilI.r-universe.dev` |
 | `publish-seurust-crate.yaml` | GitHub Release | `cargo publish` to crates.io |
+
+### Update / resubmit to CRAN from GitHub Actions
+
+1. Bump `seurust/DESCRIPTION` (and matching `seurust/src/rust/Cargo.toml`) on a PR; merge after `seurust Checks` is green.
+2. On `main`: **Actions → Build / submit seurust to CRAN → Run workflow**.
+3. Leave **submit_to_cran** unchecked for a dry-run (artifact only), or check it to upload.
+4. Confirm the email sent to `nbi@alumni.princeton.edu`, then watch https://cran.r-project.org/package=seurust.
+
+Local equivalent (Docker):
+
+```sh
+docker compose -f docker/docker-compose.yml run --rm \
+  -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes \
+  seurust-cran-submit
+```
 
 ### One-time secrets (`NebilI/seurust` → Settings → Secrets)
 
@@ -119,9 +132,9 @@ CRAN submission itself uses email confirmation, not a GitHub secret.
 
 ### Suggested release flow
 
-1. Land changes on `main`.
-2. Tag `v0.1.0` and publish a GitHub Release → r-universe + crates.io + artifacts.
-3. Run `seurust-cran` / `seurust-cran-submit` when ready for CRAN.
+1. Land changes on `main` (PR checks via `seurust_checks.yaml`).
+2. Tag a release (for example `v0.1.1`) → r-universe + crates.io + CRAN tarball artifact.
+3. Run **Build / submit seurust to CRAN** with `submit_to_cran=true` when ready.
 4. Confirm the CRAN email and watch https://cran.r-project.org/package=seurust.
 
 ---
