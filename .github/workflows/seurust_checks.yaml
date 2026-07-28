@@ -1,18 +1,33 @@
 name: seurust Checks
 
+# PR / push tests for the seurust package (Rust kernels + R wrappers).
 on:
   pull_request:
     paths:
       - 'seurust/**'
+      - 'docker/scripts/**'
+      - 'docker/docker-compose.yml'
+      - 'docker/Dockerfile.rust'
+      - 'docker/Dockerfile.rcpp'
       - '.github/workflows/seurust_checks.yaml'
+      - '.github/workflows/build-seurust-cran.yaml'
   push:
     branches:
       - main
       - feature/rust-rewrite
     paths:
       - 'seurust/**'
+      - 'docker/scripts/**'
+      - 'docker/docker-compose.yml'
+      - 'docker/Dockerfile.rust'
+      - 'docker/Dockerfile.rcpp'
       - '.github/workflows/seurust_checks.yaml'
+      - '.github/workflows/build-seurust-cran.yaml'
   workflow_dispatch:
+
+concurrency:
+  group: seurust-checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check-seurust:
@@ -38,6 +53,17 @@ jobs:
       - name: Add Rust to PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
+      - name: Cache Cargo registry and seurust target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            seurust/src/rust/target
+          key: ${{ runner.os }}-cargo-seurust-${{ hashFiles('seurust/src/rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-seurust-
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -50,7 +76,7 @@ jobs:
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           working-directory: seurust
-          extra-packages: any::rcmdcheck
+          extra-packages: any::rcmdcheck any::testthat
           dependencies: '"soft"'
 
       - name: Configure seurust
@@ -83,3 +109,14 @@ jobs:
         run: |
           R CMD INSTALL seurust_*.tar.gz
           Rscript -e 'testthat::test_dir("seurust/tests/testthat")'
+
+      - name: Upload check artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seurust-pr-check
+          path: |
+            seurust-check.log
+            seurust.Rcheck/00check.log
+            seurust.Rcheck/00install.out
+          if-no-files-found: ignore

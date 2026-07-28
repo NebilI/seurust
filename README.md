@@ -9,7 +9,8 @@ This repository is a development fork of Seurat v5 that adds **[seurust](seurust
 [![seurust CI](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml/badge.svg)](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml)
 [![r-universe](https://NebilI.r-universe.dev/badges/seurust)](https://NebilI.r-universe.dev/seurust)
 
-Publishing notes: [`seurust/CRAN.md`](seurust/CRAN.md) (Docker Compose). **CRAN release is on hold until explicitly approved.**
+Publishing notes: [`seurust/CRAN.md`](seurust/CRAN.md). Maintainer: `nbi@alumni.princeton.edu`.
+PR tests: `seurust Checks`. CRAN updates: Actions → **Build / submit seurust to CRAN**.
 
 ---
 
@@ -116,13 +117,16 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 
 Requires R ≥ 4.0 and a [Rust toolchain](https://rustup.rs) (rustc + Cargo ≥ 1.81) when installing from source.
 
-**r-universe / GitHub** (current public installs; CRAN not published yet):
+**CRAN** (after acceptance) or **r-universe / GitHub**:
 
 ```r
-install.packages(
-  "seurust",
-  repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
-)
+install.packages("seurust")
+
+# Until CRAN accepts:
+# install.packages(
+#   "seurust",
+#   repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
+# )
 
 # Or development:
 # remotes::install_github("NebilI/seurust", subdir = "seurust")
