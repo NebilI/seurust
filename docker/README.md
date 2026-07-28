@@ -110,6 +110,9 @@ docker compose -f docker/docker-compose.yml run --rm \
   seurust-cran-submit
 ```
 
+From GitHub: **Actions → Build / submit seurust to CRAN → Run workflow**, with
+`submit_to_cran` checked when uploading. PR packaging/tests use `seurust Checks`.
+
 Full process: [`seurust/CRAN.md`](../seurust/CRAN.md).
 
 Refresh vendored crates before a CRAN release if Rust deps changed:

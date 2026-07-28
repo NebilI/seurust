@@ -23,4 +23,4 @@ ScoreHelper(
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{ScoreHelper}.
 }
-\author{Nebil Ibrahim \email{nebil080298@gmail.com}}
+\author{Nebil Ibrahim \email{nbi@alumni.princeton.edu}}
