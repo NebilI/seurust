@@ -1,7 +1,16 @@
-name: Build CRAN tarball for seurust (Docker)
+name: Build / submit seurust to CRAN
 
+# Manual CRAN updates:
+#   Actions → "Build / submit seurust to CRAN" → Run workflow
+#   - leave submit_to_cran=false for a dry-run build/check + tarball artifact
+#   - set submit_to_cran=true to upload after a clean check (confirm email afterward)
 on:
   workflow_dispatch:
+    inputs:
+      submit_to_cran:
+        description: "Upload the checked tarball to CRAN (confirm the maintainer email afterward)"
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -24,19 +33,23 @@ jobs:
         run: |
           docker compose -f docker/docker-compose.yml build rcpp-dev rust-dev
 
-      - name: CRAN build and check via Compose
+      - name: Normalize scripts for Linux containers
         run: |
-          # Normalize scripts for Linux containers on Windows-authored checkouts.
           sed -i 's/\r$//' docker/scripts/check-seurust-cran.sh \
+            docker/scripts/submit-seurust-cran.sh \
             docker/scripts/vendor-seurust.sh \
             seurust/tools/vendor.sh \
             seurust/configure \
             seurust/cleanup || true
           chmod +x docker/scripts/check-seurust-cran.sh \
+            docker/scripts/submit-seurust-cran.sh \
             docker/scripts/vendor-seurust.sh \
             seurust/tools/vendor.sh \
             seurust/configure \
             seurust/cleanup
+
+      - name: CRAN build and check via Compose
+        run: |
           docker compose -f docker/docker-compose.yml run --rm --no-TTY seurust-cran
 
       - name: Upload CRAN tarball
@@ -59,3 +72,17 @@ jobs:
           name: seurust-cran-check-log
           path: seurust.Rcheck/00check.log
           if-no-files-found: ignore
+
+      - name: Submit tarball to CRAN
+        if: github.event_name == 'workflow_dispatch' && inputs.submit_to_cran
+        run: |
+          docker compose -f docker/docker-compose.yml run --rm --no-TTY \
+            -e SUBMIT_CRAN=yes \
+            -e READY_TO_PUBLISH=yes \
+            -e SKIP_CHECK=yes \
+            seurust-cran-submit
+
+      - name: Reminder — confirm CRAN email
+        if: github.event_name == 'workflow_dispatch' && inputs.submit_to_cran
+        run: |
+          echo "::notice::CRAN upload finished. Confirm the email sent to the Maintainer in seurust/DESCRIPTION, then watch https://cran.r-project.org/package=seurust"

@@ -12,9 +12,15 @@ signatures with a Rust backend.
 
 ## Install
 
+### From CRAN (after acceptance)
+
+```r
+install.packages("seurust")
+```
+
 ### From r-universe / GitHub
 
-CRAN publication is on hold until the maintainer explicitly approves a release.
+Until CRAN accepts 0.1.0, install from r-universe:
 
 ```r
 install.packages(
@@ -74,19 +80,27 @@ all.equal(
 
 ## Publishing
 
-See **[`CRAN.md`](CRAN.md)** for the full r-universe / GitHub Release / CRAN process
-(all local steps use Docker Compose).
+See **[`CRAN.md`](CRAN.md)** for the full r-universe / GitHub Release / CRAN process.
+
+**PR tests:** `seurust_checks.yaml` runs `R CMD check` + testthat on every PR that
+touches `seurust/` or packaging Docker files.
+
+**CRAN updates (whenever you want):** Actions → **Build / submit seurust to CRAN** →
+Run workflow. Check `submit_to_cran` only when you intend to upload; then confirm the
+maintainer email.
 
 ```sh
 docker compose -f docker/docker-compose.yml run --rm seurust-cran
-docker compose -f docker/docker-compose.yml run --rm -e SUBMIT_CRAN=yes seurust-cran-submit
+docker compose -f docker/docker-compose.yml run --rm \
+  -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes seurust-cran-submit
 ```
 
 | Workflow | Channel |
 |----------|---------|
+| `seurust_checks.yaml` | PR / push tests for seurust |
 | `publish-seurust-r.yaml` | GitHub Release tarball + r-universe registry sync |
 | `publish-seurust-crate.yaml` | crates.io (`seurust` crate) |
-| `build-seurust-cran.yaml` | Docker Compose CRAN tarball + `--as-cran` check |
+| `build-seurust-cran.yaml` | CRAN tarball check + optional upload |
 
 ## Layout
 
