@@ -4,12 +4,12 @@
 \alias{seurust-package}
 \title{seurust: Rust Native Kernels for Seurat}
 \description{
-Rust/extendr reimplementations of performance-critical Seurat native routines.
+Rust implementations of performance-critical Seurat native routines.
 Install alongside Seurat and call the same function signatures with a Rust backend.
 }
 \details{
 Building from source requires Cargo and rustc (>= 1.81). CRAN source builds
-use vendored crates in \file{src/rust/vendor.tar.xz} for offline compilation.
+include offline crate sources in \file{src/rust/vendor.tar.xz}.
 }
 \seealso{
 Useful links:
