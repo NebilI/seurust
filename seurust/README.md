@@ -80,7 +80,8 @@ all.equal(
 
 ## Publishing
 
-See **[`CRAN.md`](CRAN.md)** for the full r-universe / GitHub Release / CRAN process.
+See the publishing guide on GitHub:
+https://github.com/NebilI/seurust/blob/main/seurust/CRAN.md
 
 **PR tests:** `seurust_checks.yaml` runs `R CMD check` + testthat on every PR that
 touches `seurust/` or packaging Docker files.

@@ -31,12 +31,15 @@ Rscript -e 'pkgs <- c("Matrix", "RcppEigen", "testthat", "Seurat");
 echo "==> Normalizing line endings for configure/scripts..."
 sed -i 's/\r$//' \
   seurust/configure \
+  seurust/configure.win \
   seurust/cleanup \
+  seurust/cleanup.win \
   seurust/tools/config.R \
   seurust/tools/msrv.R \
   seurust/tools/vendor.sh \
   2>/dev/null || true
-chmod +x seurust/configure seurust/cleanup seurust/tools/vendor.sh
+chmod +x seurust/configure seurust/configure.win \
+  seurust/cleanup seurust/cleanup.win seurust/tools/vendor.sh
 
 echo "==> Ensuring vendored crates (CRAN offline)..."
 if [ ! -f seurust/src/rust/vendor.tar.xz ] || [ ! -f seurust/src/rust/vendor-config.toml ]; then

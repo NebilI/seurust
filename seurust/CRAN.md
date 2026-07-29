@@ -143,5 +143,6 @@ CRAN submission itself uses email confirmation, not a GitHub secret.
 
 - **Rust toolchain**: `SystemRequirements: Cargo …, rustc (>= 1.81)`.
 - **Vendoring**: `src/rust/vendor.tar.xz` ships so CRAN builds offline.
-- **GNU make**: `.NOTPARALLEL` in Makevars is intentional (extendr template); called out in `cran-comments.md`.
+- **Makevars**: portable Make only (no `.NOTPARALLEL`). Windows needs
+  `configure.win` so `Makevars.win` is generated from `Makevars.win.in`.
 - **Suggests Seurat**: optional parity comparisons; not required to install seurust.

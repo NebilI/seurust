@@ -1,3 +1,17 @@
+## Resubmission
+
+This is a resubmission of 0.1.0. Previous incoming pretests failed with:
+
+* Windows ERROR: missing `configure.win`, so `Makevars.win` was never
+  generated and only `entrypoint.c` was linked (undefined Rust symbols).
+  Fixed by adding `configure.win` / `cleanup.win` (rextendr template).
+* Debian WARNING: GNU make extension `.NOTPARALLEL` in
+  `src/Makevars` / `src/Makevars.in`. Removed; cleanup remains ordered via
+  ordinary Make dependencies (`rust_clean: $(SHLIB)`).
+* NOTE: DESCRIPTION wording rewritten to avoid spell-check false positives;
+  README no longer links to package-local `CRAN.md` (that file is
+  `.Rbuildignore`d).
+
 ## Test environments
 
 * local via Docker: `docker compose -f docker/docker-compose.yml run --rm seurust-cran`
@@ -8,15 +22,12 @@
 
 There were no ERRORs.
 
-Notes / warnings expected for this package:
+Notes expected for this package:
 
-* Compiled code uses Rust (extendr) plus a small C++ bridge for
-  ModularityOptimizer. `SystemRequirements` lists Cargo and rustc (>= 1.81).
-* Source tarball includes vendored Rust crates in
+* Compiled code uses Rust plus a small C++ bridge for ModularityOptimizer.
+  `SystemRequirements` lists Cargo and rustc (>= 1.81).
+* Source tarball includes offline Rust crate sources in
   `src/rust/vendor.tar.xz` (~2 MB) so CRAN can build offline.
-* `src/Makevars` / `src/Makevars.in` use `.NOTPARALLEL` (GNU make) to avoid
-  races between cargo `build.rs` and cleanup. This matches the extendr
-  CRAN template and is required for reliable parallel `make`.
 
 ## Downstream dependencies
 
