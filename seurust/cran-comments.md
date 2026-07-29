@@ -1,6 +1,7 @@
 ## Resubmission
 
-This is a resubmission of 0.1.0. Previous incoming pretests failed with:
+This is a resubmission as **0.1.1** (previous 0.1.0 incoming pretests
+failed). Changes since 0.1.0:
 
 * Windows ERROR: missing `configure.win`, so `Makevars.win` was never
   generated and only `entrypoint.c` was linked (undefined Rust symbols).
