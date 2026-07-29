@@ -2,7 +2,9 @@
 data/* binary
 src/* text=lf
 seurust/configure text eol=lf
+seurust/configure.win text eol=lf
 seurust/cleanup text eol=lf
+seurust/cleanup.win text eol=lf
 seurust/DESCRIPTION text eol=lf
 seurust/src/entrypoint.c text eol=lf
 seurust/src/Makevars.in text eol=lf

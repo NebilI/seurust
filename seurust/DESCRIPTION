@@ -12,12 +12,12 @@ Authors@R: c(
            role = "cph",
            comment = "Original Seurat / ModularityOptimizer code")
     )
-Description: Provides Rust/extendr reimplementations of performance-critical
-    Seurat native routines such as log-normalization, sparse row scaling,
-    shared nearest-neighbor graph construction, and integration helpers.
-    Install alongside Seurat to use the same function signatures with a
-    Rust backend. Builds require a Rust toolchain; CRAN source builds use
-    vendored crates for offline compilation.
+Description: Provides Rust implementations of performance-critical Seurat
+    native routines such as log-normalization, sparse row scaling, shared
+    nearest-neighbor graph construction, and integration helpers. Install
+    alongside Seurat to use the same function signatures with a Rust
+    backend. Builds require Cargo and rustc (>= 1.81); CRAN source builds
+    include offline crate sources under 'src/rust'.
 License: MIT + file LICENSE
 URL: https://github.com/NebilI/seurust,
     https://github.com/NebilI/seurust/tree/main/seurust

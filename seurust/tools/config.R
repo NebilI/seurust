@@ -60,6 +60,18 @@ cfg <- if (is_debug) "debug" else "release"
 
 is_windows <- .Platform[["OS.type"]] == "windows"
 
+# Render the Rust GNU target in R so Makevars.win stays free of GNU $(subst).
+.rust_target <- if (is_windows) {
+  win_bits <- Sys.getenv("R_ARCH", unset = "")
+  if (identical(win_bits, "/i386") || identical(Sys.getenv("WIN"), "32")) {
+    "i686-pc-windows-gnu"
+  } else {
+    "x86_64-pc-windows-gnu"
+  }
+} else {
+  ""
+}
+
 mv_fp <- ifelse(
   is_windows,
   "src/Makevars.win.in",
@@ -84,6 +96,7 @@ new_txt <- gsub("@CRAN_FLAGS@", .cran_flags, mv_txt) |>
   gsub("@CLEAN_TARGET@", .clean_targets, x = _) |>
   gsub("@LIBDIR@", .libdir, x = _) |>
   gsub("@TARGET@", .target, x = _) |>
+  gsub("@RUST_TARGET@", .rust_target, x = _) |>
   gsub("@PANIC_EXPORTS@", .panic_exports, x = _) |>
   gsub("@RUN_DOCUMENT@", .run_document, x = _)
 
