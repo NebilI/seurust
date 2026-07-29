@@ -46,13 +46,17 @@ jobs:
             docker/scripts/vendor-seurust.sh \
             seurust/tools/vendor.sh \
             seurust/configure \
-            seurust/cleanup || true
+            seurust/configure.win \
+            seurust/cleanup \
+            seurust/cleanup.win || true
           chmod +x docker/scripts/check-seurust-cran.sh \
             docker/scripts/submit-seurust-cran.sh \
             docker/scripts/vendor-seurust.sh \
             seurust/tools/vendor.sh \
             seurust/configure \
-            seurust/cleanup
+            seurust/configure.win \
+            seurust/cleanup \
+            seurust/cleanup.win
 
       - name: CRAN build and check via Compose
         run: |

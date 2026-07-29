@@ -47,12 +47,14 @@ no_rustc_msg <- c(
   "-------------------------------------------------------------------"
 )
 
-new_path <- paste0(
-  Sys.getenv("PATH"),
-  ":",
-  paste0(Sys.getenv("HOME"), "/.cargo/bin")
+cargo_bins <- unique(c(
+  file.path(Sys.getenv("HOME"), ".cargo", "bin"),
+  file.path(Sys.getenv("USERPROFILE"), ".cargo", "bin")
+))
+cargo_bins <- cargo_bins[nzchar(cargo_bins) & dir.exists(cargo_bins)]
+Sys.setenv(
+  PATH = paste(c(Sys.getenv("PATH"), cargo_bins), collapse = .Platform$path.sep)
 )
-Sys.setenv("PATH" = new_path)
 
 rustc_version <- tryCatch(
   system("rustc --version", intern = TRUE),
