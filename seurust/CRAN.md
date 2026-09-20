@@ -71,12 +71,11 @@ docker compose -f docker/docker-compose.yml run --rm \
 
 ### 3. Confirm by email (required)
 
-CRAN emails the **Maintainer** address from `DESCRIPTION`
-(`nebil.b.ibrahim@gmail.com`). You must reply to confirm the submission.
-Without that reply, the package never enters review.
+CRAN emails the **Maintainer** address from `DESCRIPTION`. You must reply to
+confirm the submission. Without that reply, the package never enters review.
 
-If an earlier submission used a different maintainer address, **do not confirm that
-email**. Confirm only the message sent to `nebil.b.ibrahim@gmail.com`.
+If an earlier submission used a different maintainer address, **do not confirm
+that email**. Confirm only the message sent to the current Maintainer address.
 
 ### 4. Respond to reviewer feedback
 
@@ -111,7 +110,8 @@ depending on reviewer load and issues found.
 1. Bump `seurust/DESCRIPTION` (and matching `seurust/src/rust/Cargo.toml`) on a PR; merge after `seurust Checks` is green.
 2. On `main`: **Actions → Build / submit seurust to CRAN → Run workflow**.
 3. Leave **submit_to_cran** unchecked for a dry-run (artifact only), or check it to upload.
-4. Confirm the email sent to `nebil.b.ibrahim@gmail.com`, then watch https://cran.r-project.org/package=seurust.
+4. Confirm the CRAN email sent to the Maintainer address in `DESCRIPTION`, then
+   watch https://cran.r-project.org/package=seurust.
 
 Local equivalent (Docker):
 

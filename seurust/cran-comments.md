@@ -1,7 +1,6 @@
 ## Resubmission
 
-This is a resubmission as **0.1.2**. Maintainer contact is now
-`nebil.b.ibrahim@gmail.com`.
+This is a resubmission as **0.1.2** with an updated maintainer email address.
 
 Previous 0.1.0 incoming pretests failed with:
 

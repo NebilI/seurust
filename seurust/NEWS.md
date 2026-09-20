@@ -1,8 +1,8 @@
 # seurust 0.1.2
 
-* Switch CRAN maintainer contact to `nebil.b.ibrahim@gmail.com`.
-* Carry forward the 0.1.1 incoming-pretest fixes (Windows `configure.win`,
-  portable Makevars, DESCRIPTION/README cleanups) for resubmission.
+* Update maintainer contact for CRAN submissions.
+* Carry forward the 0.1.1 packaging fixes for Windows configure and portable
+  Makevars.
 
 # seurust 0.1.1
 
