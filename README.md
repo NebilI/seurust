@@ -9,7 +9,7 @@ This repository is a development fork of Seurat v5 that adds **[seurust](seurust
 [![seurust CI](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml/badge.svg)](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml)
 [![r-universe](https://NebilI.r-universe.dev/badges/seurust)](https://NebilI.r-universe.dev/seurust)
 
-Publishing notes: [`seurust/CRAN.md`](seurust/CRAN.md). Maintainer: `nbi@alumni.princeton.edu`.
+Publishing notes: [`seurust/CRAN.md`](seurust/CRAN.md).
 PR tests: `seurust Checks`. CRAN updates: Actions → **Build / submit seurust to CRAN**.
 
 ---

@@ -1,3 +1,9 @@
+# seurust 0.1.2
+
+* Update maintainer contact for CRAN submissions.
+* Carry forward the 0.1.1 packaging fixes for Windows configure and portable
+  Makevars.
+
 # seurust 0.1.1
 
 * Fix Windows source installs for CRAN by adding `configure.win` /

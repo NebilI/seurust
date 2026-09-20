@@ -28,7 +28,7 @@ docker compose -f docker/docker-compose.yml run --rm \
 | Channel | When available | User install |
 |---------|----------------|--------------|
 | **r-universe** | After registry repo is live + first build | `install.packages("seurust", repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org"))` |
-| **GitHub Release** | On every GitHub Release | `install.packages("seurust_0.1.1.tar.gz", repos = NULL, type = "source")` |
+| **GitHub Release** | On every GitHub Release | `install.packages("seurust_0.1.2.tar.gz", repos = NULL, type = "source")` |
 | **CRAN** | Only after CRAN **accepts** the submission | `install.packages("seurust")` |
 | **crates.io** | On release (Rust crate) | mostly for packaging; users install the R package |
 
@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml run --rm \
 
 https://cran.r-project.org/package=seurust
 
-**Status: submitting 0.1.1.** Upload with
+**Status: submitting 0.1.2.** Upload with
 `SUBMIT_CRAN=yes READY_TO_PUBLISH=yes`. The CRAN page 404s until acceptance;
 use r-universe/GitHub until then.
 
@@ -71,12 +71,11 @@ docker compose -f docker/docker-compose.yml run --rm \
 
 ### 3. Confirm by email (required)
 
-CRAN emails the **Maintainer** address from `DESCRIPTION`
-(`nbi@alumni.princeton.edu`). You must reply to confirm the submission.
-Without that reply, the package never enters review.
+CRAN emails the **Maintainer** address from `DESCRIPTION`. You must reply to
+confirm the submission. Without that reply, the package never enters review.
 
-If an earlier submission used a different maintainer address, **do not confirm that
-email**. Confirm only the message sent to `nbi@alumni.princeton.edu`.
+If an earlier submission used a different maintainer address, **do not confirm
+that email**. Confirm only the message sent to the current Maintainer address.
 
 ### 4. Respond to reviewer feedback
 
@@ -111,7 +110,8 @@ depending on reviewer load and issues found.
 1. Bump `seurust/DESCRIPTION` (and matching `seurust/src/rust/Cargo.toml`) on a PR; merge after `seurust Checks` is green.
 2. On `main`: **Actions → Build / submit seurust to CRAN → Run workflow**.
 3. Leave **submit_to_cran** unchecked for a dry-run (artifact only), or check it to upload.
-4. Confirm the email sent to `nbi@alumni.princeton.edu`, then watch https://cran.r-project.org/package=seurust.
+4. Confirm the CRAN email sent to the Maintainer address in `DESCRIPTION`, then
+   watch https://cran.r-project.org/package=seurust.
 
 Local equivalent (Docker):
 
@@ -133,7 +133,7 @@ CRAN submission itself uses email confirmation, not a GitHub secret.
 ### Suggested release flow
 
 1. Land changes on `main` (PR checks via `seurust_checks.yaml`).
-2. Tag a release (for example `v0.1.1`) → r-universe + crates.io + CRAN tarball artifact.
+2. Tag a release (for example `v0.1.2`) → r-universe + crates.io + CRAN tarball artifact.
 3. Run **Build / submit seurust to CRAN** with `submit_to_cran=true` when ready.
 4. Confirm the CRAN email and watch https://cran.r-project.org/package=seurust.
 
