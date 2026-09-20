@@ -1,11 +1,13 @@
 ## Resubmission
 
-This is a resubmission as **0.1.1** (previous 0.1.0 incoming pretests
-failed). Changes since 0.1.0:
+This is a resubmission as **0.1.2**. Maintainer contact is now
+`nebil.b.ibrahim@gmail.com`.
+
+Previous 0.1.0 incoming pretests failed with:
 
 * Windows ERROR: missing `configure.win`, so `Makevars.win` was never
   generated and only `entrypoint.c` was linked (undefined Rust symbols).
-  Fixed by adding `configure.win` / `cleanup.win` (rextendr template).
+  Fixed in 0.1.1 by adding `configure.win` / `cleanup.win`.
 * Debian WARNING: GNU make extension `.NOTPARALLEL` in
   `src/Makevars` / `src/Makevars.in`. Removed; cleanup remains ordered via
   ordinary Make dependencies (`rust_clean: $(SHLIB)`).
@@ -15,9 +17,9 @@ failed). Changes since 0.1.0:
 
 ## Test environments
 
-* local via Docker: `docker compose -f docker/docker-compose.yml run --rm seurust-cran`
-  (Ubuntu 22.04, R 4.6.1, rustc stable)
 * GitHub Actions (ubuntu-latest), R release — `build-seurust-cran.yaml`
+* Prior Docker CRAN check for the 0.1.1 packaging fixes (Status: 1 NOTE —
+  New submission only)
 
 ## R CMD check results
 

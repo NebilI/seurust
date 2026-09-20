@@ -20,7 +20,7 @@ install.packages("seurust")
 
 ### From r-universe / GitHub
 
-Until CRAN accepts 0.1.1, install from r-universe:
+Until CRAN accepts 0.1.2, install from r-universe:
 
 ```r
 install.packages(
@@ -44,7 +44,7 @@ remotes::install_github("NebilI/seurust", subdir = "seurust")
 Download `seurust_*.tar.gz` from [GitHub Releases](https://github.com/NebilI/seurust/releases), then:
 
 ```r
-install.packages("path/to/seurust_0.1.1.tar.gz", repos = NULL, type = "source")
+install.packages("path/to/seurust_0.1.2.tar.gz", repos = NULL, type = "source")
 ```
 
 ### Local development

@@ -1,9 +1,9 @@
 Package: seurust
 Title: Rust Native Kernels for Seurat
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: c(
     person(given = "Nebil", family = "Ibrahim",
-           email = "nbi@alumni.princeton.edu",
+           email = "nebil.b.ibrahim@gmail.com",
            role = c("aut", "cre")),
     person(given = "Rahul", family = "Satija",
            role = "ctb",

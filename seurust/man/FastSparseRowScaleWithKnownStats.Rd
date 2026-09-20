@@ -24,4 +24,4 @@ FastSparseRowScaleWithKnownStats(
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{FastSparseRowScaleWithKnownStats}.
 }
-\author{Nebil Ibrahim \email{nbi@alumni.princeton.edu}}
+\author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}

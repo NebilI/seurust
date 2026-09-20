@@ -75,7 +75,7 @@ desc <- read.dcf("seurust/DESCRIPTION")
 authors <- desc[1, "Authors@R"]
 email <- sub('.*email\\s*=\\s*"([^"]+)".*', "\\1", authors)
 if (!grepl("@", email)) {
-  email <- "nbi@alumni.princeton.edu"
+  email <- "nebil.b.ibrahim@gmail.com"
 }
 name <- "Nebil Ibrahim"
 upload_url <- "https://xmpalantir.wu.ac.at/cransubmit/index2.php"
@@ -138,7 +138,7 @@ EOF
 
 echo ""
 echo "==> Next steps (required):"
-echo "  1. Open the confirmation link in the CRAN email (nbi@alumni.princeton.edu)."
+echo "  1. Open the confirmation link in the CRAN email (nebil.b.ibrahim@gmail.com)."
 echo "  2. Do NOT confirm any older CRAN email sent to a different address."
 echo "  3. Address any reviewer follow-ups."
 echo "  4. When accepted: install.packages(\"seurust\")"
