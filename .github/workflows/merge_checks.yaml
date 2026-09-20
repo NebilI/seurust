@@ -49,13 +49,15 @@ jobs:
       - name: Install SeuratObject from CRAN (source)
         run: Rscript -e "install.packages('SeuratObject', type = 'source', repos = 'https://cloud.r-project.org')"
 
+      # igraph (Seurat dependency in seurat-ci) needs libglpk.so.40 at runtime.
       - name: Install seurust build dependencies
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             curl ca-certificates \
             devscripts \
-            libclang-dev llvm-dev patchelf
+            libclang-dev llvm-dev patchelf \
+            libglpk40
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 
       - name: Install seurust
