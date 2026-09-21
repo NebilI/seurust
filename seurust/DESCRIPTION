@@ -1,5 +1,5 @@
 Package: seurust
-Title: Rust Native Kernels for Seurat
+Title: 'Rust' Native Kernels for 'Seurat'
 Version: 0.1.2
 Authors@R: c(
     person(given = "Nebil", family = "Ibrahim",
@@ -12,11 +12,11 @@ Authors@R: c(
            role = "cph",
            comment = "Original Seurat / ModularityOptimizer code")
     )
-Description: Provides Rust implementations of performance-critical Seurat
+Description: Provides 'Rust' implementations of performance-critical 'Seurat'
     native routines such as log-normalization, sparse row scaling, shared
     nearest-neighbor graph construction, and integration helpers. Install
-    alongside Seurat to use the same function signatures with a Rust
-    backend. Builds require Cargo and rustc (>= 1.81); CRAN source builds
+    alongside 'Seurat' to use the same function signatures with a 'Rust'
+    backend. Builds require 'Cargo' and 'rustc' (>= 1.81); CRAN source builds
     include offline crate sources under 'src/rust'.
 License: MIT + file LICENSE
 URL: https://github.com/NebilI/seurust,
