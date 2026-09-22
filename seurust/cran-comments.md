@@ -1,6 +1,8 @@
 ## Resubmission
 
-This is a resubmission as **0.1.2** with an updated maintainer email address.
+This is a resubmission as **0.1.2** with an updated maintainer email address
+and CRAN-requested single quotes around software names in `Title` and
+`Description` (`'Rust'`, `'Seurat'`, `'Cargo'`, `'rustc'`).
 
 Previous 0.1.0 incoming pretests failed with:
 
