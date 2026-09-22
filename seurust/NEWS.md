@@ -1,6 +1,8 @@
 # seurust 0.1.2
 
 * Update maintainer contact for CRAN submissions.
+* Link the Rust static library with Apple ld (`-force_load`) so macOS
+  source builds succeed.
 * Carry forward the 0.1.1 packaging fixes for Windows configure and portable
   Makevars.
 
