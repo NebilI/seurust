@@ -59,6 +59,14 @@ cfg <- if (is_debug) "debug" else "release"
 .run_document <- if (is_not_cran) "true" else "false"
 
 is_windows <- .Platform[["OS.type"]] == "windows"
+is_darwin <- identical(Sys.info()[["sysname"]], "Darwin")
+
+# Apple ld rejects GNU --whole-archive / --no-whole-archive.
+.pkg_libs_rust <- if (is_darwin) {
+  "-Wl,-force_load,$(LIBDIR)/libseurust.a"
+} else {
+  "-Wl,--whole-archive -L$(LIBDIR) -lseurust -Wl,--no-whole-archive"
+}
 
 # Render the Rust GNU target in R so Makevars.win stays free of GNU $(subst).
 .rust_target <- if (is_windows) {
@@ -98,7 +106,8 @@ new_txt <- gsub("@CRAN_FLAGS@", .cran_flags, mv_txt) |>
   gsub("@TARGET@", .target, x = _) |>
   gsub("@RUST_TARGET@", .rust_target, x = _) |>
   gsub("@PANIC_EXPORTS@", .panic_exports, x = _) |>
-  gsub("@RUN_DOCUMENT@", .run_document, x = _)
+  gsub("@RUN_DOCUMENT@", .run_document, x = _) |>
+  gsub("@PKG_LIBS_RUST@", .pkg_libs_rust, x = _)
 
 message("Writing `", mv_ofp, "`.")
 con <- file(mv_ofp, open = "wb")

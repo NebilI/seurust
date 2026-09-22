@@ -1,8 +1,10 @@
 TARGET_DIR = ./rust/target
 LIBDIR = $(TARGET_DIR)/@LIBDIR@
 STATLIB = $(LIBDIR)/libseurust.a
-# LTO can strip unreferenced Rust registration symbols; whole-archive keeps them.
-PKG_LIBS = -Wl,--whole-archive -L$(LIBDIR) -lseurust -Wl,--no-whole-archive
+# LTO can strip unreferenced Rust registration symbols, so the whole static
+# library must be linked. tools/config.R fills this in: GNU ld uses
+# --whole-archive; Apple ld uses -force_load.
+PKG_LIBS = @PKG_LIBS_RUST@
 
 all: $(SHLIB) rust_clean
 
