@@ -107,6 +107,9 @@ depending on reviewer load and issues found.
 
 ### Update / resubmit to CRAN from GitHub Actions
 
+CRAN upload is **never** triggered by a git push; use the workflow below (or local
+Docker) only when you explicitly choose to submit.
+
 1. Bump `seurust/DESCRIPTION` (and matching `seurust/src/rust/Cargo.toml`) on a PR; merge after `seurust Checks` is green.
 2. On `main`: **Actions → Build / submit seurust to CRAN → Run workflow**.
 3. Leave **submit_to_cran** unchecked for a dry-run (artifact only), or check it to upload.

@@ -1,6 +1,6 @@
 name: Build / submit seurust to CRAN
 
-# Manual CRAN updates:
+# Manual CRAN updates only (no push or release auto-upload to CRAN):
 #   Actions → "Build / submit seurust to CRAN" → Run workflow
 #   - leave submit_to_cran=false for a dry-run build/check + tarball artifact
 #   - set submit_to_cran=true to upload after a clean check (confirm email afterward)
