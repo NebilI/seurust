@@ -27,8 +27,6 @@ Depends:
 Imports:
     Matrix (>= 1.5-0),
     methods
-LinkingTo:
-    RcppEigen
 Suggests:
     Seurat,
     testthat (>= 3.0.0)

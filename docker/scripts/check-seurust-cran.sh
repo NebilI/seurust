@@ -21,7 +21,7 @@ if ! command -v checkbashisms >/dev/null 2>&1; then
 fi
 
 echo "==> Ensuring R packages for check/tests..."
-Rscript -e 'pkgs <- c("Matrix", "RcppEigen", "testthat", "Seurat");
+Rscript -e 'pkgs <- c("Matrix", "testthat", "Seurat");
   miss <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)];
   if (length(miss)) {
     message("Installing: ", paste(miss, collapse = ", "));
