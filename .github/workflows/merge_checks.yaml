@@ -83,8 +83,85 @@ jobs:
         shell: Rscript {0}
 
       # Because tests weren't included in CRAN checks, run them here.
+      # The full seurust-vs-Seurat runtime/memory table is produced by the
+      # dedicated job below so it stays visible on every merge.
       - name: Run Tests
         # Run this step even if the previous one failed.
         if: always()
         run: testthat::test_local()
         shell: Rscript {0}
+        env:
+          SEURUST_SKIP_FULL_COMPARE: "1"
+
+  compare-seurust:
+    name: "seurust vs Seurat (speed + memory)"
+    runs-on: ubuntu-latest
+    container:
+      image: satijalab/seurat-ci:latest
+    env:
+      NOT_CRAN: true
+      SEURAT_KEEP_RUST_TARGET: true
+      SEURUST_BENCH_REPS: "12"
+      SEURUST_BENCH_MEM_REPS: "4"
+      SEURUST_COMPARE_OUT: ${{ github.workspace }}/seurust-compare.md
+      SEURUST_COMPARE_CSV: ${{ github.workspace }}/seurust-compare.csv
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: installDeps.r -s
+
+      - name: Install SeuratObject from CRAN (source)
+        run: Rscript -e "install.packages('SeuratObject', type = 'source', repos = 'https://cloud.r-project.org')"
+
+      - name: Install seurust build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            curl ca-certificates \
+            devscripts \
+            libclang-dev llvm-dev patchelf \
+            libglpk40
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+
+      - name: Install local Seurat
+        run: R CMD INSTALL .
+
+      - name: Install seurust
+        run: |
+          . "$HOME/.cargo/env"
+          cd seurust
+          Rscript tools/config.R
+          cd ..
+          R CMD INSTALL seurust
+
+      - name: Compare every kernel versus Seurat
+        run: |
+          . "$HOME/.cargo/env"
+          Rscript scripts/compare-seurust-seurat.R
+
+      - name: Publish comparison table
+        if: always()
+        run: |
+          md="${GITHUB_WORKSPACE}/seurust-compare.md"
+          if [ -f "$md" ]; then
+            {
+              echo "## seurust vs Seurat (runtime + memory)"
+              echo
+              cat "$md"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Comparison report was not written." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seurust-vs-seurat
+          path: |
+            seurust-compare.md
+            seurust-compare.csv
+          if-no-files-found: warn
