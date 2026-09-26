@@ -3,7 +3,7 @@
 \alias{ComputeSNN}
 \title{Build a shared nearest-neighbor graph}
 \usage{ComputeSNN(nn_ranked, prune)}
-\arguments{\item{nn_ranked}{Integer neighbor-rank matrix.}\item{prune}{Numeric threshold.}}
+\arguments{\item{nn_ranked}{Matrix of 1-based neighbor indices (cells x k); integer or double.}\item{prune}{Numeric threshold.}}
 \value{A dgCMatrix SNN graph.}
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{ComputeSNN}.

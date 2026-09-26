@@ -279,7 +279,11 @@ impl RowIndex {
 
 pub fn rmatrix_from_column_major(data: &[f64], nrows: usize, ncols: usize) -> RMatrix<f64> {
     debug_assert_eq!(data.len(), nrows * ncols);
-    RMatrix::new_matrix(nrows, ncols, |r, c| data[r + c * nrows])
+    let mut out = RMatrix::<f64>::new(nrows, ncols);
+    if !data.is_empty() {
+        out.data_mut().copy_from_slice(data);
+    }
+    out
 }
 
 /// Column-compressed sparse matrix slots (dgCMatrix).
@@ -498,14 +502,15 @@ pub fn rmatrix_from_ndarray(values: ndarray::ArrayView2<f64>) -> RMatrix<f64> {
     RMatrix::new_matrix(nrows, ncols, |r, c| values[[r, c]])
 }
 
+/// Zero-copy ndarray view of an R (column-major) numeric matrix.
+pub fn ndarray_view_from_rmatrix(mat: &RMatrix<f64>) -> ndarray::ArrayView2<'_, f64> {
+    use ndarray::ShapeBuilder;
+    ndarray::ArrayView2::from_shape((mat.nrows(), mat.ncols()).f(), mat.data())
+        .expect("R matrix data matches its dimensions")
+}
+
 pub fn ndarray_from_rmatrix(mat: &RMatrix<f64>) -> ndarray::Array2<f64> {
-    let mut values = ndarray::Array2::zeros((mat.nrows(), mat.ncols()));
-    for r in 0..mat.nrows() {
-        for c in 0..mat.ncols() {
-            values[[r, c]] = mat[[r, c]];
-        }
-    }
-    values
+    ndarray_view_from_rmatrix(mat).to_owned()
 }
 
 pub fn strings_to_str_vec(names: Strings) -> Vec<String> {

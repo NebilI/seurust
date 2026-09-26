@@ -36,16 +36,6 @@ jobs:
             libclang-dev \
             llvm-dev
 
-      # Apt r-base leaves /usr/local/lib/R/site-library unwritable for the
-      # runner. setup-r provides a user library; install Rcpp/RcppEigen there
-      # so build.rs can find Eigen headers during cargo publish.
-      - name: Install RcppEigen
-        run: |
-          mkdir -p "${HOME}/R/library"
-          export R_LIBS_USER="${HOME}/R/library"
-          echo "R_LIBS_USER=${R_LIBS_USER}" >> "${GITHUB_ENV}"
-          Rscript -e 'install.packages(c("Rcpp", "RcppEigen"), lib = Sys.getenv("R_LIBS_USER"))'
-
       - name: Verify crate packages cleanly
         run: |
           export R_HOME="$(R RHOME)"

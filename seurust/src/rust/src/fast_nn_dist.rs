@@ -18,24 +18,63 @@ fn row_distance_column_major(
     sum.sqrt()
 }
 
-pub fn fast_dist_impl(x: &RMatrix<f64>, y: &RMatrix<f64>, n: &List) -> Robj {
+/// Convert one element of the neighbor list to 0-based row indices into `y`.
+/// Seurat's Rcpp signature coerces integer and double vectors alike.
+fn neighbor_indices(elt: &Robj, cell: usize, nrows_y: usize) -> extendr_api::Result<Vec<usize>> {
+    let to_index = |raw: f64| -> extendr_api::Result<usize> {
+        if !raw.is_finite() || raw < 1.0 || raw > nrows_y as f64 {
+            return Err(extendr_api::Error::Other(format!(
+                "fast_dist: neighbor index {raw} for cell {} is outside 1..{nrows_y}.",
+                cell + 1
+            )));
+        }
+        Ok(raw as usize - 1)
+    };
+
+    if let Some(ints) = elt.as_integer_slice() {
+        ints.iter()
+            .map(|&v| {
+                if v == i32::MIN {
+                    to_index(f64::NAN)
+                } else {
+                    to_index(v as f64)
+                }
+            })
+            .collect()
+    } else if let Some(reals) = elt.as_real_slice() {
+        reals.iter().map(|&v| to_index(v)).collect()
+    } else {
+        Err(extendr_api::Error::Other(format!(
+            "fast_dist: neighbors for cell {} must be an integer or numeric vector.",
+            cell + 1
+        )))
+    }
+}
+
+pub fn fast_dist_impl(x: &RMatrix<f64>, y: &RMatrix<f64>, n: &List) -> extendr_api::Result<Robj> {
     let ngraph_size = n.len();
     if x.nrows() != ngraph_size {
-        return Robj::from(List::new(0));
+        return Ok(Robj::from(List::new(0)));
+    }
+    if x.ncols() != y.ncols() {
+        return Err(extendr_api::Error::Other(format!(
+            "fast_dist: x has {} columns but y has {}.",
+            x.ncols(),
+            y.ncols()
+        )));
     }
 
     let ncols = x.ncols();
     let nrows_x = x.nrows();
     let nrows_y = y.nrows();
-    let x_data = x.as_robj().as_real_slice().expect("numeric x");
-    let y_data = y.as_robj().as_real_slice().expect("numeric y");
+    let x_data = x.data();
+    let y_data = y.data();
 
-    let neighbors_by_row: Vec<Vec<usize>> = (0..ngraph_size)
-        .map(|i| {
-            let neighbors: Doubles = n.elt(i).unwrap().try_into().unwrap();
-            neighbors.iter().map(|idx| idx.0 as usize - 1).collect()
-        })
-        .collect();
+    let neighbors_by_row = n
+        .values()
+        .enumerate()
+        .map(|(i, elt)| neighbor_indices(&elt, i, nrows_y))
+        .collect::<extendr_api::Result<Vec<Vec<usize>>>>()?;
 
     let distances_by_row: Vec<Vec<f64>> = neighbors_by_row
         .par_iter()
@@ -50,10 +89,14 @@ pub fn fast_dist_impl(x: &RMatrix<f64>, y: &RMatrix<f64>, n: &List) -> Robj {
         })
         .collect();
 
-    let mut items = Vec::with_capacity(ngraph_size);
-    for distances in distances_by_row {
-        items.push(Robj::from(Doubles::from_values(distances)));
+    let items: Vec<Robj> = distances_by_row
+        .into_iter()
+        .map(|distances| Robj::from(Doubles::from_values(distances)))
+        .collect();
+    let mut out = Robj::from(List::from_values(items));
+    if let Some(names) = n.names() {
+        let names: Vec<&str> = names.collect();
+        out.set_names(names)?;
     }
-
-    Robj::from(items)
+    Ok(out)
 }

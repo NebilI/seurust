@@ -1,219 +1,7 @@
-use crate::sparse::{csc_slots_from_sorted_triplets, dgcmatrix_from_buffers, CscSlots};
+use crate::sparse::{csc_slots_from_sorted_triplets, CscSlots};
 use extendr_api::prelude::*;
-use extendr_ffi::SEXP;
 use rayon::prelude::*;
 use sprs::{CsMat, TriMat};
-
-#[cfg(snn_eigen)]
-#[allow(improper_ctypes)]
-extern "C" {
-    fn compute_snn_rcpp(nn_ranked: SEXP, prune: f64) -> SEXP;
-    fn compute_snn_rcpp_fast(nn_ranked: *const f64, nrows: i32, ncols: i32, prune: f64) -> SEXP;
-    fn compute_snn_csc(
-        nn_ranked: *const f64,
-        nrows: i32,
-        ncols: i32,
-        prune: f64,
-        out_x: *mut *mut f64,
-        out_i: *mut *mut i32,
-        out_p: *mut *mut i32,
-        out_nnz: *mut i32,
-        error_msg: *mut std::ffi::c_char,
-        error_msg_len: i32,
-    ) -> i32;
-    fn compute_snn_csc_free(x: *mut f64, i: *mut i32, p: *mut i32);
-    fn compute_snn_csc_into(
-        nn_ranked: *const f64,
-        nrows: i32,
-        ncols: i32,
-        prune: f64,
-        out_x: *mut f64,
-        out_x_len: i32,
-        out_i: *mut i32,
-        out_i_len: i32,
-        out_p: *mut i32,
-        out_p_len: i32,
-        out_nnz_required: *mut i32,
-        error_msg: *mut std::ffi::c_char,
-        error_msg_len: i32,
-    ) -> i32;
-    fn compute_snn_csc_clear_cache();
-}
-
-#[cfg(snn_eigen)]
-fn snn_eigen_error(err_buf: &[u8]) -> extendr_api::Error {
-    let msg = err_buf
-        .split(|&b| b == 0)
-        .next()
-        .unwrap_or(b"compute_snn_csc_into failed");
-    extendr_api::Error::Other(String::from_utf8_lossy(msg).into_owned())
-}
-
-#[cfg(snn_eigen)]
-fn compute_snn_eigen_malloc_to_r(
-    data: &[f64],
-    nrows: i32,
-    ncols: i32,
-    prune: f64,
-) -> extendr_api::Result<Robj> {
-    let mut out_x: *mut f64 = std::ptr::null_mut();
-    let mut out_i: *mut i32 = std::ptr::null_mut();
-    let mut out_p: *mut i32 = std::ptr::null_mut();
-    let mut out_nnz = 0i32;
-    let mut err_buf = vec![0u8; 512];
-
-    let rc = unsafe {
-        compute_snn_csc(
-            data.as_ptr(),
-            nrows,
-            ncols,
-            prune,
-            &mut out_x,
-            &mut out_i,
-            &mut out_p,
-            &mut out_nnz,
-            err_buf.as_mut_ptr() as *mut std::ffi::c_char,
-            err_buf.len() as i32,
-        )
-    };
-
-    if rc != 0 {
-        return Err(snn_eigen_error(&err_buf));
-    }
-
-    let nnz = out_nnz as usize;
-    let n = nrows as usize;
-    let mut x_out = Doubles::new(nnz);
-    let mut i_out = Integers::new(nnz);
-    let mut p_out = Integers::new(n + 1);
-
-    if nnz > 0 {
-        x_out
-            .as_robj_mut()
-            .as_real_slice_mut()
-            .expect("numeric x")
-            .copy_from_slice(unsafe { std::slice::from_raw_parts(out_x, nnz) });
-        i_out
-            .as_robj_mut()
-            .as_integer_slice_mut()
-            .expect("integer i")
-            .copy_from_slice(unsafe { std::slice::from_raw_parts(out_i, nnz) });
-    }
-    p_out
-        .as_robj_mut()
-        .as_integer_slice_mut()
-        .expect("integer p")
-        .copy_from_slice(unsafe { std::slice::from_raw_parts(out_p, n + 1) });
-    unsafe { compute_snn_csc_free(out_x, out_i, out_p) };
-
-    let dim = Integers::from_values(vec![nrows, nrows]);
-    dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
-}
-
-#[cfg(snn_eigen)]
-fn compute_snn_eigen_into_to_r(
-    data: &[f64],
-    nrows: i32,
-    ncols: i32,
-    prune: f64,
-) -> extendr_api::Result<Robj> {
-    let n = nrows as usize;
-    let mut err_buf = vec![0u8; 512];
-    let mut nnz_required = 0i32;
-
-    let sizing_rc = unsafe {
-        compute_snn_csc_into(
-            data.as_ptr(),
-            nrows,
-            ncols,
-            prune,
-            std::ptr::null_mut(),
-            0,
-            std::ptr::null_mut(),
-            0,
-            std::ptr::null_mut(),
-            0,
-            &mut nnz_required,
-            err_buf.as_mut_ptr() as *mut std::ffi::c_char,
-            err_buf.len() as i32,
-        )
-    };
-
-    if sizing_rc != -3 {
-        unsafe { compute_snn_csc_clear_cache() };
-        return Err(snn_eigen_error(&err_buf));
-    }
-
-    let nnz = nnz_required.max(0) as usize;
-    let mut x_out = Doubles::new(nnz);
-    let mut i_out = Integers::new(nnz);
-    let mut p_out = Integers::new(n + 1);
-
-    let x_slice = if nnz > 0 {
-        x_out.as_robj_mut().as_real_slice_mut().expect("numeric x")
-    } else {
-        &mut []
-    };
-    let i_slice = if nnz > 0 {
-        i_out
-            .as_robj_mut()
-            .as_integer_slice_mut()
-            .expect("integer i")
-    } else {
-        &mut []
-    };
-    let p_slice = p_out
-        .as_robj_mut()
-        .as_integer_slice_mut()
-        .expect("integer p");
-
-    let fill_rc = unsafe {
-        compute_snn_csc_into(
-            data.as_ptr(),
-            nrows,
-            ncols,
-            prune,
-            x_slice.as_mut_ptr(),
-            nnz as i32,
-            i_slice.as_mut_ptr(),
-            nnz as i32,
-            p_slice.as_mut_ptr(),
-            (n + 1) as i32,
-            std::ptr::null_mut(),
-            err_buf.as_mut_ptr() as *mut std::ffi::c_char,
-            err_buf.len() as i32,
-        )
-    };
-
-    if fill_rc < 0 {
-        unsafe { compute_snn_csc_clear_cache() };
-        return Err(snn_eigen_error(&err_buf));
-    }
-
-    let dim = Integers::from_values(vec![nrows, nrows]);
-    dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
-}
-
-#[cfg(snn_eigen)]
-fn compute_snn_eigen_fast_to_r(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_api::Result<Robj> {
-    let data = nn_ranked_data(nn_ranked);
-    let out = unsafe {
-        compute_snn_rcpp_fast(
-            data.as_ptr(),
-            nn_ranked.nrows() as i32,
-            nn_ranked.ncols() as i32,
-            prune,
-        )
-    };
-    Ok(unsafe { Robj::from_sexp(out) })
-}
-
-#[cfg(snn_eigen)]
-fn compute_snn_eigen_to_r(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_api::Result<Robj> {
-    let nn_sexp = unsafe { nn_ranked.as_robj().get() };
-    let out = unsafe { compute_snn_rcpp(nn_sexp, prune) };
-    Ok(unsafe { Robj::from_sexp(out) })
-}
 
 fn scale_and_prune(val: f64, k_f: f64, prune: f64) -> Option<f64> {
     let scaled = val / (k_f + (k_f - val));
@@ -651,29 +439,72 @@ pub fn compute_snn_to_r_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_ap
 }
 
 /// Compute SNN = (neighbor_matrix * neighbor_matrix^T), scaled and pruned.
-pub fn compute_snn_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> CscSlots {
+pub fn compute_snn_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_api::Result<CscSlots> {
     let n_cells = nn_ranked.nrows();
     let k = nn_ranked.ncols();
     let data = nn_ranked_data(nn_ranked);
-    compute_snn_best_csc_from_data(data, n_cells, k, prune)
+    validate_nn_ranked_data(data, n_cells, k)?;
+    Ok(compute_snn_best_csc_from_data(data, n_cells, k, prune))
 }
 
-pub fn write_edge_file_impl(snn: &CscSlots, filename: &str, _display_progress: bool) {
-    use std::fs::File;
-    use std::io::Write;
+/// Format like C++ `std::setprecision(15)` on a default-formatted stream
+/// (printf `%.15g`), so edge files are byte-identical to Seurat's.
+fn format_g15(val: f64) -> String {
+    const PRECISION: i32 = 15;
+    if val == 0.0 || !val.is_finite() {
+        return if val.is_nan() {
+            "nan".to_string()
+        } else if val.is_infinite() {
+            if val > 0.0 { "inf" } else { "-inf" }.to_string()
+        } else {
+            "0".to_string()
+        };
+    }
 
-    let mut file = File::create(filename).expect("failed to create edge file");
+    let sci = format!("{:.*e}", (PRECISION - 1) as usize, val);
+    let (mantissa, exp) = sci.split_once('e').expect("exponent in scientific format");
+    let exp: i32 = exp.parse().expect("integer exponent");
+
+    let strip = |s: &str| -> String {
+        if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            s.to_string()
+        }
+    };
+
+    if !(-4..PRECISION).contains(&exp) {
+        let sign = if exp < 0 { '-' } else { '+' };
+        format!("{}e{sign}{:02}", strip(mantissa), exp.abs())
+    } else {
+        let decimals = (PRECISION - 1 - exp).max(0) as usize;
+        strip(&format!("{val:.decimals$}"))
+    }
+}
+
+pub fn write_edge_file_impl(
+    snn: &CscSlots,
+    filename: &str,
+    _display_progress: bool,
+) -> extendr_api::Result<()> {
+    use std::fs::File;
+    use std::io::{BufWriter, Write};
+
+    let io_err = |err: std::io::Error| {
+        extendr_api::Error::Other(format!("failed to write edge file '{filename}': {err}"))
+    };
+    let mut file = BufWriter::new(File::create(filename).map_err(io_err)?);
     let ncols = snn.ncols as usize;
     for col in 0..ncols {
         for idx in snn.p[col] as usize..snn.p[col + 1] as usize {
             let row = snn.i[idx] as usize;
-            let val = snn.x[idx];
             if col >= row {
                 continue;
             }
-            writeln!(file, "{col}\t{row}\t{val:.15}").unwrap();
+            writeln!(file, "{col}\t{row}\t{}", format_g15(snn.x[idx])).map_err(io_err)?;
         }
     }
+    file.flush().map_err(io_err)
 }
 
 pub fn direct_snn_to_file_impl(
@@ -681,10 +512,10 @@ pub fn direct_snn_to_file_impl(
     prune: f64,
     display_progress: bool,
     filename: &str,
-) -> CscSlots {
-    let snn = compute_snn_impl(nn_ranked, prune);
-    write_edge_file_impl(&snn, filename, display_progress);
-    snn
+) -> extendr_api::Result<CscSlots> {
+    let snn = compute_snn_impl(nn_ranked, prune)?;
+    write_edge_file_impl(&snn, filename, display_progress)?;
+    Ok(snn)
 }
 
 pub fn snn_smallest_nonzero_dist_impl(
@@ -789,6 +620,21 @@ mod tests {
             }
         }
         data
+    }
+
+    #[test]
+    fn format_g15_matches_cpp_setprecision_15() {
+        assert_eq!(format_g15(1.0), "1");
+        assert_eq!(format_g15(0.5), "0.5");
+        assert_eq!(format_g15(1.0 / 3.0), "0.333333333333333");
+        assert_eq!(format_g15(1.0 / 19.0), "0.0526315789473684");
+        assert_eq!(format_g15(2.0 / 3.0), "0.666666666666667");
+        assert_eq!(format_g15(0.0), "0");
+        assert_eq!(format_g15(1.5e-5), "1.5e-05");
+        assert_eq!(format_g15(0.0001), "0.0001");
+        assert_eq!(format_g15(123456.0), "123456");
+        assert_eq!(format_g15(1e15), "1e+15");
+        assert_eq!(format_g15(-0.25), "-0.25");
     }
 
     #[test]

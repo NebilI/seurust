@@ -28,7 +28,7 @@ There were no ERRORs.
 
 Notes expected for this package:
 
-* Compiled code uses Rust plus a small C++ bridge for ModularityOptimizer.
+* Compiled code is Rust only (no C++ sources are compiled).
   `SystemRequirements` lists Cargo and rustc (>= 1.81).
 * Source tarball includes offline Rust crate sources in
   `src/rust/vendor.tar.xz` (~2 MB) so CRAN can build offline.

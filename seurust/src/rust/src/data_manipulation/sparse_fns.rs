@@ -441,30 +441,34 @@ pub fn replace_cols_impl(mat: CscSlots, col_idx: &[i32], replacement: CscSlots) 
     csc_from_triplets(nrows, ncols, &triplets)
 }
 
-pub fn graph_to_neighbor_helper_impl(mat: CscSlots) -> Robj {
-    use crate::sparse::rmatrix_from_ndarray;
-    use ndarray::Array2;
-
-    let cs = mat.to_cs_mat();
-    let transposed = cs.transpose_view();
-    let n_neighbors = transposed
+/// Per-row neighbor lists of a graph (cells x cells), ordered by increasing
+/// distance. Row `k` of the outputs holds the 1-based column indices and
+/// values of row `k` of `mat`, as in Seurat's `GraphToNeighborHelper`.
+pub fn graph_to_neighbor_lists(mat: &CscSlots) -> Result<(usize, Vec<f64>, Vec<f64>), String> {
+    let csr = mat.to_cs_mat().to_csr();
+    let nrows = csr.rows();
+    let n_neighbors = csr
         .outer_iterator()
         .next()
         .map(|row| row.nnz())
         .unwrap_or(0);
 
-    let nrows = transposed.rows();
-    let mut nn_idx = Array2::zeros((nrows, n_neighbors));
-    let mut nn_dist = Array2::zeros((nrows, n_neighbors));
+    // Column-major nrows x n_neighbors buffers, ready to hand to R.
+    let mut nn_idx = vec![0.0; nrows * n_neighbors];
+    let mut nn_dist = vec![0.0; nrows * n_neighbors];
 
-    for (k, row) in transposed.outer_iterator().enumerate() {
+    for (k, row) in csr.outer_iterator().enumerate() {
         if row.nnz() != n_neighbors {
-            panic!("Not all cells have an equal number of neighbors.");
+            return Err(format!(
+                "Not all cells have an equal number of neighbors \
+                 (row 1 has {n_neighbors}, row {} has {}).",
+                k + 1,
+                row.nnz()
+            ));
         }
 
-        let row_idx: Vec<f64> = row.indices().iter().map(|&i| (i + 1) as f64).collect();
-        let row_dist: Vec<f64> = row.data().to_vec();
-
+        let row_idx = row.indices();
+        let row_dist = row.data();
         let mut order: Vec<usize> = (0..row_dist.len()).collect();
         order.sort_by(|&a, &b| {
             row_dist[a]
@@ -473,15 +477,23 @@ pub fn graph_to_neighbor_helper_impl(mat: CscSlots) -> Robj {
         });
 
         for (i, &ord) in order.iter().enumerate() {
-            nn_idx[[k, i]] = row_idx[ord];
-            nn_dist[[k, i]] = row_dist[ord];
+            nn_idx[k + i * nrows] = (row_idx[ord] + 1) as f64;
+            nn_dist[k + i * nrows] = row_dist[ord];
         }
     }
 
-    Robj::from(vec![
-        Robj::from(rmatrix_from_ndarray(nn_idx.view())),
-        Robj::from(rmatrix_from_ndarray(nn_dist.view())),
-    ])
+    Ok((n_neighbors, nn_idx, nn_dist))
+}
+
+pub fn graph_to_neighbor_helper_impl(mat: CscSlots) -> extendr_api::Result<Robj> {
+    let nrows = mat.nrows as usize;
+    let (n_neighbors, nn_idx, nn_dist) =
+        graph_to_neighbor_lists(&mat).map_err(extendr_api::Error::Other)?;
+
+    Ok(Robj::from(List::from_values([
+        Robj::from(rmatrix_from_column_major(&nn_idx, nrows, n_neighbors)),
+        Robj::from(rmatrix_from_column_major(&nn_dist, nrows, n_neighbors)),
+    ])))
 }
 
 #[cfg(test)]
@@ -514,6 +526,38 @@ mod tests {
         let mut mat = toy_csc();
         log_norm_owned_impl(&mut mat, 10_000, false);
         assert!(mat.x.iter().all(|v| v.is_finite() && *v >= 0.0));
+    }
+
+    #[test]
+    fn graph_to_neighbor_lists_reads_rows_sorted_by_distance() {
+        // Asymmetric 3x3 graph, dense row-major:
+        //   row 0: [0.0, 0.5, 0.2]
+        //   row 1: [0.9, 0.0, 0.1]
+        //   row 2: [0.3, 0.4, 0.0]
+        let mat = CscSlots {
+            x: vec![0.9, 0.3, 0.5, 0.4, 0.2, 0.1],
+            i: vec![1, 2, 0, 2, 0, 1],
+            p: vec![0, 2, 4, 6],
+            nrows: 3,
+            ncols: 3,
+        };
+        let (k, idx, dist) = graph_to_neighbor_lists(&mat).unwrap();
+        assert_eq!(k, 2);
+        // Column-major 3 x 2 outputs.
+        assert_eq!(idx, vec![3.0, 3.0, 1.0, 2.0, 1.0, 2.0]);
+        assert_eq!(dist, vec![0.2, 0.1, 0.3, 0.5, 0.9, 0.4]);
+    }
+
+    #[test]
+    fn graph_to_neighbor_lists_rejects_ragged_rows() {
+        let mat = CscSlots {
+            x: vec![1.0, 1.0, 1.0],
+            i: vec![1, 0, 1],
+            p: vec![0, 1, 3],
+            nrows: 2,
+            ncols: 2,
+        };
+        assert!(graph_to_neighbor_lists(&mat).is_err());
     }
 
     #[test]
