@@ -1,6 +1,10 @@
 #!/usr/bin/env Rscript
-# Time every ported seurust kernel against Seurat's C++ implementation.
-# Prints a markdown table: Seurat C++, seurust Rust, and speedup (C++ / Rust).
+# Compare every ported seurust kernel with Seurat's C++ implementation.
+#
+# Default: print a markdown timing table (Seurat C++, seurust, speedup).
+# SEURUST_BENCH_MODE=error: print numeric error on the same inputs instead.
+# The two modes are separate so a fresh timing run does not overwrite a
+# published error table, and an error run does not rewrite the timings.
 
 .libPaths(c(
   Sys.getenv("SEURUST_LIB", unset = "/tmp/lib-seurust"),
@@ -60,6 +64,189 @@ time_pair <- function(cpp_fn, rust_fn, times = 7L) {
   rust_us <- median(rust$time) / 1000
   speedup <- cpp_us / rust_us
   list(cpp_us = cpp_us, rust_us = rust_us, speedup = speedup, times = times)
+}
+
+# Relative error is |a-b| / max(|a|, |b|). Significant figures are -log10 of
+# the worst relative error among entries at least this large. Smaller entries
+# are reported only through the absolute error, so a last-bit wobble on a
+# near-zero covariance is not counted as lost digits.
+SEURUST_SIGFIG_FLOOR <- 1e-8
+
+numeric_agreement <- function(a, b, floor = SEURUST_SIGFIG_FLOOR) {
+  a <- as.numeric(a)
+  b <- as.numeric(b)
+  if (length(a) != length(b)) {
+    stop(sprintf("length mismatch: %d vs %d", length(a), length(b)), call. = FALSE)
+  }
+  if (!length(a)) {
+    return(list(
+      max_abs = 0, max_rel = 0, sigfigs = Inf, n = 0L, n_diff = 0L,
+      detail = "empty"
+    ))
+  }
+  abs_diff <- abs(a - b)
+  scale <- pmax(abs(a), abs(b))
+  both_missing <- is.na(a) & is.na(b)
+  abs_diff[both_missing] <- 0
+  scale[both_missing] <- 0
+  if (anyNA(abs_diff)) {
+    return(list(
+      max_abs = NA_real_, max_rel = 1, sigfigs = 0, n = length(a),
+      n_diff = sum(is.na(abs_diff)), detail = "NA on only one side"
+    ))
+  }
+  tiny <- scale < floor
+  rel <- rep(0, length(a))
+  if (any(!tiny)) {
+    rel[!tiny] <- abs_diff[!tiny] / pmax(scale[!tiny], .Machine$double.xmin)
+  }
+  max_rel <- if (any(!tiny)) max(rel[!tiny]) else 0
+  sigfigs <- if (max_rel == 0) Inf else -log10(max_rel)
+  list(
+    max_abs = max(abs_diff),
+    max_rel = max_rel,
+    sigfigs = sigfigs,
+    n = length(a),
+    n_diff = sum(a != b),
+    detail = if (max(abs_diff) == 0) "identical" else "values differ"
+  )
+}
+
+is_sparse_mat <- function(x) inherits(x, "sparseMatrix")
+
+dim_label <- function(x) {
+  d <- dim(x)
+  if (is.null(d)) sprintf("len %d", length(x)) else paste(d, collapse = "x")
+}
+
+# Sparse results are aligned by (row, column). A missing entry is 0, so an
+# explicit stored zero on only one side still counts as a difference.
+sparse_pair <- function(a, b) {
+  a <- as(a, "dgCMatrix")
+  b <- as(b, "dgCMatrix")
+  if (!identical(dim(a), dim(b))) {
+    stop(sprintf("dims %s vs %s", dim_label(a), dim_label(b)), call. = FALSE)
+  }
+  sa <- Matrix::summary(a)
+  sb <- Matrix::summary(b)
+  nr <- nrow(a)
+  ka <- sa$i + (sa$j - 1L) * nr
+  kb <- sb$i + (sb$j - 1L) * nr
+  keys <- unique(c(ka, kb))
+  if (!length(keys)) {
+    return(list(a = numeric(), b = numeric()))
+  }
+  va <- numeric(length(keys))
+  vb <- numeric(length(keys))
+  if (length(ka)) va[match(ka, keys)] <- sa$x
+  if (length(kb)) vb[match(kb, keys)] <- sb$x
+  list(a = va, b = vb)
+}
+
+pair_numeric <- function(a, b) {
+  a_list <- is.list(a) && !is.matrix(a) && !inherits(a, "Matrix")
+  b_list <- is.list(b) && !is.matrix(b) && !inherits(b, "Matrix")
+  if (a_list || b_list) {
+    if (!a_list || !b_list) {
+      stop("one result is a list and the other is not", call. = FALSE)
+    }
+    if (length(a) != length(b)) {
+      stop(sprintf("list length %d vs %d", length(a), length(b)), call. = FALSE)
+    }
+    parts <- Map(pair_numeric, a, b)
+    return(list(
+      a = unlist(lapply(parts, `[[`, "a"), recursive = TRUE, use.names = FALSE),
+      b = unlist(lapply(parts, `[[`, "b"), recursive = TRUE, use.names = FALSE)
+    ))
+  }
+  if (is_sparse_mat(a) || is_sparse_mat(b)) {
+    if (is_sparse_mat(a) && is_sparse_mat(b)) {
+      return(sparse_pair(a, b))
+    }
+    # One side stored a dense matrix. Compare every entry, including zeros.
+    if (!identical(dim(a), dim(b))) {
+      stop(sprintf("dims %s vs %s", dim_label(a), dim_label(b)), call. = FALSE)
+    }
+    return(list(a = as.numeric(as.matrix(a)), b = as.numeric(as.matrix(b))))
+  }
+  if (!identical(dim(a), dim(b))) {
+    stop(sprintf("dims %s vs %s", dim_label(a), dim_label(b)), call. = FALSE)
+  }
+  aa <- as.numeric(a)
+  bb <- as.numeric(b)
+  if (length(aa) != length(bb)) {
+    stop(sprintf("length %d vs %d", length(aa), length(bb)), call. = FALSE)
+  }
+  list(a = aa, b = bb)
+}
+
+object_agreement <- function(a, b) {
+  pair <- tryCatch(pair_numeric(a, b), error = function(e) e)
+  if (inherits(pair, "error")) {
+    return(list(
+      max_abs = NA_real_, max_rel = 1, sigfigs = 0, n = NA_integer_,
+      n_diff = NA_integer_, detail = conditionMessage(pair)
+    ))
+  }
+  numeric_agreement(pair$a, pair$b)
+}
+
+read_edge_table <- function(path) {
+  if (!file.exists(path) || is.na(file.size(path)) || file.size(path) == 0) {
+    return(data.frame(col = integer(), row = integer(), value = numeric()))
+  }
+  tab <- utils::read.table(
+    path, header = FALSE, col.names = c("col", "row", "value"),
+    stringsAsFactors = FALSE
+  )
+  tab[order(tab$col, tab$row), , drop = FALSE]
+}
+
+edge_file_agreement <- function(path_a, path_b) {
+  lines_a <- readLines(path_a, warn = FALSE)
+  lines_b <- readLines(path_b, warn = FALSE)
+  if (identical(lines_a, lines_b)) {
+    return(list(
+      max_abs = 0, max_rel = 0, sigfigs = Inf, n = length(lines_a),
+      n_diff = 0L, detail = "files identical"
+    ))
+  }
+  a <- read_edge_table(path_a)
+  b <- read_edge_table(path_b)
+  if (nrow(a) != nrow(b) || !identical(a$col, b$col) || !identical(a$row, b$row)) {
+    return(list(
+      max_abs = NA_real_, max_rel = 1, sigfigs = 0,
+      n = max(nrow(a), nrow(b)), n_diff = NA_integer_,
+      detail = sprintf("edge index mismatch (%d vs %d rows)", nrow(a), nrow(b))
+    ))
+  }
+  numeric_agreement(a$value, b$value)
+}
+
+combine_agreement <- function(x, y) {
+  pick_max <- function(p, q) {
+    if (is.na(p) && is.na(q)) NA_real_ else max(p, q, na.rm = TRUE)
+  }
+  list(
+    max_abs = pick_max(x$max_abs, y$max_abs),
+    max_rel = pick_max(x$max_rel, y$max_rel),
+    sigfigs = min(x$sigfigs, y$sigfigs),
+    n = sum(c(x$n, y$n), na.rm = TRUE),
+    n_diff = sum(c(x$n_diff, y$n_diff), na.rm = TRUE),
+    detail = paste(unique(c(x$detail, y$detail)), collapse = "; ")
+  )
+}
+
+fmt_err <- function(x) {
+  if (is.na(x)) return("—")
+  if (x == 0) return("0")
+  sprintf("%.2e", x)
+}
+
+fmt_figs <- function(stats) {
+  if (isTRUE(stats$max_abs == 0) || isTRUE(stats$max_rel == 0)) return("exact")
+  if (!is.finite(stats$sigfigs)) return("—")
+  sprintf("%.1f", stats$sigfigs)
 }
 
 cat("Seurat ", as.character(packageVersion("Seurat")),
@@ -228,42 +415,109 @@ cases <- list(
     function() seurust::row_var_dgcmatrix(row_x, row_i, row_nr, row_nc))
 )
 
+bench_mode <- tolower(Sys.getenv("SEURUST_BENCH_MODE", unset = "time"))
 rows <- vector("list", length(cases))
-cat("| Function | Problem size | Seurat C++ | seurust Rust | Speedup |\n")
-cat("| --- | --- | ---: | ---: | ---: |\n")
-for (i in seq_along(cases)) {
-  case <- cases[[i]]
-  name <- case[[1]]
-  size <- case[[2]]
-  times <- case[[3]]
-  message("timing ", name)
-  result <- tryCatch(
-    time_pair(case[[4]], case[[5]], times = times),
-    error = function(e) e
-  )
-  if (inherits(result, "error")) {
-    cat(sprintf("| `%s` | %s | error | error | — |\n", name, size))
-    message("  FAILED: ", conditionMessage(result))
-    rows[[i]] <- data.frame(
-      function_name = name, size = size, cpp_ms = NA, rust_ms = NA,
-      speedup = NA, error = conditionMessage(result), stringsAsFactors = FALSE
-    )
-    next
-  }
-  speedup_txt <- sprintf("%.2f×", result$speedup)
-  cat(sprintf(
-    "| `%s` | %s | %s | %s | %s |\n",
-    name, size, fmt_ms(result$cpp_us), fmt_ms(result$rust_us), speedup_txt
-  ))
-  rows[[i]] <- data.frame(
-    function_name = name, size = size,
-    cpp_ms = result$cpp_us / 1000, rust_ms = result$rust_us / 1000,
-    speedup = result$speedup, error = NA_character_, stringsAsFactors = FALSE
-  )
-  gc(verbose = FALSE)
-}
 
-out <- do.call(rbind, rows)
-csv_path <- Sys.getenv("SEURUST_BENCH_CSV", unset = file.path(tempdir(), "kernel-bench.csv"))
-utils::write.csv(out, csv_path, row.names = FALSE)
-cat("\nWrote ", csv_path, "\n", sep = "")
+if (bench_mode == "error") {
+  cat("| Function | Max absolute error | Max relative error | Significant figures |\n")
+  cat("| --- | ---: | ---: | ---: |\n")
+  for (i in seq_along(cases)) {
+    case <- cases[[i]]
+    name <- case[[1]]
+    message("error ", name)
+    stats <- tryCatch({
+      if (name == "WriteEdgeFile") {
+        case[[4]]()
+        case[[5]]()
+        edge_file_agreement(edge_cpp, edge_rust)
+      } else if (name == "DirectSNNToFile") {
+        cpp <- case[[4]]()
+        rust <- case[[5]]()
+        combine_agreement(
+          object_agreement(cpp, rust),
+          edge_file_agreement(direct_cpp, direct_rust)
+        )
+      } else if (name %in% c("RunUMISampling", "RunUMISamplingPerCell")) {
+        # Both kernels draw from R's RNG. Start each side from the same seed.
+        set.seed(1)
+        cpp <- case[[4]]()
+        set.seed(1)
+        rust <- case[[5]]()
+        object_agreement(cpp, rust)
+      } else {
+        cpp <- case[[4]]()
+        rust <- case[[5]]()
+        object_agreement(cpp, rust)
+      }
+    }, error = function(e) {
+      list(
+        max_abs = NA_real_, max_rel = NA_real_, sigfigs = NA_real_,
+        n = NA_integer_, n_diff = NA_integer_, detail = conditionMessage(e)
+      )
+    })
+    figs <- fmt_figs(stats)
+    if (!is.na(stats$max_abs) && stats$max_abs != 0 && nzchar(stats$detail) && stats$detail != "values differ") {
+      message("  ", stats$detail)
+    }
+    cat(sprintf(
+      "| `%s` | %s | %s | %s |\n",
+      name, fmt_err(stats$max_abs), fmt_err(stats$max_rel), figs
+    ))
+    rows[[i]] <- data.frame(
+      function_name = name,
+      max_abs = stats$max_abs,
+      max_rel = stats$max_rel,
+      sigfigs = if (is.infinite(stats$sigfigs)) NA_real_ else stats$sigfigs,
+      exact = isTRUE(stats$max_abs == 0),
+      n = stats$n,
+      n_diff = stats$n_diff,
+      detail = stats$detail,
+      stringsAsFactors = FALSE
+    )
+    rm(list = intersect(c("cpp", "rust", "stats"), ls()))
+    gc(verbose = FALSE)
+  }
+  out <- do.call(rbind, rows)
+  csv_path <- Sys.getenv("SEURUST_ERROR_CSV", unset = file.path(tempdir(), "kernel-error.csv"))
+  utils::write.csv(out, csv_path, row.names = FALSE)
+  cat("\nWrote ", csv_path, "\n", sep = "")
+} else {
+  cat("| Function | Problem size | Seurat C++ | seurust Rust | Speedup |\n")
+  cat("| --- | --- | ---: | ---: | ---: |\n")
+  for (i in seq_along(cases)) {
+    case <- cases[[i]]
+    name <- case[[1]]
+    size <- case[[2]]
+    times <- case[[3]]
+    message("timing ", name)
+    result <- tryCatch(
+      time_pair(case[[4]], case[[5]], times = times),
+      error = function(e) e
+    )
+    if (inherits(result, "error")) {
+      cat(sprintf("| `%s` | %s | error | error | — |\n", name, size))
+      message("  FAILED: ", conditionMessage(result))
+      rows[[i]] <- data.frame(
+        function_name = name, size = size, cpp_ms = NA, rust_ms = NA,
+        speedup = NA, error = conditionMessage(result), stringsAsFactors = FALSE
+      )
+      next
+    }
+    speedup_txt <- sprintf("%.2f×", result$speedup)
+    cat(sprintf(
+      "| `%s` | %s | %s | %s | %s |\n",
+      name, size, fmt_ms(result$cpp_us), fmt_ms(result$rust_us), speedup_txt
+    ))
+    rows[[i]] <- data.frame(
+      function_name = name, size = size,
+      cpp_ms = result$cpp_us / 1000, rust_ms = result$rust_us / 1000,
+      speedup = result$speedup, error = NA_character_, stringsAsFactors = FALSE
+    )
+    gc(verbose = FALSE)
+  }
+
+  out <- do.call(rbind, rows)
+  csv_path <- Sys.getenv("SEURUST_BENCH_CSV", unset = file.path(tempdir(), "kernel-bench.csv"))
+  utils::write.csv(out, csv_path, row.names = FALSE)
+  cat("\nWrote ", csv_path, "\n", sep = "")
+}

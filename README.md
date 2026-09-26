@@ -95,6 +95,53 @@ Times are medians from [`microbenchmark`](https://cran.r-project.org/package=mic
 Rscript scripts/bench-all-kernels.R
 ```
 
+### Numeric error
+
+Same inputs as the timing table. Each row is the difference between the Seurat C++ result and the seurust result.
+
+Relative error is `|a − b| / max(|a|, |b|)` on entries with magnitude at least 1e-8. Significant figures are `−log10` of the largest of those relative errors. **exact** means the results matched bit for bit. Sparse matrices are compared by coordinate, and a missing entry counts as zero. `WriteEdgeFile` is compared on the edge file it writes. `DirectSNNToFile` is compared on both the returned matrix and the edge file. `RunUMISampling` and `RunUMISamplingPerCell` draw random samples; both sides were started with `set.seed(1)`.
+
+22 of the 30 kernels match exactly. The other eight agree to at least 11.5 significant figures. `Standardize` has the widest gap (relative error 2.83e-12). `FastCov` and `FastCovMats` agree to about 12 figures. `RowVar`, `SparseRowVar2`, and `ScoreHelper` agree to 14.7–15.3 figures. The two sparse row-scaling kernels differ by one unit in the last place (relative error 2.22e-16).
+
+| Function | Max absolute error | Max relative error | Significant figures |
+| --- | ---: | ---: | ---: |
+| `LogNorm` | 0 | 0 | exact |
+| `Standardize` | 5.77e-15 | 2.83e-12 | **11.5** |
+| `FastCov` | 8.88e-16 | 1.62e-12 | **11.8** |
+| `FastCovMats` | 1.04e-16 | 3.23e-13 | **12.5** |
+| `FastRBind` | 0 | 0 | exact |
+| `RowVar` | 1.33e-15 | 1.10e-15 | **15.0** |
+| `FastExpMean` | 0 | 0 | exact |
+| `SparseRowVar` | 0 | 0 | exact |
+| `SparseRowVar2` | 3.11e-15 | 2.18e-15 | **14.7** |
+| `SparseRowVarStd` | 0 | 0 | exact |
+| `FastLogVMR` | 0 | 0 | exact |
+| `FastSparseRowScale` | 1.78e-15 | 2.22e-16 | **15.7** |
+| `FastSparseRowScaleWithKnownStats` | 1.78e-15 | 2.22e-16 | **15.7** |
+| `RowMergeMatrices` | 0 | 0 | exact |
+| `ReplaceColsC` | 0 | 0 | exact |
+| `GraphToNeighborHelper` | 0 | 0 | exact |
+| `RunUMISampling` | 0 | 0 | exact |
+| `RunUMISamplingPerCell` | 0 | 0 | exact |
+| `ComputeSNN` | 0 | 0 | exact |
+| `IntegrateDataC` | 0 | 0 | exact |
+| `FindWeightsC` | 0 | 0 | exact |
+| `ScoreHelper` | 2.22e-16 | 4.72e-16 | **15.3** |
+| `WriteEdgeFile` | 0 | 0 | exact |
+| `DirectSNNToFile` | 0 | 0 | exact |
+| `SNN_SmallestNonzero_Dist` | 0 | 0 | exact |
+| `RunModularityClusteringCpp` | 0 | 0 | exact |
+| `fast_dist` | 0 | 0 | exact |
+| `row_sum_dgcmatrix` | 0 | 0 | exact |
+| `row_mean_dgcmatrix` | 0 | 0 | exact |
+| `row_var_dgcmatrix` | 0 | 0 | exact |
+
+Reproduce with:
+
+```sh
+SEURUST_BENCH_MODE=error Rscript scripts/bench-all-kernels.R
+```
+
 ### Machine
 
 These numbers were measured on the machine that ran the script:
