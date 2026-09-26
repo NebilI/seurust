@@ -1,6 +1,6 @@
 Package: seurust
 Title: 'Rust' Native Kernels for 'Seurat'
-Version: 0.1.2
+Version: 0.1.3
 Authors@R: c(
     person(given = "Nebil", family = "Ibrahim",
            email = "nebil.b.ibrahim@gmail.com",
