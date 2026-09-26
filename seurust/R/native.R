@@ -1,11 +1,35 @@
 # High-level R wrappers matching Seurat's RcppExports API (Rust backend).
 
+#' Coerce to a double-precision base matrix
+#'
+#' Seurat's Rcpp signatures (`NumericMatrix`, `Eigen::MatrixXd`) silently
+#' accept integer and logical matrices; the extendr entry points only accept
+#' doubles, so coerce before crossing into Rust.
+#' @keywords internal
+#' @noRd
+AsDoubleMatrix <- function(x) {
+  if (!is.matrix(x = x)) {
+    x <- as.matrix(x = x)
+  }
+  if (!is.double(x = x)) {
+    storage.mode(x = x) <- "double"
+  }
+  x
+}
+
+#' Coerce any matrix to a double-precision general sparse matrix
+#' @keywords internal
+#' @noRd
+AsGeneralSparse <- function(mat, layout) {
+  as(object = as(object = as(object = mat, Class = "dMatrix"), Class = "generalMatrix"), Class = layout)
+}
+
 #' Extract dgCMatrix slots for extendr calls
 #' @keywords internal
 #' @noRd
 CscSlots <- function(mat) {
   if (!inherits(x = mat, what = "dgCMatrix")) {
-    mat <- as(object = mat, Class = "dgCMatrix")
+    mat <- AsGeneralSparse(mat = mat, layout = "CsparseMatrix")
   }
   list(
     x = slot(object = mat, name = "x"),
@@ -21,7 +45,7 @@ CscSlots <- function(mat) {
 #' @noRd
 CsrSlots <- function(mat) {
   if (!inherits(x = mat, what = "dgRMatrix")) {
-    mat <- as(object = mat, Class = "RsparseMatrix")
+    mat <- AsGeneralSparse(mat = mat, layout = "RsparseMatrix")
   }
   list(
     x = slot(object = mat, name = "x"),
@@ -64,6 +88,9 @@ CscFromList <- function(slots) {
 #'
 #' @export
 LogNorm <- function(data, scale_factor, display_progress = TRUE) {
+  if (!inherits(x = data, what = "dgCMatrix")) {
+    data <- AsGeneralSparse(mat = data, layout = "CsparseMatrix")
+  }
   s <- CscSlots(mat = data)
   slot(object = data, name = "x") <- log_norm(
     x = s$x,
@@ -85,7 +112,7 @@ LogNorm <- function(data, scale_factor, display_progress = TRUE) {
 #' @return A numeric matrix with standardized columns.
 #' @export
 Standardize <- function(mat, display_progress = TRUE) {
-  standardize(mat = mat, display_progress = display_progress)
+  standardize(mat = AsDoubleMatrix(x = mat), display_progress = display_progress)
 }
 
 #' Fast covariance of a dense matrix
@@ -96,7 +123,7 @@ Standardize <- function(mat, display_progress = TRUE) {
 #' @return A symmetric numeric covariance matrix.
 #' @export
 FastCov <- function(mat, center = TRUE) {
-  fast_cov(mat = mat, center = center)
+  fast_cov(mat = AsDoubleMatrix(x = mat), center = center)
 }
 
 #' Fast cross-covariance of two dense matrices
@@ -107,7 +134,11 @@ FastCov <- function(mat, center = TRUE) {
 #' @return A numeric cross-covariance matrix.
 #' @export
 FastCovMats <- function(mat1, mat2, center = TRUE) {
-  fast_cov_mats(mat1 = mat1, mat2 = mat2, center = center)
+  fast_cov_mats(
+    mat1 = AsDoubleMatrix(x = mat1),
+    mat2 = AsDoubleMatrix(x = mat2),
+    center = center
+  )
 }
 
 #' Fast row-bind of two dense matrices
@@ -117,7 +148,7 @@ FastCovMats <- function(mat1, mat2, center = TRUE) {
 #' @return A numeric matrix stacking `mat1` and `mat2` by row.
 #' @export
 FastRBind <- function(mat1, mat2) {
-  fast_rbind(mat1 = mat1, mat2 = mat2)
+  fast_rbind(mat1 = AsDoubleMatrix(x = mat1), mat2 = AsDoubleMatrix(x = mat2))
 }
 
 #' Row variances of a dense matrix
@@ -127,12 +158,18 @@ FastRBind <- function(mat1, mat2) {
 #' @return Numeric vector of row variances.
 #' @export
 RowVar <- function(x) {
-  row_var(mat = x)
+  row_var(mat = AsDoubleMatrix(x = x))
 }
 
 #' Merge two sparse matrices by shared row names
 #'
-#' @param mat1,mat2 Sparse matrices in row-compressed form (or coercible).
+#' Seurat's C++ entry point only accepts row-compressed (`RsparseMatrix`)
+#' inputs and errors on a `dgCMatrix`. This version accepts either layout (or
+#' any coercible matrix) and converts to row-compressed form first; for
+#' `RsparseMatrix` inputs the result is identical to Seurat's.
+#'
+#' @param mat1,mat2 Sparse matrices, preferably row-compressed
+#'   (`dgRMatrix`); other matrix classes are coerced.
 #' @param mat1_rownames,mat2_rownames Character vectors of row names.
 #' @param all_rownames Character vector of the union of row names.
 #'
@@ -163,16 +200,23 @@ ReplaceColsC <- function(mat, col_idx, replacement) {
   r <- CscSlots(mat = replacement)
   CscFromList(replace_cols(
     x = s$x, i = s$i, p = s$p, nrows = s$nrows, ncols = s$ncols,
-    col_idx = col_idx,
+    col_idx = as.double(x = col_idx),
     rx = r$x, ri = r$i, rp = r$p, rnrows = r$nrows, rncols = r$ncols
   ))
 }
 
 #' Convert a sparse graph to neighbor index lists
 #'
-#' @param mat A sparse adjacency/`Graph` matrix (`dgCMatrix`).
+#' Reads each row of `mat` (cell `k`'s neighbors are the non-zero columns of
+#' row `k`), orders them by increasing value, and returns them as matrices,
+#' exactly like Seurat's `GraphToNeighborHelper`. Every row must have the same
+#' number of non-zero entries.
 #'
-#' @return Neighbor index information matching Seurat's helper.
+#' @param mat A sparse adjacency/`Graph` matrix (`dgCMatrix` or coercible),
+#'   cells x cells.
+#'
+#' @return An unnamed list of two `nrow(mat)` x `k` numeric matrices: 1-based
+#'   neighbor indices and the corresponding distances, both sorted by distance.
 #' @export
 GraphToNeighborHelper <- function(mat) {
   s <- CscSlots(mat = mat)
@@ -226,7 +270,7 @@ SparseRowVar2 <- function(mat, mu, display_progress) {
   sparse_row_var2(
     x = s$x, i = s$i, p = s$p,
     nrows = s$nrows, ncols = s$ncols,
-    mu = mu,
+    mu = as.double(x = mu),
     display_progress = display_progress
   )
 }
@@ -246,7 +290,7 @@ SparseRowVarStd <- function(mat, mu, sd, vmax, display_progress) {
   sparse_row_var_std(
     x = s$x, i = s$i, p = s$p,
     nrows = s$nrows, ncols = s$ncols,
-    mu = mu, sd = sd, vmax = vmax,
+    mu = as.double(x = mu), sd = as.double(x = sd), vmax = vmax,
     display_progress = display_progress
   )
 }
@@ -300,7 +344,7 @@ FastSparseRowScaleWithKnownStats <- function(mat, mu, sigma, scale = TRUE, cente
   fast_sparse_row_scale_with_known_stats(
     x = s$x, i = s$i, p = s$p,
     nrows = s$nrows, ncols = s$ncols,
-    mu = mu, sigma = sigma,
+    mu = as.double(x = mu), sigma = as.double(x = sigma),
     scale = scale, center = center, scale_max = scale_max,
     display_progress = display_progress
   )
@@ -337,7 +381,7 @@ RunUMISamplingPerCell <- function(data, sample_val, upsample = FALSE, display_pr
   out <- run_umi_sampling_per_cell(
     x = s$x, i = s$i, p = s$p,
     nrows = s$nrows, ncols = s$ncols,
-    sample_val = sample_val, upsample = upsample,
+    sample_val = as.double(x = sample_val), upsample = upsample,
     `_display_progress` = display_progress
   )
   CscFromList(out)
@@ -345,13 +389,14 @@ RunUMISamplingPerCell <- function(data, sample_val, upsample = FALSE, display_pr
 
 #' Build a shared nearest-neighbor (SNN) graph
 #'
-#' @param nn_ranked Integer matrix of neighbor ranks.
+#' @param nn_ranked Matrix of 1-based neighbor indices (cells x k); integer
+#'   or double.
 #' @param prune Numeric pruning threshold.
 #'
 #' @return A sparse SNN graph as a `dgCMatrix`.
 #' @export
 ComputeSNN <- function(nn_ranked, prune) {
-  compute_snn(nn_ranked = nn_ranked, prune = prune)
+  compute_snn(nn_ranked = AsDoubleMatrix(x = nn_ranked), prune = prune)
 }
 
 #' Integrate expression using anchor weights
@@ -389,12 +434,12 @@ IntegrateDataC <- function(integration_matrix, weights, expression_cells2) {
 FindWeightsC <- function(cells2, distances, anchor_cells2, integration_matrix_rownames,
                          cell_index, anchor_score, min_dist, sd, display_progress) {
   CscFromList(find_weights(
-    cells2 = cells2,
-    distances = distances,
+    cells2 = as.double(x = cells2),
+    distances = AsDoubleMatrix(x = distances),
     anchor_cells2 = anchor_cells2,
     integration_matrix_rownames = integration_matrix_rownames,
-    cell_index = cell_index,
-    anchor_score = anchor_score,
+    cell_index = AsDoubleMatrix(x = cell_index),
+    anchor_score = as.double(x = anchor_score),
     min_dist = min_dist,
     sd = sd,
     display_progress = display_progress
@@ -419,9 +464,9 @@ ScoreHelper <- function(snn, query_pca, query_dists, corrected_nns, k_snn,
   score_helper(
     x = s$x, i = s$i, p = s$p,
     nrows = s$nrows, ncols = s$ncols,
-    query_pca = query_pca,
-    query_dists = query_dists,
-    corrected_nns = corrected_nns,
+    query_pca = AsDoubleMatrix(x = query_pca),
+    query_dists = AsDoubleMatrix(x = query_dists),
+    corrected_nns = AsDoubleMatrix(x = corrected_nns),
     k_snn = k_snn,
     subtract_first_nn = subtract_first_nn,
     display_progress = display_progress
@@ -448,16 +493,21 @@ WriteEdgeFile <- function(snn, filename, display_progress) {
 
 #' Build an SNN graph and write it directly to a file
 #'
-#' @param nn_ranked Integer matrix of neighbor ranks.
+#' Computes the SNN graph as [ComputeSNN()] does and writes its lower
+#' triangle to `filename` in the same tab-separated format as
+#' [WriteEdgeFile()].
+#'
+#' @param nn_ranked Matrix of 1-based neighbor indices (cells x k); integer
+#'   or double.
 #' @param prune Numeric pruning threshold.
 #' @param display_progress Logical; show progress when supported.
 #' @param filename Output path.
 #'
-#' @return Invisibly returns a status code or `NULL`, matching Seurat.
+#' @return The SNN graph as a `dgCMatrix`, as returned by Seurat.
 #' @export
 DirectSNNToFile <- function(nn_ranked, prune, display_progress, filename) {
   direct_snn_to_file(
-    nn_ranked = nn_ranked,
+    nn_ranked = AsDoubleMatrix(x = nn_ranked),
     prune = prune,
     display_progress = display_progress,
     filename = filename
@@ -478,7 +528,7 @@ SNN_SmallestNonzero_Dist <- function(snn, mat, n, nearest_dist) {
   snn_smallest_nonzero_dist(
     x = s$x, i = s$i, p = s$p,
     nrows = s$nrows, ncols = s$ncols,
-    mat = mat, n = n, nearest_dist = nearest_dist
+    mat = AsDoubleMatrix(x = mat), n = n, nearest_dist = as.double(x = nearest_dist)
   )
 }
 
@@ -528,15 +578,22 @@ RunModularityClusteringCpp <- function(
 
 # Documented re-exports of low-level extendr entry points used by benchmarks.
 
-#' Fast pairwise distances for neighbor search
+#' Distances between cells and their listed neighbors
 #'
-#' @param x,y Numeric matrices of embeddings.
-#' @param n Integer number of neighbors.
+#' For each row `i` of `x`, computes the Euclidean distance to the rows of `y`
+#' listed in `n[[i]]`.
 #'
-#' @return Neighbor indices/distances matching Seurat's `fast_dist`.
+#' @param x,y Numeric matrices of embeddings with the same number of columns
+#'   (cells in rows).
+#' @param n A list with one element per row of `x`, each a vector of 1-based
+#'   row indices into `y`. Integer and double vectors are both accepted.
+#'
+#' @return A list the same length (and with the same names) as `n`, holding
+#'   the distances in the same order as the neighbor indices. An empty list
+#'   if `length(n) != nrow(x)`, matching Seurat.
 #' @export
 fast_dist <- function(x, y, n) {
-  .Call(wrap__fast_dist, x, y, n)
+  .Call(wrap__fast_dist, AsDoubleMatrix(x = x), AsDoubleMatrix(x = y), as.list(x = n))
 }
 
 #' Row sums for dgCMatrix compressed storage

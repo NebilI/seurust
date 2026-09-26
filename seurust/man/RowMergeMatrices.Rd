@@ -3,9 +3,13 @@
 \alias{RowMergeMatrices}
 \title{Merge two sparse matrices by row names}
 \usage{RowMergeMatrices(mat1, mat2, mat1_rownames, mat2_rownames, all_rownames)}
-\arguments{\item{mat1, mat2}{Sparse matrices.}\item{mat1_rownames, mat2_rownames, all_rownames}{Character vectors.}}
+\arguments{\item{mat1, mat2}{Sparse matrices, preferably row-compressed (\code{dgRMatrix}); other matrix classes are coerced.}\item{mat1_rownames, mat2_rownames, all_rownames}{Character vectors.}}
 \value{A dgCMatrix.}
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{RowMergeMatrices}.
+Seurat's C++ entry point only accepts row-compressed (\code{RsparseMatrix})
+inputs and errors on a \code{dgCMatrix}. This version accepts either layout
+(or any coercible matrix) and converts to row-compressed form first; for
+\code{RsparseMatrix} inputs the result is identical to Seurat's.
 }
 \author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}
