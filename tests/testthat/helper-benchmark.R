@@ -159,3 +159,284 @@ benchmark_compute_snn <- function(
   attr(bench, "label") <- label
   bench
 }
+
+#' Resident set size of this R process in megabytes (Linux).
+#' @keywords internal
+process_rss_mb <- function() {
+  if (!file.exists("/proc/self/statm")) {
+    return(NA_real_)
+  }
+  fields <- scan("/proc/self/statm", quiet = TRUE, what = numeric(), nmax = 2)
+  if (length(fields) < 2L) {
+    return(NA_real_)
+  }
+  page <- 4096
+  conf <- suppressWarnings(
+    system2("getconf", "PAGESIZE", stdout = TRUE, stderr = FALSE)
+  )
+  conf_n <- suppressWarnings(as.numeric(conf))
+  if (length(conf_n) == 1L && is.finite(conf_n) && conf_n > 0) {
+    page <- conf_n
+  }
+  unname(fields[[2]] * page / (1024^2))
+}
+
+#' R-heap megabytes from a `gc()` matrix (`used` or `max used`).
+#' `gc()` labels cell counts as `used` / `max used` and megabytes as a following `Mb` column.
+#' @keywords internal
+gc_mb_column <- function(g, which = c("used", "max")) {
+  which <- match.arg(which)
+  cn <- colnames(g)
+  mb_cols <- which(cn %in% c("Mb", "(Mb)"))
+  idx <- if (identical(which, "used")) 1L else 3L
+  if (length(mb_cols) >= idx) {
+    return(unname(sum(g[, mb_cols[[idx]]])))
+  }
+  col <- if (identical(which, "used")) 2L else 6L
+  if (ncol(g) >= col) {
+    return(unname(sum(g[, col])))
+  }
+  NA_real_
+}
+
+gc_used_mb <- function(g = gc()) {
+  gc_mb_column(g, "used")
+}
+
+gc_max_used_mb <- function(g = gc()) {
+  gc_mb_column(g, "max")
+}
+
+#' Measure R-heap peak and process RSS while holding a function result.
+#' @keywords internal
+measure_memory_fn <- function(fn, n_reps = 5L) {
+  n_reps <- as.integer(n_reps)
+  stopifnot(n_reps >= 1L)
+  rss <- rep(NA_real_, n_reps)
+  heap <- rep(NA_real_, n_reps)
+  result_bytes <- rep(NA_real_, n_reps)
+  for (i in seq_len(n_reps)) {
+    g0 <- gc(reset = TRUE, full = TRUE)
+    used0 <- gc_used_mb(g0)
+    rss0 <- process_rss_mb()
+    out <- fn()
+    rss1 <- process_rss_mb()
+    g1 <- gc()
+    rss[i] <- if (is.na(rss0) || is.na(rss1)) NA_real_ else max(rss1 - rss0, 0)
+    heap[i] <- max(gc_max_used_mb(g1) - used0, 0)
+    result_bytes[i] <- as.numeric(utils::object.size(out))
+    rm(out)
+  }
+  list(
+    rss_delta_mb = suppressWarnings(stats::median(rss, na.rm = TRUE)),
+    r_heap_mb = suppressWarnings(stats::median(heap, na.rm = TRUE)),
+    result_mb = suppressWarnings(stats::median(result_bytes, na.rm = TRUE)) / (1024^2)
+  )
+}
+
+#' Time and measure memory for a Seurat (C++) vs seurust pair.
+#' @keywords internal
+compare_rust_cpp <- function(
+    cpp_fn,
+    rust_fn,
+    n_warmup = 1L,
+    n_reps = 10L,
+    n_mem = 5L) {
+  bench <- benchmark_rust_cpp(
+    cpp_fn = cpp_fn,
+    rust_fn = rust_fn,
+    n_warmup = n_warmup,
+    n_reps = n_reps
+  )
+  cpp_mem <- measure_memory_fn(cpp_fn, n_reps = n_mem)
+  rust_mem <- measure_memory_fn(rust_fn, n_reps = n_mem)
+  heap_ratio <- if (is.finite(rust_mem$r_heap_mb) && rust_mem$r_heap_mb > 0) {
+    cpp_mem$r_heap_mb / rust_mem$r_heap_mb
+  } else {
+    NA_real_
+  }
+  rss_ratio <- if (is.finite(rust_mem$rss_delta_mb) && rust_mem$rss_delta_mb > 0) {
+    cpp_mem$rss_delta_mb / rust_mem$rss_delta_mb
+  } else {
+    NA_real_
+  }
+  c(
+    bench,
+    list(
+      cpp_mem = cpp_mem,
+      rust_mem = rust_mem,
+      rust_vs_cpp_mem = unname(heap_ratio),
+      rust_vs_cpp_rss = unname(rss_ratio)
+    )
+  )
+}
+
+#' Format a combined runtime + memory comparison line.
+#' @keywords internal
+format_compare <- function(cmp, label) {
+  time_line <- format_benchmark(cmp, label)
+  sprintf(
+    paste0(
+      "%s; ",
+      "C++ heap=%.2f MB rssΔ=%.2f MB result=%.3f MB; ",
+      "Rust heap=%.2f MB rssΔ=%.2f MB result=%.3f MB; ",
+      "C++/Rust heap=%.2fx rss=%.2fx"
+    ),
+    time_line,
+    cmp$cpp_mem$r_heap_mb,
+    cmp$cpp_mem$rss_delta_mb,
+    cmp$cpp_mem$result_mb,
+    cmp$rust_mem$r_heap_mb,
+    cmp$rust_mem$rss_delta_mb,
+    cmp$rust_mem$result_mb,
+    if (is.finite(cmp$rust_vs_cpp_mem)) cmp$rust_vs_cpp_mem else NA_real_,
+    if (is.finite(cmp$rust_vs_cpp_rss)) cmp$rust_vs_cpp_rss else NA_real_
+  )
+}
+
+#' Print a runtime+memory comparison and assert measurements are finite.
+#' @keywords internal
+expect_compare_report <- function(cmp, label) {
+  line <- format_compare(cmp, label)
+  cat(line, "\n", sep = "")
+  testthat::expect_true(
+    is.finite(cmp$rust_vs_cpp) && cmp$rust_vs_cpp > 0,
+    info = line
+  )
+  testthat::expect_true(
+    is.finite(cmp$cpp_mem$r_heap_mb) && is.finite(cmp$rust_mem$r_heap_mb),
+    info = paste0(line, " (R heap must be measurable)")
+  )
+  invisible(cmp)
+}
+
+.seurust_compare_env <- new.env(parent = emptyenv())
+.seurust_compare_env$rows <- list()
+
+#' Record one function's correctness + runtime + memory comparison.
+#' @keywords internal
+register_compare_row <- function(
+    name,
+    size,
+    parity,
+    cmp) {
+  row <- list(
+    function_name = as.character(name),
+    size = as.character(size),
+    parity = isTRUE(parity),
+    n_reps = as.integer(cmp$n_reps),
+    cpp_median_us = unname(cmp$cpp$median),
+    rust_median_us = unname(cmp$rust$median),
+    speedup_cpp_over_rust = unname(cmp$rust_vs_cpp),
+    cpp_heap_mb = unname(cmp$cpp_mem$r_heap_mb),
+    rust_heap_mb = unname(cmp$rust_mem$r_heap_mb),
+    heap_ratio_cpp_over_rust = unname(cmp$rust_vs_cpp_mem),
+    cpp_rss_delta_mb = unname(cmp$cpp_mem$rss_delta_mb),
+    rust_rss_delta_mb = unname(cmp$rust_mem$rss_delta_mb),
+    rss_ratio_cpp_over_rust = unname(cmp$rust_vs_cpp_rss),
+    cpp_result_mb = unname(cmp$cpp_mem$result_mb),
+    rust_result_mb = unname(cmp$rust_mem$result_mb)
+  )
+  .seurust_compare_env$rows[[length(.seurust_compare_env$rows) + 1L]] <- row
+  invisible(row)
+}
+
+#' Collected comparison rows as a data frame.
+#' @keywords internal
+compare_results_df <- function() {
+  rows <- .seurust_compare_env$rows
+  if (!length(rows)) {
+    return(data.frame())
+  }
+  do.call(rbind, lapply(rows, function(r) {
+    as.data.frame(r, stringsAsFactors = FALSE)
+  }))
+}
+
+reset_compare_results <- function() {
+  .seurust_compare_env$rows <- list()
+  invisible(NULL)
+}
+
+#' Default output paths for the merge-visible comparison report.
+#' @keywords internal
+compare_report_paths <- function() {
+  workspace <- Sys.getenv("GITHUB_WORKSPACE", unset = "")
+  md_env <- Sys.getenv("SEURUST_COMPARE_OUT", unset = "")
+  csv_env <- Sys.getenv("SEURUST_COMPARE_CSV", unset = "")
+  md <- if (nzchar(md_env)) {
+    md_env
+  } else if (nzchar(workspace)) {
+    file.path(workspace, "seurust-compare.md")
+  } else {
+    file.path(tempdir(), "seurust-compare.md")
+  }
+  csv <- if (nzchar(csv_env)) {
+    csv_env
+  } else if (nzchar(workspace)) {
+    file.path(workspace, "seurust-compare.csv")
+  } else {
+    file.path(tempdir(), "seurust-compare.csv")
+  }
+  list(md = md, csv = csv)
+}
+
+#' Markdown table of collected Seurat vs seurust comparisons.
+#' @keywords internal
+format_compare_markdown <- function(df = compare_results_df()) {
+  if (!nrow(df)) {
+    return("No seurust vs Seurat comparison rows were recorded.\n")
+  }
+  header <- paste(
+    "| Function | Size | Parity | C++ median (µs) | Rust median (µs) | Speedup (C++/Rust) |",
+    "C++ result (MB) | Rust result (MB) | C++ heap (MB) | Rust heap (MB) |",
+    sep = " "
+  )
+  sep <- paste(rep("| ---", 10L), collapse = " ")
+  sep <- paste0(sep, " |")
+  rows <- vapply(
+    X = seq_len(nrow(df)),
+    FUN = function(i) {
+      r <- df[i, ]
+      sprintf(
+        "| %s | %s | %s | %.2f | %.2f | %.2fx | %.4f | %.4f | %.2f | %.2f |",
+        r$function_name,
+        r$size,
+        if (isTRUE(r$parity)) "pass" else "FAIL",
+        r$cpp_median_us,
+        r$rust_median_us,
+        r$speedup_cpp_over_rust,
+        r$cpp_result_mb,
+        r$rust_result_mb,
+        r$cpp_heap_mb,
+        r$rust_heap_mb
+      )
+    },
+    FUN.VALUE = character(1)
+  )
+  paste0(
+    "Speedup is **C++ time ÷ Rust time**. Values **> 1.0 mean Rust is faster**. ",
+    "Result (MB) is `object.size` of the return value. Heap (MB) is R's peak `gc()` usage during the call.\n\n",
+    header, "\n", sep, "\n", paste(rows, collapse = "\n"), "\n"
+  )
+}
+
+#' Write markdown + CSV comparison reports for CI / local inspection.
+#' @keywords internal
+write_compare_report <- function(df = compare_results_df()) {
+  paths <- compare_report_paths()
+  md <- paste0(
+    "# seurust vs Seurat (runtime + memory)\n\n",
+    format_compare_markdown(df)
+  )
+  dir.create(dirname(paths$md), recursive = TRUE, showWarnings = FALSE)
+  writeLines(md, paths$md)
+  if (nrow(df)) {
+    utils::write.csv(df, paths$csv, row.names = FALSE)
+  }
+  cat("Wrote comparison report to ", paths$md, "\n", sep = "")
+  if (file.exists(paths$csv)) {
+    cat("Wrote comparison CSV to ", paths$csv, "\n", sep = "")
+  }
+  invisible(paths)
+}
