@@ -54,25 +54,64 @@ Seurat itself remains the user-facing package. **seurust** is the engine upgrade
 
 ## Performance vs Seurat (C++)
 
-Benchmarks below were collected on **Ubuntu 22.04** (Docker dev image, R 4.6, Rust 1.95) using [`docker/scripts/benchmark-rust-cpp.R`](docker/scripts/benchmark-rust-cpp.R). Each row is the median-time ratio **C++ ÷ Rust**; values **> 1.0 mean Rust is faster**.
+Median runtime for every ported native function, Seurat's C++ kernels against seurust. **Speedup = Seurat time ÷ seurust time.** Values **above 1.0× mean seurust is faster**. On this run seurust was faster on 22 of the 30 kernels. The largest gains were `SparseRowVar2` (9.45×), `FastCov` (3.70×), sparse row scaling (about 2.8×), and `FastRBind` (2.81×).
 
-### Kernel micro-benchmarks
+| Function | Problem size | Seurat C++ | seurust Rust | Speedup |
+| --- | --- | ---: | ---: | ---: |
+| `LogNorm` | 5,000 × 2,000 sparse, 5% nonzero | 5.04 ms | 4.20 ms | **1.20×** |
+| `Standardize` | 2,000 × 120 dense | 0.25 ms | 0.18 ms | **1.45×** |
+| `FastCov` | 2,000 × 80 dense | 0.82 ms | 0.22 ms | **3.70×** |
+| `FastCovMats` | 2,000 × 80 and 2,000 × 40 dense | 0.52 ms | 0.31 ms | **1.68×** |
+| `FastRBind` | two 4,000 × 150 dense | 4.84 ms | 1.72 ms | **2.81×** |
+| `RowVar` | 2,000 × 120 dense | 0.09 ms | 0.04 ms | **2.14×** |
+| `FastExpMean` | 5,000 × 2,000 sparse, 5% nonzero | 4.07 ms | 4.40 ms | 0.92× |
+| `SparseRowVar` | 5,000 × 2,000 sparse, 5% nonzero | 2.47 ms | 2.17 ms | **1.14×** |
+| `SparseRowVar2` | 5,000 × 2,000 sparse, 5% nonzero | 2.53 ms | 0.27 ms | **9.45×** |
+| `SparseRowVarStd` | 5,000 × 2,000 sparse, 5% nonzero | 2.67 ms | 2.25 ms | **1.18×** |
+| `FastLogVMR` | 5,000 × 2,000 sparse, 5% nonzero | 5.94 ms | 6.42 ms | 0.93× |
+| `FastSparseRowScale` | 5,000 × 2,000 sparse, 5% nonzero | 82.3 ms | 29.8 ms | **2.76×** |
+| `FastSparseRowScaleWithKnownStats` | 5,000 × 2,000 sparse, 5% nonzero | 84.6 ms | 29.0 ms | **2.92×** |
+| `RowMergeMatrices` | 1,500 × 400 and 1,200 × 350 CSR | 0.53 ms | 2.32 ms | 0.23× |
+| `ReplaceColsC` | 2,000 × 600 sparse, replace 20 columns | 0.31 ms | 0.64 ms | 0.48× |
+| `GraphToNeighborHelper` | 2,000 cells, 30 neighbors, symmetric | 0.45 ms | 0.40 ms | **1.13×** |
+| `RunUMISampling` | 2,000 × 1,500 counts, 8% nonzero | 2.84 ms | 2.22 ms | **1.28×** |
+| `RunUMISamplingPerCell` | 2,000 × 1,500 counts, 8% nonzero | 2.82 ms | 2.15 ms | **1.31×** |
+| `ComputeSNN` | 1,500 cells, k = 20 | 4.32 ms | 1.95 ms | **2.22×** |
+| `IntegrateDataC` | 800 genes × 200 cells, 60 anchors | 0.68 ms | 1.07 ms | 0.64× |
+| `FindWeightsC` | 400 cells, 600 anchors, k = 10 | 0.56 ms | 0.46 ms | **1.22×** |
+| `ScoreHelper` | 300 cells × 16 dimensions | 0.72 ms | 0.38 ms | **1.90×** |
+| `WriteEdgeFile` | 400-cell SNN | 2.74 ms | 2.31 ms | **1.19×** |
+| `DirectSNNToFile` | 400 cells, k = 15 | 2.44 ms | 2.64 ms | 0.92× |
+| `SNN_SmallestNonzero_Dist` | 400 cells × 10 dimensions | 0.43 ms | 0.32 ms | **1.34×** |
+| `RunModularityClusteringCpp` | 250-cell SNN, 10 iterations | 3.95 ms | 3.90 ms | 1.01× |
+| `fast_dist` | 800 × 20 dense, 10 neighbors | 0.17 ms | 0.21 ms | 0.78× |
+| `row_sum_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.22 ms | 0.10 ms | **2.23×** |
+| `row_mean_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.22 ms | 0.10 ms | **2.21×** |
+| `row_var_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.70 ms | 0.34 ms | **2.04×** |
 
-| Routine | Problem size | Rust vs C++ | Winner |
-|---------|--------------|-------------|--------|
-| **FastSparseRowScale** | 2,000 × 2,500 sparse | **1.40×** | Rust |
-| **LogNorm** | 400 × 400 sparse | **1.33×** | Rust |
-| **SparseRowVar2** | 2,000 × 2,500 sparse | **1.23×** | Rust |
-| **row_sum_dgcmatrix** | 3,000 × 800 sparse | **2.86×** | Rust |
-| Modularity clustering | 34-node SNN, 5×50 iters | 1.00× | Tie |
-| **ComputeSNN** | 500 cells, *k* = 20 | 0.60× | C++ |
-| **ComputeSNN** | 2,000 cells, *k* = 20 | 0.95× | ~Tie |
+Times are medians from [`microbenchmark`](https://cran.r-project.org/package=microbenchmark) after one untimed warmup (3 to 11 repeats; fewer repeats on the slower kernels). Inputs are built before the timer starts. Reproduce with:
 
-**Takeaway:** Rust delivers the largest gains on sparse matrix preprocessing — normalization, scaling, and row statistics — the steps that run on every dataset. SNN graph construction is actively being optimized; at 2,000 cells the backends are already within ~5%.
+```sh
+Rscript scripts/bench-all-kernels.R
+```
+
+### Machine
+
+These numbers were measured on the machine that ran the script:
+
+| | |
+| --- | --- |
+| OS | Ubuntu 24.04.4 LTS (Linux 6.12.94+, x86_64) |
+| CPU | Intel Xeon, 4 cores |
+| Memory | 15.6 GiB |
+| R | 4.6.1 |
+| Seurat | 5.5.1 (CRAN) |
+| seurust | 0.1.3 |
+| Rust | rustc 1.83.0 |
 
 ### End-to-end scRNA-seq workflow
 
-We run a full simulated PBMC-style pipeline (~2,500 cells, 2,000 genes) with identical steps for both backends ([`examples/compare_scrna_workflows.R`](examples/compare_scrna_workflows.R)). PCA and UMAP use the same R code; only native kernel calls differ. **Speedup = C++ time ÷ Rust time** (same convention as above; > 1.0 means Rust is faster).
+This is a separate, earlier measurement on Ubuntu 22.04 (Docker dev image, R 4.6, Rust 1.95), not the machine in the table above. It runs a simulated PBMC-style pipeline (~2,500 cells, 2,000 genes) with identical steps for both backends ([`examples/compare_scrna_workflows.R`](examples/compare_scrna_workflows.R)). PCA and UMAP use the same R code; only native kernel calls differ. **Speedup = C++ time ÷ Rust time** (> 1.0 means Rust is faster).
 
 | Step | C++ (s) | Rust (s) | Speedup |
 |------|--------:|---------:|--------:|
