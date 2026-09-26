@@ -3,9 +3,12 @@
 \alias{DirectSNNToFile}
 \title{Build an SNN graph and write it to a file}
 \usage{DirectSNNToFile(nn_ranked, prune, display_progress, filename)}
-\arguments{\item{nn_ranked}{Integer matrix.}\item{prune}{Numeric.}\item{display_progress}{Logical.}\item{filename}{Path.}}
-\value{Status matching Seurat.}
+\arguments{\item{nn_ranked}{Matrix of 1-based neighbor indices (cells x k); integer or double.}\item{prune}{Numeric pruning threshold.}\item{display_progress}{Logical.}\item{filename}{Output path.}}
+\value{The SNN graph as a \code{dgCMatrix}, as returned by Seurat.}
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{DirectSNNToFile}.
+Computes the SNN graph as \code{\link{ComputeSNN}} does and writes its lower
+triangle to \code{filename} in the same tab-separated format as
+\code{\link{WriteEdgeFile}}.
 }
 \author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}

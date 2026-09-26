@@ -87,12 +87,16 @@ fn fast_cov(mat: RMatrix<f64>, center: bool) -> RMatrix<f64> {
 }
 
 #[extendr]
-fn fast_cov_mats(mat1: RMatrix<f64>, mat2: RMatrix<f64>, center: bool) -> RMatrix<f64> {
+fn fast_cov_mats(
+    mat1: RMatrix<f64>,
+    mat2: RMatrix<f64>,
+    center: bool,
+) -> extendr_api::Result<RMatrix<f64>> {
     fast_cov_mats_impl(&mat1, &mat2, center)
 }
 
 #[extendr]
-fn fast_rbind(mat1: RMatrix<f64>, mat2: RMatrix<f64>) -> RMatrix<f64> {
+fn fast_rbind(mat1: RMatrix<f64>, mat2: RMatrix<f64>) -> extendr_api::Result<RMatrix<f64>> {
     fast_rbind_impl(&mat1, &mat2)
 }
 
@@ -296,13 +300,19 @@ fn replace_cols(
 }
 
 #[extendr]
-fn graph_to_neighbor_helper(x: Doubles, i: Integers, p: Integers, nrows: i32, ncols: i32) -> Robj {
+fn graph_to_neighbor_helper(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    nrows: i32,
+    ncols: i32,
+) -> extendr_api::Result<Robj> {
     let mat = CscSlots::from_r(x, i, p, nrows, ncols);
     graph_to_neighbor_helper_impl(mat)
 }
 
 #[extendr]
-fn fast_dist(x: RMatrix<f64>, y: RMatrix<f64>, n: List) -> Robj {
+fn fast_dist(x: RMatrix<f64>, y: RMatrix<f64>, n: List) -> extendr_api::Result<Robj> {
     fast_dist_impl(&x, &y, &n)
 }
 
@@ -400,9 +410,9 @@ fn write_edge_file(
     ncols: i32,
     filename: &str,
     display_progress: bool,
-) {
+) -> extendr_api::Result<()> {
     let snn = CscSlots::from_r(x, i, p, nrows, ncols);
-    write_edge_file_impl(&snn, filename, display_progress);
+    write_edge_file_impl(&snn, filename, display_progress)
 }
 
 #[extendr]
@@ -411,8 +421,8 @@ fn direct_snn_to_file(
     prune: f64,
     display_progress: bool,
     filename: &str,
-) -> List {
-    direct_snn_to_file_impl(&nn_ranked, prune, display_progress, filename).into_r_list()
+) -> extendr_api::Result<Robj> {
+    direct_snn_to_file_impl(&nn_ranked, prune, display_progress, filename)?.into_r_dgcmatrix()
 }
 
 #[extendr]

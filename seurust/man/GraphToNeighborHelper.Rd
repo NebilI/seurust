@@ -3,9 +3,14 @@
 \alias{GraphToNeighborHelper}
 \title{Convert a sparse graph to neighbor lists}
 \usage{GraphToNeighborHelper(mat)}
-\arguments{\item{mat}{Sparse adjacency matrix.}}
-\value{Neighbor index information.}
+\arguments{\item{mat}{Sparse adjacency matrix (cells x cells), \code{dgCMatrix} or coercible.}}
+\value{An unnamed list of two \code{nrow(mat)} x \code{k} numeric matrices:
+1-based neighbor indices and the corresponding distances, both sorted by
+increasing distance.}
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{GraphToNeighborHelper}.
+Reads each row of \code{mat} (cell \code{k}'s neighbors are the non-zero
+columns of row \code{k}), exactly like Seurat. Every row must have the same
+number of non-zero entries.
 }
 \author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}
