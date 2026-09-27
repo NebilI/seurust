@@ -1,6 +1,7 @@
 name: Release seurust
 
-# A push to main that bumps seurust/DESCRIPTION publishes that version.
+# A push to main that changes seurust/DESCRIPTION or these workflow files
+# publishes the version in DESCRIPTION. An existing release tag is reused.
 # GitHub does not start other workflows from a release created with the
 # default token, so this workflow calls the crates.io and r-universe jobs
 # directly. CRAN submission stays manual.
