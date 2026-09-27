@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish. Leave empty to use v<Version> from seurust/DESCRIPTION.
+        required: false
+        type: string
   workflow_call:
     inputs:
       tag:
@@ -60,33 +65,34 @@ jobs:
         id: tag
         env:
           EVENT_NAME: ${{ github.event_name }}
-          # A reusable workflow keeps the caller's event name (push), so the
-          # tag has to come from inputs whenever this is not a release event.
-          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag || '' }}
+          # A reusable workflow keeps the caller's event name, so a manual
+          # Release seurust run arrives here as workflow_dispatch. Prefer an
+          # explicit tag, then the release event, then DESCRIPTION.
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" != "workflow_dispatch" ] && [ -z "$TAG" ]; then
-            echo "Release tag is empty" >&2
-            exit 1
+          if [ -n "${INPUT_TAG}" ]; then
+            tag="${INPUT_TAG}"
+          elif [ "$EVENT_NAME" = "release" ] && [ -n "${RELEASE_TAG_NAME}" ]; then
+            tag="${RELEASE_TAG_NAME}"
+          else
+            version=$(awk '/^Version:[[:space:]]*/ { print $2; exit }' seurust/DESCRIPTION)
+            if [ -z "${version}" ]; then
+              echo "Could not read Version from seurust/DESCRIPTION" >&2
+              exit 1
+            fi
+            tag="v${version}"
           fi
-          echo "name=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "name=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Upload release asset
-        if: github.event_name != 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.name }}
           files: seurust_*.tar.gz
 
-      - name: Upload workflow artifact
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: seurust-source
-          path: seurust_*.tar.gz
-
       - name: Sync r-universe registry
-        if: github.event_name != 'workflow_dispatch'
         env:
           UNIVERSE_TOKEN: ${{ secrets.R_UNIVERSE_REGISTRY_TOKEN }}
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
