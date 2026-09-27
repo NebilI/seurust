@@ -54,7 +54,26 @@ Seurat itself remains the user-facing package. **seurust** is the engine upgrade
 
 ## Performance vs Seurat (C++)
 
-Median runtime for every ported native function, Seurat's C++ kernels against seurust. **Speedup = Seurat time ÷ seurust time.** Values **above 1.0× mean seurust is faster**. seurust is faster on all 30 kernels. The largest gains in the published run were `SparseRowVarStd` (9.19×), `SparseRowVar2` (9.18×), `FastExpMean` (6.75×), `SparseRowVar` (5.76×), and `FastLogVMR` (5.11×). Six kernels that used to be slower were remeasured after this change (marked †): `ReplaceColsC` (4.08×) and `RowMergeMatrices` (3.00×) are the largest of those.
+Median runtime for every ported native function, Seurat's C++ kernels against seurust. **Speedup = Seurat time ÷ seurust time.** Values **above 1.0× mean seurust is faster**. seurust is faster on all 30 kernels.
+
+### seurust 0.1.5
+
+These six kernels were slower than Seurat in 0.1.4. The medians below were measured for this release on Linux 6.12 (4-core Xeon), R 4.3.3, Seurat C++ via `Rcpp::sourceCpp` with `-O3`, and a seurust release build. Same problem sizes as the full table.
+
+| Function | Problem size | Seurat C++ | seurust Rust | Speedup |
+| --- | --- | ---: | ---: | ---: |
+| `RowMergeMatrices` | 1,500 × 400 and 1,200 × 350 CSR | 1.111 ms | 0.371 ms | **3.00×** |
+| `ReplaceColsC` | 2,000 × 600 sparse, replace 20 columns | 0.558 ms | 0.137 ms | **4.08×** |
+| `IntegrateDataC` | 800 genes × 200 cells, 60 anchors | 1.367 ms | 0.799 ms | **1.71×** |
+| `WriteEdgeFile` | 400-cell SNN | 3.590 ms | 3.069 ms | **1.17×** |
+| `DirectSNNToFile` | 400 cells, k = 15 | 4.833 ms | 3.421 ms | **1.41×** |
+| `fast_dist` | 800 × 20 dense, 10 neighbors | 0.329 ms | 0.294 ms | **1.12×** |
+
+`RowMergeMatrices`, `ReplaceColsC`, `fast_dist`, `WriteEdgeFile`, and `DirectSNNToFile` match Seurat exactly (edge files byte for byte). `IntegrateDataC` matches the dense matrix bit for bit. The sparse result drops 59 explicit numerical zeros that Eigen keeps (79,470 nonzeros versus 79,411); a missing entry is zero, so the numeric comparison is exact.
+
+### All 30 kernels
+
+The largest gains in the earlier published run were `SparseRowVarStd` (9.19×), `SparseRowVar2` (9.18×), `FastExpMean` (6.75×), `SparseRowVar` (5.76×), and `FastLogVMR` (5.11×). Rows marked † are the 0.1.5 measurements above. The other rows are the published run in the machine table (R 4.6.1, Seurat 5.5.1, seurust 0.1.4). Absolute times are not comparable across those two setups; the speedup in each row is.
 
 | Function | Problem size | Seurat C++ | seurust Rust | Speedup |
 | --- | --- | ---: | ---: | ---: |
@@ -71,25 +90,25 @@ Median runtime for every ported native function, Seurat's C++ kernels against se
 | `FastLogVMR` | 5,000 × 2,000 sparse, 5% nonzero | 5.91 ms | 1.16 ms | **5.11×** |
 | `FastSparseRowScale` | 5,000 × 2,000 sparse, 5% nonzero | 78.4 ms | 28.1 ms | **2.79×** |
 | `FastSparseRowScaleWithKnownStats` | 5,000 × 2,000 sparse, 5% nonzero | 83.8 ms | 27.7 ms | **3.03×** |
-| `RowMergeMatrices` † | 1,500 × 400 and 1,200 × 350 CSR | 1.11 ms | 0.37 ms | **3.00×** |
-| `ReplaceColsC` † | 2,000 × 600 sparse, replace 20 columns | 0.56 ms | 0.14 ms | **4.08×** |
+| `RowMergeMatrices` † | 1,500 × 400 and 1,200 × 350 CSR | 1.111 ms | 0.371 ms | **3.00×** |
+| `ReplaceColsC` † | 2,000 × 600 sparse, replace 20 columns | 0.558 ms | 0.137 ms | **4.08×** |
 | `GraphToNeighborHelper` | 2,000 cells, 30 neighbors, symmetric | 0.45 ms | 0.39 ms | **1.15×** |
 | `RunUMISampling` | 2,000 × 1,500 counts, 8% nonzero | 2.83 ms | 2.27 ms | **1.25×** |
 | `RunUMISamplingPerCell` | 2,000 × 1,500 counts, 8% nonzero | 2.77 ms | 2.14 ms | **1.29×** |
 | `ComputeSNN` | 1,500 cells, k = 20 | 4.33 ms | 1.81 ms | **2.39×** |
-| `IntegrateDataC` † | 800 genes × 200 cells, 60 anchors | 1.37 ms | 0.80 ms | **1.71×** |
+| `IntegrateDataC` † | 800 genes × 200 cells, 60 anchors | 1.367 ms | 0.799 ms | **1.71×** |
 | `FindWeightsC` | 400 cells, 600 anchors, k = 10 | 0.55 ms | 0.45 ms | **1.22×** |
 | `ScoreHelper` | 300 cells × 16 dimensions | 0.72 ms | 0.37 ms | **1.93×** |
-| `WriteEdgeFile` † | 400-cell SNN | 3.59 ms | 3.07 ms | **1.17×** |
-| `DirectSNNToFile` † | 400 cells, k = 15 | 4.83 ms | 3.42 ms | **1.41×** |
+| `WriteEdgeFile` † | 400-cell SNN | 3.590 ms | 3.069 ms | **1.17×** |
+| `DirectSNNToFile` † | 400 cells, k = 15 | 4.833 ms | 3.421 ms | **1.41×** |
 | `SNN_SmallestNonzero_Dist` | 400 cells × 10 dimensions | 0.44 ms | 0.32 ms | **1.37×** |
 | `RunModularityClusteringCpp` | 250-cell SNN, 10 iterations | 3.95 ms | 3.89 ms | 1.01× |
-| `fast_dist` † | 800 × 20 dense, 10 neighbors | 0.33 ms | 0.29 ms | **1.12×** |
+| `fast_dist` † | 800 × 20 dense, 10 neighbors | 0.329 ms | 0.294 ms | **1.12×** |
 | `row_sum_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.20 ms | 0.10 ms | **2.00×** |
 | `row_mean_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.20 ms | 0.10 ms | **2.00×** |
 | `row_var_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.72 ms | 0.34 ms | **2.10×** |
 
-Times are medians from [`microbenchmark`](https://cran.r-project.org/package=microbenchmark) after one untimed warmup (3 to 11 repeats; fewer repeats on the slower kernels). Inputs are built before the timer starts. Rows marked † were remeasured on this VM after the kernel changes (R 4.3.3, Seurat C++ via `Rcpp::sourceCpp` with `-O3`, seurust 0.1.4 release). The other rows are the published run in the machine table below (R 4.6.1, Seurat 5.5.1). Absolute times are not comparable across those two setups; the speedup in each row is. `IntegrateDataC` matches the dense result bit for bit and may omit explicit numerical zeros that Eigen keeps; a missing sparse entry counts as zero. Reproduce the full table with:
+Times are medians from [`microbenchmark`](https://cran.r-project.org/package=microbenchmark) after one untimed warmup (3 to 11 repeats; fewer repeats on the slower kernels). Inputs are built before the timer starts. Reproduce the full table with:
 
 ```sh
 Rscript scripts/bench-all-kernels.R
