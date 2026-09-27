@@ -25,7 +25,7 @@ use snn::{
     compute_snn_to_r_impl, direct_snn_to_file_impl, snn_smallest_nonzero_dist_impl,
     write_edge_file_impl,
 };
-use sparse::{strings_to_str_vec, vec_from_doubles, CscSlots, CscView, CsrSlots};
+use sparse::{strings_to_str_vec, vec_from_doubles, CscSlots, CscView, CsrView};
 use stats::{row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl};
 
 #[extendr]
@@ -267,13 +267,11 @@ fn row_merge_matrices(
     mat1_rownames: Strings,
     mat2_rownames: Strings,
     all_rownames: Strings,
-) -> List {
-    let mat1 = CsrSlots::from_r(x1, j1, p1, nrows1, ncols1);
-    let mat2 = CsrSlots::from_r(x2, j2, p2, nrows2, ncols2);
-    let names1 = strings_to_str_vec(mat1_rownames);
-    let names2 = strings_to_str_vec(mat2_rownames);
-    let all_names = strings_to_str_vec(all_rownames);
-    row_merge_matrices_impl(mat1, mat2, &names1, &names2, &all_names).to_r_list()
+) -> extendr_api::Result<Robj> {
+    let mat1 = CsrView::from_slots(&x1, &j1, &p1, nrows1, ncols1);
+    let mat2 = CsrView::from_slots(&x2, &j2, &p2, nrows2, ncols2);
+    row_merge_matrices_impl(mat1, mat2, &mat1_rownames, &mat2_rownames, &all_rownames)
+        .into_r_dgcmatrix()
 }
 
 #[extendr]
@@ -289,14 +287,14 @@ fn replace_cols(
     rp: Integers,
     rnrows: i32,
     rncols: i32,
-) -> List {
-    let mat = CscSlots::from_r(x, i, p, nrows, ncols);
-    let replacement = CscSlots::from_r(rx, ri, rp, rnrows, rncols);
+) -> extendr_api::Result<Robj> {
+    let mat = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    let replacement = CscView::from_slots(&rx, &ri, &rp, rnrows, rncols);
     let cols: Vec<i32> = vec_from_doubles(&col_idx)
         .into_iter()
         .map(|v| v as i32)
         .collect();
-    replace_cols_impl(mat, &cols, replacement).to_r_list()
+    replace_cols_impl(mat, &cols, replacement)
 }
 
 #[extendr]
@@ -363,11 +361,11 @@ fn integrate_data(
     ep: Integers,
     enrows: i32,
     encols: i32,
-) -> List {
-    let integration_matrix = CscSlots::from_r(ix, ii, ip, inrows, incols);
-    let weights = CscSlots::from_r(wx, wi, wp, wnrows, wncols);
-    let expression = CscSlots::from_r(ex, ei, ep, enrows, encols);
-    integrate_data_impl(integration_matrix, weights, expression).to_r_list()
+) -> extendr_api::Result<Robj> {
+    let integration_matrix = CscView::from_slots(&ix, &ii, &ip, inrows, incols);
+    let weights = CscView::from_slots(&wx, &wi, &wp, wnrows, wncols);
+    let expression = CscView::from_slots(&ex, &ei, &ep, enrows, encols);
+    integrate_data_impl(integration_matrix, weights, expression).into_r_dgcmatrix()
 }
 
 #[extendr]
@@ -411,7 +409,7 @@ fn write_edge_file(
     filename: &str,
     display_progress: bool,
 ) -> extendr_api::Result<()> {
-    let snn = CscSlots::from_r(x, i, p, nrows, ncols);
+    let snn = CscView::from_slots(&x, &i, &p, nrows, ncols);
     write_edge_file_impl(&snn, filename, display_progress)
 }
 

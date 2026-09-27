@@ -5,6 +5,19 @@
 * `FastExpMean()`, `FastLogVMR()`, `SparseRowVar()`, and `SparseRowVarStd()`
   scan CSC columns directly and accumulate per gene. They no longer build a
   row index first, which made them slower than Seurat.
+* `RowMergeMatrices()` scatters CSR rows straight into CSC storage.
+* `ReplaceColsC()` copies unchanged columns and splices replacements in one
+  pass.
+* `IntegrateDataC()` multiplies anchor weights with a dense anchor buffer
+  instead of a generic sparse matrix product.
+* `fast_dist()` writes distances straight into R vectors. Inputs of a few
+  thousand cells stay in column-major order; larger inputs are transposed and
+  computed in parallel.
+* `WriteEdgeFile()` and `DirectSNNToFile()` format edge weights into one
+  buffer. The file text is unchanged. `DirectSNNToFile()` uses the parallel
+  SNN kernel from 256 cells, so the 400-cell case is parallel.
+* Returned `dgCMatrix` objects are filled by assigning S4 slots. That skips
+  the `methods::new()` validity scan on CSC data that is already valid.
 
 # seurust 0.1.3
 

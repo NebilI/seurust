@@ -178,13 +178,13 @@ RowVar <- function(x) {
 RowMergeMatrices <- function(mat1, mat2, mat1_rownames, mat2_rownames, all_rownames) {
   s1 <- CsrSlots(mat = mat1)
   s2 <- CsrSlots(mat = mat2)
-  CscFromList(row_merge_matrices(
+  row_merge_matrices(
     x1 = s1$x, j1 = s1$j, p1 = s1$p, nrows1 = s1$nrows, ncols1 = s1$ncols,
     x2 = s2$x, j2 = s2$j, p2 = s2$p, nrows2 = s2$nrows, ncols2 = s2$ncols,
     mat1_rownames = mat1_rownames,
     mat2_rownames = mat2_rownames,
     all_rownames = all_rownames
-  ))
+  )
 }
 
 #' Replace columns of a sparse matrix
@@ -198,11 +198,11 @@ RowMergeMatrices <- function(mat1, mat2, mat1_rownames, mat2_rownames, all_rowna
 ReplaceColsC <- function(mat, col_idx, replacement) {
   s <- CscSlots(mat = mat)
   r <- CscSlots(mat = replacement)
-  CscFromList(replace_cols(
+  replace_cols(
     x = s$x, i = s$i, p = s$p, nrows = s$nrows, ncols = s$ncols,
     col_idx = as.double(x = col_idx),
     rx = r$x, ri = r$i, rp = r$p, rnrows = r$nrows, rncols = r$ncols
-  ))
+  )
 }
 
 #' Convert a sparse graph to neighbor index lists
@@ -411,11 +411,11 @@ IntegrateDataC <- function(integration_matrix, weights, expression_cells2) {
   im <- CscSlots(integration_matrix)
   w <- CscSlots(weights)
   ex <- CscSlots(expression_cells2)
-  CscFromList(integrate_data(
+  integrate_data(
     ix = im$x, ii = im$i, ip = im$p, inrows = im$nrows, incols = im$ncols,
     wx = w$x, wi = w$i, wp = w$p, wnrows = w$nrows, wncols = w$ncols,
     ex = ex$x, ei = ex$i, ep = ex$p, enrows = ex$nrows, encols = ex$ncols
-  ))
+  )
 }
 
 #' Find integration anchor weights
