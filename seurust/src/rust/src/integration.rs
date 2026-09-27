@@ -1,4 +1,4 @@
-use crate::sparse::{csc_from_triplets, CscSlots};
+use crate::sparse::{csc_from_triplets, CscSlots, CscView};
 use crate::utils::sort_indexes;
 use extendr_api::prelude::*;
 use rayon::prelude::*;
@@ -136,16 +136,130 @@ pub fn find_weights_impl(
 }
 
 pub fn integrate_data_impl(
-    integration_matrix: CscSlots,
-    weights: CscSlots,
-    expression_cells2: CscSlots,
+    integration_matrix: CscView<'_>,
+    weights: CscView<'_>,
+    expression_cells2: CscView<'_>,
 ) -> CscSlots {
-    let im = integration_matrix.to_cs_mat();
-    let w = weights.to_cs_mat();
-    let expr = expression_cells2.to_cs_mat();
-    let correction = &w.transpose_view().to_csc() * &im;
-    let out = &expr - &correction;
-    CscSlots::from_cs_mat(&out)
+    // expression - t(weights) %*% integration_matrix
+    // weights is anchors x genes (CSC), integration_matrix is anchors x cells,
+    // expression is genes x cells.
+    let n_anchors = weights.nrows as usize;
+    let n_genes = weights.ncols as usize;
+    let n_cells = expression_cells2.ncols as usize;
+
+    // Flat column-of-transpose: anchor k owns gene/weight pairs in gene order.
+    // Adding them in increasing anchor order matches Eigen's sparse product.
+    let mut counts = vec![0usize; n_anchors];
+    for gene in 0..n_genes {
+        let start = weights.p[gene] as usize;
+        let end = weights.p[gene + 1] as usize;
+        for idx in start..end {
+            counts[weights.i[idx] as usize] += 1;
+        }
+    }
+    let mut ptr = vec![0usize; n_anchors + 1];
+    for anchor in 0..n_anchors {
+        ptr[anchor + 1] = ptr[anchor] + counts[anchor];
+    }
+    let mut gene_of = vec![0usize; ptr[n_anchors]];
+    let mut weight_of = vec![0.0; ptr[n_anchors]];
+    let mut cursor = ptr.clone();
+    for gene in 0..n_genes {
+        let start = weights.p[gene] as usize;
+        let end = weights.p[gene + 1] as usize;
+        for idx in start..end {
+            let anchor = weights.i[idx] as usize;
+            let dest = cursor[anchor];
+            cursor[anchor] = dest + 1;
+            gene_of[dest] = gene;
+            weight_of[dest] = weights.x[idx];
+        }
+    }
+
+    let threads = rayon::current_num_threads().max(1);
+    let chunk = n_cells.div_ceil(threads);
+    let im_i = integration_matrix.i;
+    let im_x = integration_matrix.x;
+    let im_p = integration_matrix.p;
+    let ex_i = expression_cells2.i;
+    let ex_x = expression_cells2.x;
+    let ex_p = expression_cells2.p;
+
+    let parts: Vec<(Vec<i32>, Vec<f64>, Vec<i32>)> = (0..threads)
+        .into_par_iter()
+        .map(|thread| {
+            let cell0 = thread * chunk;
+            let cell1 = (cell0 + chunk).min(n_cells);
+            let mut acc = vec![0.0f64; n_genes];
+            let mut col_i = Vec::new();
+            let mut col_x = Vec::new();
+            let mut col_n = Vec::with_capacity(cell1.saturating_sub(cell0));
+            let acc_ptr = acc.as_mut_ptr();
+            let gene_ptr = gene_of.as_ptr();
+            let weight_ptr = weight_of.as_ptr();
+            let im_i_ptr = im_i.as_ptr();
+            let im_x_ptr = im_x.as_ptr();
+            let ex_i_ptr = ex_i.as_ptr();
+            let ex_x_ptr = ex_x.as_ptr();
+            for cell in cell0..cell1 {
+                let before = col_x.len();
+                let im_start = im_p[cell] as usize;
+                let im_end = im_p[cell + 1] as usize;
+                unsafe {
+                    for idx in im_start..im_end {
+                        let anchor = *im_i_ptr.add(idx) as usize;
+                        let im_val = *im_x_ptr.add(idx);
+                        let mut pos = *ptr.get_unchecked(anchor);
+                        let w_end = *ptr.get_unchecked(anchor + 1);
+                        while pos < w_end {
+                            let gene = *gene_ptr.add(pos);
+                            *acc_ptr.add(gene) += *weight_ptr.add(pos) * im_val;
+                            pos += 1;
+                        }
+                    }
+                    let mut e = *ex_p.get_unchecked(cell) as usize;
+                    let e_end = *ex_p.get_unchecked(cell + 1) as usize;
+                    for gene in 0..n_genes {
+                        let mut expr_val = 0.0;
+                        if e < e_end && *ex_i_ptr.add(e) as usize == gene {
+                            expr_val = *ex_x_ptr.add(e);
+                            e += 1;
+                        }
+                        let slot = acc_ptr.add(gene);
+                        let value = expr_val - *slot;
+                        *slot = 0.0;
+                        if value != 0.0 {
+                            col_i.push(gene as i32);
+                            col_x.push(value);
+                        }
+                    }
+                }
+                col_n.push((col_x.len() - before) as i32);
+            }
+            (col_i, col_x, col_n)
+        })
+        .collect();
+
+    let nnz: usize = parts.iter().map(|(_, x, _)| x.len()).sum();
+    let mut x = Vec::with_capacity(nnz);
+    let mut i = Vec::with_capacity(nnz);
+    let mut p = Vec::with_capacity(n_cells + 1);
+    p.push(0);
+    for (col_i, col_x, col_n) in parts {
+        i.extend(col_i);
+        x.extend(col_x);
+        for n in col_n {
+            p.push(p.last().copied().unwrap_or(0) + n);
+        }
+    }
+
+    CscSlots {
+        x,
+        i,
+        p,
+        nrows: n_genes as i32,
+        ncols: n_cells as i32,
+    }
 }
 
 pub fn score_helper_impl(
@@ -276,7 +390,7 @@ mod tests {
             nrows: 1,
             ncols: 1,
         };
-        let out = integrate_data_impl(im, w, expr);
+        let out = integrate_data_impl(im.as_view(), w.as_view(), expr.as_view());
         assert_eq!(out.x.len(), 1);
         assert!((out.x[0] - 1.5).abs() < 1e-10);
     }

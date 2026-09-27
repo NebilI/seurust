@@ -1,7 +1,8 @@
 use crate::sparse::{
-    csc_from_triplets, rmatrix_from_column_major, CscSlots, CscView, CsrSlots, RowIndex,
+    build_dgcmatrix, rmatrix_from_column_major, CscSlots, CscView, CsrView, RowIndex,
 };
 use extendr_api::prelude::*;
+use extendr_api::GetSexp;
 use extendr_ffi::Rf_runif;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -110,48 +111,113 @@ pub fn run_umi_sampling_per_cell_impl(
     mat
 }
 
-pub fn row_merge_matrices_impl(
-    mat1: CsrSlots,
-    mat2: CsrSlots,
-    mat1_rownames: &[String],
-    mat2_rownames: &[String],
-    all_rownames: &[String],
-) -> CscSlots {
-    let mat1 = mat1.to_cs_mat();
-    let mat2 = mat2.to_cs_mat();
+/// R interns CHARSXP values, so equal names share a pointer.
+fn char_key(name: &Rstr) -> usize {
+    unsafe { name.get() as usize }
+}
 
-    let mut mat1_map: HashMap<&str, usize> = HashMap::new();
+pub fn row_merge_matrices_impl(
+    mat1: CsrView<'_>,
+    mat2: CsrView<'_>,
+    mat1_rownames: &Strings,
+    mat2_rownames: &Strings,
+    all_rownames: &Strings,
+) -> CscSlots {
+    let mut mat1_map: HashMap<usize, usize> = HashMap::with_capacity(mat1_rownames.len());
     for (idx, name) in mat1_rownames.iter().enumerate() {
-        mat1_map.insert(name.as_str(), idx);
+        mat1_map.insert(char_key(name), idx);
     }
-    let mut mat2_map: HashMap<&str, usize> = HashMap::new();
+    let mut mat2_map: HashMap<usize, usize> = HashMap::with_capacity(mat2_rownames.len());
     for (idx, name) in mat2_rownames.iter().enumerate() {
-        mat2_map.insert(name.as_str(), idx);
+        mat2_map.insert(char_key(name), idx);
     }
 
     let num_rows = all_rownames.len();
-    let num_col1 = mat1.cols();
-    let num_col2 = mat2.cols();
-    let mut triplets = Vec::with_capacity(mat1.nnz() + mat2.nnz());
+    let num_col1 = mat1.ncols as usize;
+    let num_cols = num_col1 + mat2.ncols as usize;
 
-    for (out_row, key) in all_rownames.iter().enumerate() {
-        if let Some(&src_row) = mat1_map.get(key.as_str()) {
-            if let Some(row) = mat1.outer_iterator().nth(src_row) {
-                for (col, &val) in row.iter() {
-                    triplets.push((out_row, col, val));
-                }
+    // usize::MAX marks a name missing from that input.
+    let mut src1 = vec![usize::MAX; num_rows];
+    let mut src2 = vec![usize::MAX; num_rows];
+    for (row, name) in all_rownames.iter().enumerate() {
+        let key = char_key(name);
+        if let Some(&src) = mat1_map.get(&key) {
+            src1[row] = src;
+        }
+        if let Some(&src) = mat2_map.get(&key) {
+            src2[row] = src;
+        }
+    }
+
+    // Count nonzeros per output column, then scatter. CSR rows are addressed
+    // from `p` in constant time, and rows are filled in order so each column
+    // ends up sorted without a triplet sort.
+    let mut col_counts = vec![0usize; num_cols];
+    let mut nnz = 0usize;
+    for row in 0..num_rows {
+        if src1[row] != usize::MAX {
+            let start = mat1.p[src1[row]] as usize;
+            let end = mat1.p[src1[row] + 1] as usize;
+            nnz += end - start;
+            for idx in start..end {
+                col_counts[mat1.j[idx] as usize] += 1;
             }
         }
-        if let Some(&src_row) = mat2_map.get(key.as_str()) {
-            if let Some(row) = mat2.outer_iterator().nth(src_row) {
-                for (col, &val) in row.iter() {
-                    triplets.push((out_row, num_col1 + col, val));
-                }
+        if src2[row] != usize::MAX {
+            let start = mat2.p[src2[row]] as usize;
+            let end = mat2.p[src2[row] + 1] as usize;
+            nnz += end - start;
+            for idx in start..end {
+                col_counts[num_col1 + mat2.j[idx] as usize] += 1;
             }
         }
     }
 
-    csc_from_triplets(num_rows, num_col1 + num_col2, &triplets)
+    let mut p = vec![0i32; num_cols + 1];
+    let mut cursor = vec![0usize; num_cols];
+    let mut acc = 0usize;
+    for col in 0..num_cols {
+        p[col] = acc as i32;
+        cursor[col] = acc;
+        acc += col_counts[col];
+    }
+    p[num_cols] = acc as i32;
+
+    let mut i = vec![0i32; nnz];
+    let mut x = vec![0.0; nnz];
+    for row in 0..num_rows {
+        let row_i = row as i32;
+        if src1[row] != usize::MAX {
+            let start = mat1.p[src1[row]] as usize;
+            let end = mat1.p[src1[row] + 1] as usize;
+            for idx in start..end {
+                let col = mat1.j[idx] as usize;
+                let dest = cursor[col];
+                cursor[col] = dest + 1;
+                i[dest] = row_i;
+                x[dest] = mat1.x[idx];
+            }
+        }
+        if src2[row] != usize::MAX {
+            let start = mat2.p[src2[row]] as usize;
+            let end = mat2.p[src2[row] + 1] as usize;
+            for idx in start..end {
+                let col = num_col1 + mat2.j[idx] as usize;
+                let dest = cursor[col];
+                cursor[col] = dest + 1;
+                i[dest] = row_i;
+                x[dest] = mat2.x[idx];
+            }
+        }
+    }
+
+    CscSlots {
+        x,
+        i,
+        p,
+        nrows: num_rows as i32,
+        ncols: num_cols as i32,
+    }
 }
 
 fn scale_clip(value: f64, scale_max: f64) -> f64 {
@@ -473,29 +539,54 @@ pub fn sparse_row_var_impl(view: CscView<'_>, _display_progress: bool) -> Double
     Doubles::from_values(sparse_row_var_values(&view))
 }
 
-pub fn replace_cols_impl(mat: CscSlots, col_idx: &[i32], replacement: CscSlots) -> CscSlots {
-    let nrows = mat.nrows as usize;
+pub fn replace_cols_impl(
+    mat: CscView<'_>,
+    col_idx: &[i32],
+    replacement: CscView<'_>,
+) -> extendr_api::Result<Robj> {
     let ncols = mat.ncols as usize;
-    let mut triplets = Vec::new();
-    let replace_map: HashMap<usize, usize> = col_idx
-        .iter()
-        .enumerate()
-        .map(|(rep_idx, &col)| (col as usize, rep_idx))
-        .collect();
-
-    for col in 0..ncols {
-        if let Some(&rep_idx) = replace_map.get(&col) {
-            for idx in replacement.p[rep_idx] as usize..replacement.p[rep_idx + 1] as usize {
-                triplets.push((replacement.i[idx] as usize, col, replacement.x[idx]));
-            }
-        } else {
-            for idx in mat.p[col] as usize..mat.p[col + 1] as usize {
-                triplets.push((mat.i[idx] as usize, col, mat.x[idx]));
+    // Last duplicate index wins, matching sequential column assignment.
+    let mut which = vec![-1i32; ncols];
+    for (rep_idx, &col) in col_idx.iter().enumerate() {
+        if col >= 0 {
+            let col = col as usize;
+            if col < ncols {
+                which[col] = rep_idx as i32;
             }
         }
     }
 
-    csc_from_triplets(nrows, ncols, &triplets)
+    let mut nnz = 0usize;
+    for col in 0..ncols {
+        let (p, src_col) = if which[col] >= 0 {
+            (replacement.p, which[col] as usize)
+        } else {
+            (mat.p, col)
+        };
+        nnz += (p[src_col + 1] - p[src_col]) as usize;
+    }
+
+    build_dgcmatrix(mat.nrows, mat.ncols, nnz, |x, i_out, p_out| {
+        let mut dest = 0usize;
+        for col in 0..ncols {
+            p_out[col] = dest as i32;
+            let (src_i, src_x, start, end) = if which[col] >= 0 {
+                let rep = which[col] as usize;
+                let start = replacement.p[rep] as usize;
+                let end = replacement.p[rep + 1] as usize;
+                (replacement.i, replacement.x, start, end)
+            } else {
+                let start = mat.p[col] as usize;
+                let end = mat.p[col + 1] as usize;
+                (mat.i, mat.x, start, end)
+            };
+            let n = end - start;
+            i_out[dest..dest + n].copy_from_slice(&src_i[start..end]);
+            x[dest..dest + n].copy_from_slice(&src_x[start..end]);
+            dest += n;
+        }
+        p_out[ncols] = dest as i32;
+    })
 }
 
 /// Per-row neighbor lists of a graph (cells x cells), ordered by increasing

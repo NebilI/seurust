@@ -34,14 +34,53 @@ fn vec_to_integers(values: Vec<i32>) -> Integers {
     out
 }
 
-/// Build a dgCMatrix from preallocated slot vectors (no extra copy).
+/// Allocate `dgCMatrix` slots and let `fill` write them before the object is built.
+pub fn build_dgcmatrix(
+    nrows: i32,
+    ncols: i32,
+    nnz: usize,
+    fill: impl FnOnce(&mut [f64], &mut [i32], &mut [i32]),
+) -> extendr_api::Result<Robj> {
+    let dim = Integers::from_values(vec![nrows, ncols]);
+    let mut x_out = Doubles::new(nnz);
+    let mut i_out = Integers::new(nnz);
+    let mut p_out = Integers::new(ncols as usize + 1);
+    {
+        let p = p_out
+            .as_robj_mut()
+            .as_integer_slice_mut()
+            .expect("integer p");
+        if nnz == 0 {
+            fill(&mut [], &mut [], p);
+        } else {
+            let x = x_out.as_robj_mut().as_real_slice_mut().expect("numeric x");
+            let i = i_out
+                .as_robj_mut()
+                .as_integer_slice_mut()
+                .expect("integer i");
+            fill(x, i, p);
+        }
+    }
+    dgcmatrix_from_buffers(x_out, i_out, p_out, dim)
+}
+
+/// Build a dgCMatrix from slot vectors.
+///
+/// Assigning the slots of an empty object skips the validity scan inside
+/// `methods::new`, which walks every nonzero. The resulting object matches
+/// `new("dgCMatrix", x=, i=, p=, Dim=)` for data that is already valid CSC.
 pub fn dgcmatrix_from_buffers(
     x: Doubles,
     i: Integers,
     p: Integers,
     dim: Integers,
 ) -> extendr_api::Result<Robj> {
-    call!("methods::new", "dgCMatrix", x = x, i = i, p = p, Dim = dim)
+    let mut obj = S4::new("dgCMatrix")?;
+    obj.set_slot("Dim", dim)?;
+    obj.set_slot("p", p)?;
+    obj.set_slot("i", i)?;
+    obj.set_slot("x", x)?;
+    Ok(obj.into())
 }
 
 /// Write CSC slots from column-sorted, already-merged triplets.
@@ -184,6 +223,34 @@ impl<'a> CscView<'a> {
     }
 }
 
+/// Borrowed dgRMatrix CSR slots backed by R memory (zero-copy input).
+#[derive(Clone, Copy, Debug)]
+pub struct CsrView<'a> {
+    pub x: &'a [f64],
+    pub j: &'a [i32],
+    pub p: &'a [i32],
+    pub nrows: i32,
+    pub ncols: i32,
+}
+
+impl<'a> CsrView<'a> {
+    pub fn from_slots(
+        x: &'a Doubles,
+        j: &'a Integers,
+        p: &'a Integers,
+        nrows: i32,
+        ncols: i32,
+    ) -> Self {
+        Self {
+            x: x.as_robj().as_real_slice().expect("numeric x"),
+            j: j.as_robj().as_integer_slice().expect("integer j"),
+            p: p.as_robj().as_integer_slice().expect("integer p"),
+            nrows,
+            ncols,
+        }
+    }
+}
+
 /// Row-oriented x-index into CSC storage (shares `x` with the source view).
 pub struct RowIndex {
     pub row_ptr: Vec<usize>,
@@ -304,6 +371,16 @@ impl CscSlots {
             p: vec_from_integers(&p),
             nrows,
             ncols,
+        }
+    }
+
+    pub fn as_view(&self) -> CscView<'_> {
+        CscView {
+            x: &self.x,
+            i: &self.i,
+            p: &self.p,
+            nrows: self.nrows,
+            ncols: self.ncols,
         }
     }
 
