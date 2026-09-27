@@ -21,6 +21,9 @@
 
 ## Performance
 
+* `FastExpMean()`, `FastLogVMR()`, `SparseRowVar()`, and `SparseRowVarStd()`
+  scan CSC columns directly and accumulate per gene. They no longer build a
+  row index first, which made them slower than Seurat.
 * `FastCov()` and `FastCovMats()` read R memory directly and use a blocked,
   multi-threaded matrix product (`FastCov()` only computes the upper
   triangle). They were several times slower than Seurat and are now faster.
