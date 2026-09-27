@@ -4,6 +4,12 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to attach the tarball to and point r-universe at
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -50,10 +56,30 @@ jobs:
       - name: Build source tarball
         run: R CMD build seurust
 
+      - name: Resolve release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CALL_TAG: ${{ github.event_name == 'workflow_call' && inputs.tag || '' }}
+          RELEASE_TAG_NAME: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_call" ]; then
+            tag="$CALL_TAG"
+          else
+            tag="$RELEASE_TAG_NAME"
+          fi
+          if [ "$EVENT_NAME" != "workflow_dispatch" ] && [ -z "$tag" ]; then
+            echo "Release tag is empty" >&2
+            exit 1
+          fi
+          echo "name=${tag}" >> "$GITHUB_OUTPUT"
+
       - name: Upload release asset
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event_name == 'workflow_call'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
           files: seurust_*.tar.gz
 
       - name: Upload workflow artifact
@@ -64,10 +90,10 @@ jobs:
           path: seurust_*.tar.gz
 
       - name: Sync r-universe registry
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event_name == 'workflow_call'
         env:
           UNIVERSE_TOKEN: ${{ secrets.R_UNIVERSE_REGISTRY_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
         run: |
           set -euo pipefail
           if [ -z "$UNIVERSE_TOKEN" ]; then

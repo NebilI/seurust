@@ -1,0 +1,71 @@
+name: Release seurust
+
+# A push to main that bumps seurust/DESCRIPTION publishes that version.
+# GitHub does not start other workflows from a release created with the
+# default token, so this workflow calls the crates.io and r-universe jobs
+# directly. CRAN submission stays manual.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - seurust/DESCRIPTION
+      - .github/workflows/release-seurust.yaml
+
+concurrency:
+  group: release-seurust
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.rel.outputs.created }}
+      tag: ${{ steps.rel.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create release for new DESCRIPTION version
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(awk '/^Version:[[:space:]]*/ { print $2; exit }' seurust/DESCRIPTION)
+          if [ -z "${version}" ]; then
+            echo "Could not read Version from seurust/DESCRIPTION" >&2
+            exit 1
+          fi
+          tag="v${version}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists; skipping publish."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release create "${tag}" \
+            --target "${GITHUB_SHA}" \
+            --title "seurust ${version}" \
+            --notes "seurust ${version}. See seurust/NEWS.md."
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  publish-crate:
+    name: Publish to crates.io
+    needs: create-release
+    if: needs.create-release.outputs.created == 'true'
+    uses: ./.github/workflows/publish-seurust-crate.yaml
+    secrets: inherit
+
+  publish-r:
+    name: Publish R package and r-universe
+    needs: create-release
+    if: needs.create-release.outputs.created == 'true'
+    uses: ./.github/workflows/publish-seurust-r.yaml
+    with:
+      tag: ${{ needs.create-release.outputs.tag }}
+    secrets: inherit

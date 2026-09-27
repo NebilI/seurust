@@ -269,22 +269,81 @@ pub fn fast_sparse_row_scale_with_known_stats_impl(
     rmatrix_from_column_major(&data, n_genes, n_cells)
 }
 
-pub fn fast_exp_mean_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
-    let nrows = view.nrows as usize;
+/// Parallel per-row sums over CSC columns.
+///
+/// Nonzeros of one gene are not contiguous in a `dgCMatrix`, but each entry
+/// can still be added into a dense row accumulator while the column data is
+/// scanned in order. That avoids building a row index (and the unused column-id
+/// buffer that went with it) and keeps the hot loop on sequential `x`/`i`.
+fn par_row_sums(view: &CscView<'_>, step: &(impl Fn(usize, f64, &mut f64) + Sync)) -> Vec<f64> {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    (0..n_cells)
+        .into_par_iter()
+        .fold(
+            || vec![0.0; n_genes],
+            |mut acc, col| {
+                for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                    let row = view.i[idx] as usize;
+                    step(row, view.x[idx], &mut acc[row]);
+                }
+                acc
+            },
+        )
+        .reduce(
+            || vec![0.0; n_genes],
+            |mut left, right| {
+                for (dst, src) in left.iter_mut().zip(right) {
+                    *dst += src;
+                }
+                left
+            },
+        )
+}
+
+/// Like [`par_row_sums`], also counting how many stored entries each row has.
+fn par_row_sums_and_counts(
+    view: &CscView<'_>,
+    step: &(impl Fn(usize, f64, &mut f64, &mut usize) + Sync),
+) -> (Vec<f64>, Vec<usize>) {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    (0..n_cells)
+        .into_par_iter()
+        .fold(
+            || (vec![0.0; n_genes], vec![0usize; n_genes]),
+            |mut acc, col| {
+                for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                    let row = view.i[idx] as usize;
+                    step(row, view.x[idx], &mut acc.0[row], &mut acc.1[row]);
+                }
+                acc
+            },
+        )
+        .reduce(
+            || (vec![0.0; n_genes], vec![0usize; n_genes]),
+            |mut left, right| {
+                for gene in 0..n_genes {
+                    left.0[gene] += right.0[gene];
+                    left.1[gene] += right.1[gene];
+                }
+                left
+            },
+        )
+}
+
+fn fast_exp_mean_values(view: &CscView<'_>) -> Vec<f64> {
     let ncols_f = view.ncols as f64;
-    let row_index = RowIndex::from_csc_view(&view);
+    par_row_sums(view, &|_, val, sum| {
+        *sum += expm1(val);
+    })
+    .into_iter()
+    .map(|sum| log1p(sum / ncols_f))
+    .collect()
+}
 
-    let rowmeans: Vec<f64> = (0..nrows)
-        .map(|row| {
-            let sum: f64 = row_index
-                .row_range(row)
-                .map(|pos| expm1(view.x[row_index.row_x_idx[pos]]))
-                .sum();
-            log1p(sum / ncols_f)
-        })
-        .collect();
-
-    Doubles::from_values(rowmeans)
+pub fn fast_exp_mean_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+    Doubles::from_values(fast_exp_mean_values(&view))
 }
 
 pub fn sparse_row_var2_impl(view: CscView<'_>, mu: &[f64], _display_progress: bool) -> Doubles {
@@ -328,6 +387,32 @@ pub fn sparse_row_var2_impl(view: CscView<'_>, mu: &[f64], _display_progress: bo
     Doubles::from_values(all_vars)
 }
 
+fn sparse_row_var_std_values(view: &CscView<'_>, mu: &[f64], sd: &[f64], vmax: f64) -> Vec<f64> {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let denom = n_cells as f64 - 1.0;
+    // sd == 0 matches the C++ `continue`: the row stays 0 and is not standardized.
+    let (sums, nnz_rows) = par_row_sums_and_counts(view, &|row, val, sum, count| {
+        if sd[row] == 0.0 {
+            return;
+        }
+        *count += 1;
+        let standardized = ((val - mu[row]) / sd[row]).min(vmax);
+        *sum += standardized * standardized;
+    });
+
+    (0..n_genes)
+        .map(|gene| {
+            if sd[gene] == 0.0 {
+                return 0.0;
+            }
+            let n_zero = n_cells - nnz_rows[gene];
+            let zero = (0.0 - mu[gene]) / sd[gene];
+            (sums[gene] + zero * zero * n_zero as f64) / denom
+        })
+        .collect()
+}
+
 pub fn sparse_row_var_std_impl(
     view: CscView<'_>,
     mu: &[f64],
@@ -335,85 +420,57 @@ pub fn sparse_row_var_std_impl(
     vmax: f64,
     _display_progress: bool,
 ) -> Doubles {
-    let n_genes = view.nrows as usize;
-    let n_cells = view.ncols as usize;
-    let row_index = RowIndex::from_csc_view(&view);
-
-    let all_vars: Vec<f64> = (0..n_genes)
-        .map(|gene_idx| {
-            if sd[gene_idx] == 0.0 {
-                return 0.0;
-            }
-            let range = row_index.row_range(gene_idx);
-            let n_zero = n_cells - range.len();
-            let mut col_sum = 0.0;
-            for pos in range {
-                let val = view.x[row_index.row_x_idx[pos]];
-                let standardized = ((val - mu[gene_idx]) / sd[gene_idx]).min(vmax);
-                col_sum += standardized.powi(2);
-            }
-            col_sum += ((0.0 - mu[gene_idx]) / sd[gene_idx]).powi(2) * n_zero as f64;
-            col_sum / (n_cells as f64 - 1.0)
-        })
-        .collect();
-
-    Doubles::from_values(all_vars)
+    Doubles::from_values(sparse_row_var_std_values(&view, mu, sd, vmax))
 }
 
-pub fn fast_log_vmr_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+fn fast_log_vmr_values(view: &CscView<'_>) -> Vec<f64> {
     let nrows = view.nrows as usize;
     let ncols = view.ncols as usize;
     let ncols_f = ncols as f64;
-    let row_index = RowIndex::from_csc_view(&view);
+    let (sums, nnz) = par_row_sums_and_counts(view, &|_, val, sum, count| {
+        *count += 1;
+        *sum += expm1(val);
+    });
+    let rm: Vec<f64> = sums.into_iter().map(|sum| sum / ncols_f).collect();
+    let sq = par_row_sums(view, &|row, val, sum| {
+        let diff = expm1(val) - rm[row];
+        *sum += diff * diff;
+    });
 
-    let rowdisp: Vec<f64> = (0..nrows)
+    (0..nrows)
         .map(|row| {
-            let range = row_index.row_range(row);
-            let rm: f64 = range
-                .clone()
-                .map(|pos| expm1(view.x[row_index.row_x_idx[pos]]))
-                .sum::<f64>()
-                / ncols_f;
-            let mut v = 0.0;
-            let nn_zero = range.len();
-            for pos in range {
-                let val = view.x[row_index.row_x_idx[pos]];
-                v += (expm1(val) - rm).powi(2);
-            }
-            v = (v + (ncols - nn_zero) as f64 * rm.powi(2)) / (ncols - 1) as f64;
-            (v / rm).ln()
+            let v = (sq[row] + (ncols - nnz[row]) as f64 * rm[row] * rm[row]) / (ncols_f - 1.0);
+            (v / rm[row]).ln()
         })
-        .collect();
-
-    Doubles::from_values(rowdisp)
+        .collect()
 }
 
-pub fn sparse_row_var_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+pub fn fast_log_vmr_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+    Doubles::from_values(fast_log_vmr_values(&view))
+}
+
+fn sparse_row_var_values(view: &CscView<'_>) -> Vec<f64> {
     let n_genes = view.nrows as usize;
     let n_cells = view.ncols as usize;
     let n_cells_f = n_cells as f64;
-    let row_index = RowIndex::from_csc_view(&view);
+    let denom = n_cells_f - 1.0;
+    let (sums, nnz) = par_row_sums_and_counts(view, &|_, val, sum, count| {
+        *count += 1;
+        *sum += val;
+    });
+    let rm: Vec<f64> = sums.into_iter().map(|sum| sum / n_cells_f).collect();
+    let sq = par_row_sums(view, &|row, val, sum| {
+        let diff = val - rm[row];
+        *sum += diff * diff;
+    });
 
-    let rowdisp: Vec<f64> = (0..n_genes)
-        .map(|row| {
-            let range = row_index.row_range(row);
-            let rm: f64 = range
-                .clone()
-                .map(|pos| view.x[row_index.row_x_idx[pos]])
-                .sum::<f64>()
-                / n_cells_f;
-            let mut v = 0.0;
-            let nn_zero = range.len();
-            for pos in range {
-                let val = view.x[row_index.row_x_idx[pos]];
-                v += (val - rm).powi(2);
-            }
-            v = (v + (n_cells - nn_zero) as f64 * rm.powi(2)) / (n_cells as f64 - 1.0);
-            v
-        })
-        .collect();
+    (0..n_genes)
+        .map(|row| (sq[row] + (n_cells - nnz[row]) as f64 * rm[row] * rm[row]) / denom)
+        .collect()
+}
 
-    Doubles::from_values(rowdisp)
+pub fn sparse_row_var_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
+    Doubles::from_values(sparse_row_var_values(&view))
 }
 
 pub fn replace_cols_impl(mat: CscSlots, col_idx: &[i32], replacement: CscSlots) -> CscSlots {
@@ -558,6 +615,99 @@ mod tests {
             ncols: 2,
         };
         assert!(graph_to_neighbor_lists(&mat).is_err());
+    }
+
+    /// Sequential column scan of the C++ formulas, used as the reference.
+    fn reference_stats(mat: &CscSlots) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+        let n_genes = mat.nrows as usize;
+        let n_cells = mat.ncols as usize;
+        let n_cells_f = n_cells as f64;
+        let mut exp_sum = vec![0.0; n_genes];
+        let mut raw_sum = vec![0.0; n_genes];
+        let mut nnz = vec![0usize; n_genes];
+        for col in 0..n_cells {
+            for idx in mat.p[col] as usize..mat.p[col + 1] as usize {
+                let row = mat.i[idx] as usize;
+                let val = mat.x[idx];
+                exp_sum[row] += val.exp_m1();
+                raw_sum[row] += val;
+                nnz[row] += 1;
+            }
+        }
+        let exp_mean: Vec<f64> = exp_sum
+            .iter()
+            .map(|sum| (sum / n_cells_f).ln_1p())
+            .collect();
+        let rm: Vec<f64> = raw_sum.iter().map(|sum| sum / n_cells_f).collect();
+        let exp_rm: Vec<f64> = exp_sum.iter().map(|sum| sum / n_cells_f).collect();
+        let mut var = vec![0.0; n_genes];
+        let mut vmr = vec![0.0; n_genes];
+        let mut std_var = vec![0.0; n_genes];
+        let mu = [0.5, 1.0];
+        let sd = [2.0, 0.0];
+        let vmax = 0.5;
+        for col in 0..n_cells {
+            for idx in mat.p[col] as usize..mat.p[col + 1] as usize {
+                let row = mat.i[idx] as usize;
+                let val = mat.x[idx];
+                let d = val - rm[row];
+                var[row] += d * d;
+                let e = val.exp_m1() - exp_rm[row];
+                vmr[row] += e * e;
+                if sd[row] != 0.0 {
+                    let standardized = ((val - mu[row]) / sd[row]).min(vmax);
+                    std_var[row] += standardized * standardized;
+                }
+            }
+        }
+        for row in 0..n_genes {
+            let n_zero = n_cells - nnz[row];
+            var[row] = (var[row] + n_zero as f64 * rm[row] * rm[row]) / (n_cells_f - 1.0);
+            let v = (vmr[row] + n_zero as f64 * exp_rm[row] * exp_rm[row]) / (n_cells_f - 1.0);
+            vmr[row] = (v / exp_rm[row]).ln();
+            if sd[row] == 0.0 {
+                std_var[row] = 0.0;
+            } else {
+                let zero = (0.0 - mu[row]) / sd[row];
+                std_var[row] = (std_var[row] + zero * zero * n_zero as f64) / (n_cells_f - 1.0);
+            }
+        }
+        (exp_mean, var, vmr, std_var)
+    }
+
+    #[test]
+    fn row_stats_match_column_scan_formula() {
+        // row 0: 1, 0, 3, 0    row 1: 0, 4, 0, 0
+        let mat = CscSlots {
+            x: vec![1.0, 4.0, 3.0],
+            i: vec![0, 1, 0],
+            p: vec![0, 1, 2, 3, 3],
+            nrows: 2,
+            ncols: 4,
+        };
+        let view = toy_view(&mat);
+        let (exp_mean, var, vmr, std_var) = reference_stats(&mat);
+        let got_exp = fast_exp_mean_values(&view);
+        let got_var = sparse_row_var_values(&view);
+        let got_vmr = fast_log_vmr_values(&view);
+        let got_std = sparse_row_var_std_values(&view, &[0.5, 1.0], &[2.0, 0.0], 0.5);
+        for (got, expected) in [
+            (&got_exp, &exp_mean),
+            (&got_var, &var),
+            (&got_vmr, &vmr),
+            (&got_std, &std_var),
+        ] {
+            assert_eq!(got.len(), expected.len());
+            for (g, e) in got.iter().zip(expected) {
+                if e.is_nan() {
+                    assert!(g.is_nan());
+                } else {
+                    assert!((g - e).abs() <= 1e-12, "{g} vs {e}");
+                }
+            }
+        }
+        // sd == 0 leaves that row at 0, including when the row has nonzeros.
+        assert_eq!(got_std[1], 0.0);
     }
 
     #[test]
