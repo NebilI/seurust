@@ -28,7 +28,7 @@ docker compose -f docker/docker-compose.yml run --rm \
 | Channel | When available | User install |
 |---------|----------------|--------------|
 | **r-universe** | After registry repo is live + first build | `install.packages("seurust", repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org"))` |
-| **GitHub Release** | On every GitHub Release | `install.packages("seurust_0.1.2.tar.gz", repos = NULL, type = "source")` |
+| **GitHub Release** | On every GitHub Release | `install.packages("seurust_0.1.0.tar.gz", repos = NULL, type = "source")` |
 | **CRAN** | Only after CRAN **accepts** the submission | `install.packages("seurust")` |
 | **crates.io** | On release (Rust crate) | mostly for packaging; users install the R package |
 
@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml run --rm \
 
 https://cran.r-project.org/package=seurust
 
-**Status: submitting 0.1.2.** Upload with
+**Status: baseline 0.1.0** (version line restarted). Upload with
 `SUBMIT_CRAN=yes READY_TO_PUBLISH=yes`. The CRAN page 404s until acceptance;
 use r-universe/GitHub until then.
 
@@ -137,7 +137,7 @@ CRAN submission itself uses email confirmation, not a GitHub secret.
 ### Suggested release flow
 
 1. Land changes on `main` (PR checks via `seurust_checks.yaml`).
-2. Tag a release (for example `v0.1.2`) by bumping `seurust/DESCRIPTION` on `main`, or rerun **Actions → Release seurust → Run workflow** to republish the current version. That updates r-universe and crates.io.
+2. Tag a release (for example `v0.1.0`) by bumping `seurust/DESCRIPTION` on `main`, or rerun **Actions → Release seurust → Run workflow** to republish the current version. That updates r-universe and crates.io. To drop stale `v0.1.x` tags after a reset, run `scripts/prune-seurust-releases.sh`.
 3. Run **Build / submit seurust to CRAN** with `submit_to_cran=true` when ready.
 4. Confirm the CRAN email and watch https://cran.r-project.org/package=seurust.
 
