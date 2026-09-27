@@ -11,6 +11,8 @@ on:
     paths:
       - seurust/DESCRIPTION
       - .github/workflows/release-seurust.yaml
+      - .github/workflows/publish-seurust-crate.yaml
+      - .github/workflows/publish-seurust-r.yaml
 
 concurrency:
   group: release-seurust
@@ -44,7 +46,7 @@ jobs:
           tag="v${version}"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           if gh release view "${tag}" >/dev/null 2>&1; then
-            echo "Release ${tag} already exists; skipping publish."
+            echo "Release ${tag} already exists."
             echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -57,14 +59,12 @@ jobs:
   publish-crate:
     name: Publish to crates.io
     needs: create-release
-    if: needs.create-release.outputs.created == 'true'
     uses: ./.github/workflows/publish-seurust-crate.yaml
     secrets: inherit
 
   publish-r:
     name: Publish R package and r-universe
     needs: create-release
-    if: needs.create-release.outputs.created == 'true'
     uses: ./.github/workflows/publish-seurust-r.yaml
     with:
       tag: ${{ needs.create-release.outputs.tag }}
