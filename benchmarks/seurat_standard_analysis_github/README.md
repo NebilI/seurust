@@ -15,6 +15,8 @@ Scripts timed:
 
 The runner clones the upstream repo into `upstream/` on first run (or uses an existing clone). Script outputs land in the upstream tree's `output/` and `plots/` directories and are overwritten between backend passes.
 
+**Baseline pairing:** Seurat **5.5.1** from this fork (synced with upstream) and seurust **0.1.0**. Per-kernel medians are recorded separately via [`scripts/bench-all-kernels.R`](../../scripts/bench-all-kernels.R).
+
 ## Run With Dev Container
 
 From the repository root:

@@ -11,6 +11,8 @@ Data source: <https://cf.10xgenomics.com/samples/cell/pbmc3k/pbmc3k_filtered_gen
 
 The script follows the tutorial shape: create the object, QC/filter cells, log-normalize, select variable features, scale, run PCA, build an SNN graph, cluster, and run UMAP. Since `seurust` is currently a companion package for ported native kernels, the high-level Seurat object workflow stays the same and only the backend calls for ported kernels are swapped.
 
+**Baseline pairing:** Seurat **5.5.1** from this fork (synced with upstream) and seurust **0.1.0**. Kernel-level timings for all 30 natives are in the root [`README.md`](../../README.md#performance-vs-seurat-c).
+
 ## Run With Existing Dev Container
 
 From the repository root:

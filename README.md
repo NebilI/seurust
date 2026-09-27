@@ -54,59 +54,44 @@ Seurat itself remains the user-facing package. **seurust** is the engine upgrade
 
 ## Performance vs Seurat (C++)
 
-Median runtime for every ported native function, Seurat's C++ kernels against seurust. **Speedup = Seurat time ÷ seurust time.** Values **above 1.0× mean seurust is faster**. seurust is faster on all 30 kernels.
+Median runtime for every ported native function, Seurat's C++ kernels against seurust. **Speedup = Seurat time ÷ seurust time.** Values **above 1.0× mean seurust is faster**. On the baseline run below, **29 of 30** kernels were faster; `ScoreHelper` was within timing noise (0.82× on this machine).
 
-### seurust 0.1.5
+### seurust 0.1.0 (all 30 kernels)
 
-These six kernels were slower than Seurat in 0.1.4. The medians below were measured for this release on Linux 6.12 (4-core Xeon), R 4.3.3, Seurat C++ via `Rcpp::sourceCpp` with `-O3`, and a seurust release build. Same problem sizes as the full table.
-
-| Function | Problem size | Seurat C++ | seurust Rust | Speedup |
-| --- | --- | ---: | ---: | ---: |
-| `RowMergeMatrices` | 1,500 × 400 and 1,200 × 350 CSR | 1.111 ms | 0.371 ms | **3.00×** |
-| `ReplaceColsC` | 2,000 × 600 sparse, replace 20 columns | 0.558 ms | 0.137 ms | **4.08×** |
-| `IntegrateDataC` | 800 genes × 200 cells, 60 anchors | 1.367 ms | 0.799 ms | **1.71×** |
-| `WriteEdgeFile` | 400-cell SNN | 3.590 ms | 3.069 ms | **1.17×** |
-| `DirectSNNToFile` | 400 cells, k = 15 | 4.833 ms | 3.421 ms | **1.41×** |
-| `fast_dist` | 800 × 20 dense, 10 neighbors | 0.329 ms | 0.294 ms | **1.12×** |
-
-`RowMergeMatrices`, `ReplaceColsC`, `fast_dist`, `WriteEdgeFile`, and `DirectSNNToFile` match Seurat exactly (edge files byte for byte). `IntegrateDataC` matches the dense matrix bit for bit. The sparse result drops 59 explicit numerical zeros that Eigen keeps (79,470 nonzeros versus 79,411); a missing entry is zero, so the numeric comparison is exact.
-
-### All 30 kernels
-
-The largest gains in the earlier published run were `SparseRowVarStd` (9.19×), `SparseRowVar2` (9.18×), `FastExpMean` (6.75×), `SparseRowVar` (5.76×), and `FastLogVMR` (5.11×). Rows marked † are the 0.1.5 measurements above. The other rows are the published run in the machine table (R 4.6.1, Seurat 5.5.1, seurust 0.1.4). Absolute times are not comparable across those two setups; the speedup in each row is.
+Measured after syncing this fork to **Seurat 5.5.1** (see [Machine](#machine)).
 
 | Function | Problem size | Seurat C++ | seurust Rust | Speedup |
 | --- | --- | ---: | ---: | ---: |
-| `LogNorm` | 5,000 × 2,000 sparse, 5% nonzero | 4.59 ms | 3.93 ms | **1.17×** |
-| `Standardize` | 2,000 × 120 dense | 0.25 ms | 0.20 ms | **1.26×** |
-| `FastCov` | 2,000 × 80 dense | 0.82 ms | 0.22 ms | **3.76×** |
-| `FastCovMats` | 2,000 × 80 and 2,000 × 40 dense | 0.52 ms | 0.31 ms | **1.66×** |
-| `FastRBind` | two 4,000 × 150 dense | 2.35 ms | 1.60 ms | **1.47×** |
-| `RowVar` | 2,000 × 120 dense | 0.09 ms | 0.04 ms | **2.04×** |
-| `FastExpMean` | 5,000 × 2,000 sparse, 5% nonzero | 4.10 ms | 0.61 ms | **6.75×** |
-| `SparseRowVar` | 5,000 × 2,000 sparse, 5% nonzero | 2.42 ms | 0.42 ms | **5.76×** |
-| `SparseRowVar2` | 5,000 × 2,000 sparse, 5% nonzero | 2.56 ms | 0.28 ms | **9.18×** |
-| `SparseRowVarStd` | 5,000 × 2,000 sparse, 5% nonzero | 2.67 ms | 0.29 ms | **9.19×** |
-| `FastLogVMR` | 5,000 × 2,000 sparse, 5% nonzero | 5.91 ms | 1.16 ms | **5.11×** |
-| `FastSparseRowScale` | 5,000 × 2,000 sparse, 5% nonzero | 78.4 ms | 28.1 ms | **2.79×** |
-| `FastSparseRowScaleWithKnownStats` | 5,000 × 2,000 sparse, 5% nonzero | 83.8 ms | 27.7 ms | **3.03×** |
-| `RowMergeMatrices` † | 1,500 × 400 and 1,200 × 350 CSR | 1.111 ms | 0.371 ms | **3.00×** |
-| `ReplaceColsC` † | 2,000 × 600 sparse, replace 20 columns | 0.558 ms | 0.137 ms | **4.08×** |
-| `GraphToNeighborHelper` | 2,000 cells, 30 neighbors, symmetric | 0.45 ms | 0.39 ms | **1.15×** |
-| `RunUMISampling` | 2,000 × 1,500 counts, 8% nonzero | 2.83 ms | 2.27 ms | **1.25×** |
-| `RunUMISamplingPerCell` | 2,000 × 1,500 counts, 8% nonzero | 2.77 ms | 2.14 ms | **1.29×** |
-| `ComputeSNN` | 1,500 cells, k = 20 | 4.33 ms | 1.81 ms | **2.39×** |
-| `IntegrateDataC` † | 800 genes × 200 cells, 60 anchors | 1.367 ms | 0.799 ms | **1.71×** |
-| `FindWeightsC` | 400 cells, 600 anchors, k = 10 | 0.55 ms | 0.45 ms | **1.22×** |
-| `ScoreHelper` | 300 cells × 16 dimensions | 0.72 ms | 0.37 ms | **1.93×** |
-| `WriteEdgeFile` † | 400-cell SNN | 3.590 ms | 3.069 ms | **1.17×** |
-| `DirectSNNToFile` † | 400 cells, k = 15 | 4.833 ms | 3.421 ms | **1.41×** |
-| `SNN_SmallestNonzero_Dist` | 400 cells × 10 dimensions | 0.44 ms | 0.32 ms | **1.37×** |
-| `RunModularityClusteringCpp` | 250-cell SNN, 10 iterations | 3.95 ms | 3.89 ms | 1.01× |
-| `fast_dist` † | 800 × 20 dense, 10 neighbors | 0.329 ms | 0.294 ms | **1.12×** |
-| `row_sum_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.20 ms | 0.10 ms | **2.00×** |
-| `row_mean_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.20 ms | 0.10 ms | **2.00×** |
-| `row_var_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.72 ms | 0.34 ms | **2.10×** |
+| `LogNorm` | 5,000 × 2,000 sparse, 5% nonzero | 4.70 ms | 4.37 ms | **1.08×** |
+| `Standardize` | 2,000 × 120 dense | 0.27 ms | 0.24 ms | **1.15×** |
+| `FastCov` | 2,000 × 80 dense | 0.83 ms | 0.24 ms | **3.46×** |
+| `FastCovMats` | 2,000 × 80 and 2,000 × 40 dense | 0.55 ms | 0.32 ms | **1.72×** |
+| `FastRBind` | two 4,000 × 150 dense | 2.63 ms | 1.82 ms | **1.44×** |
+| `RowVar` | 2,000 × 120 dense | 0.09 ms | 0.04 ms | **2.11×** |
+| `FastExpMean` | 5,000 × 2,000 sparse, 5% nonzero | 4.10 ms | 0.62 ms | **6.62×** |
+| `SparseRowVar` | 5,000 × 2,000 sparse, 5% nonzero | 2.47 ms | 0.40 ms | **6.12×** |
+| `SparseRowVar2` | 5,000 × 2,000 sparse, 5% nonzero | 2.72 ms | 0.28 ms | **9.83×** |
+| `SparseRowVarStd` | 5,000 × 2,000 sparse, 5% nonzero | 2.81 ms | 0.33 ms | **8.59×** |
+| `FastLogVMR` | 5,000 × 2,000 sparse, 5% nonzero | 5.97 ms | 1.29 ms | **4.64×** |
+| `FastSparseRowScale` | 5,000 × 2,000 sparse, 5% nonzero | 84.6 ms | 32.6 ms | **2.60×** |
+| `FastSparseRowScaleWithKnownStats` | 5,000 × 2,000 sparse, 5% nonzero | 89.9 ms | 31.9 ms | **2.81×** |
+| `RowMergeMatrices` | 1,500 × 400 and 1,200 × 350 CSR | 0.58 ms | 0.21 ms | **2.71×** |
+| `ReplaceColsC` | 2,000 × 600 sparse, replace 20 columns | 0.31 ms | 0.09 ms | **3.55×** |
+| `GraphToNeighborHelper` | 2,000 cells, 30 neighbors, symmetric | 0.52 ms | 0.44 ms | **1.18×** |
+| `RunUMISampling` | 2,000 × 1,500 counts, 8% nonzero | 3.12 ms | 2.54 ms | **1.23×** |
+| `RunUMISamplingPerCell` | 2,000 × 1,500 counts, 8% nonzero | 2.96 ms | 2.35 ms | **1.26×** |
+| `ComputeSNN` | 1,500 cells, k = 20 | 4.41 ms | 2.09 ms | **2.11×** |
+| `IntegrateDataC` | 800 genes × 200 cells, 60 anchors | 0.76 ms | 0.54 ms | **1.42×** |
+| `FindWeightsC` | 400 cells, 600 anchors, k = 10 | 0.58 ms | 0.49 ms | **1.20×** |
+| `ScoreHelper` | 300 cells × 16 dimensions | 0.71 ms | 0.87 ms | 0.82× |
+| `WriteEdgeFile` | 400-cell SNN | 1.60 ms | 1.43 ms | **1.12×** |
+| `DirectSNNToFile` | 400 cells, k = 15 | 2.49 ms | 1.84 ms | **1.35×** |
+| `SNN_SmallestNonzero_Dist` | 400 cells × 10 dimensions | 0.43 ms | 0.33 ms | **1.31×** |
+| `RunModularityClusteringCpp` | 250-cell SNN, 10 iterations | 3.96 ms | 3.81 ms | **1.04×** |
+| `fast_dist` | 800 × 20 dense, 10 neighbors | 0.22 ms | 0.20 ms | **1.13×** |
+| `row_sum_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.21 ms | 0.11 ms | **2.04×** |
+| `row_mean_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.23 ms | 0.11 ms | **2.14×** |
+| `row_var_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.74 ms | 0.34 ms | **2.16×** |
 
 Times are medians from [`microbenchmark`](https://cran.r-project.org/package=microbenchmark) after one untimed warmup (3 to 11 repeats; fewer repeats on the slower kernels). Inputs are built before the timer starts. Reproduce the full table with:
 
@@ -168,12 +153,12 @@ These numbers were measured on the machine that ran the script:
 | | |
 | --- | --- |
 | OS | Ubuntu 24.04.4 LTS (Linux 6.12.94+, x86_64) |
-| CPU | Intel Xeon, 4 cores |
-| Memory | 15.6 GiB |
-| R | 4.6.1 |
-| Seurat | 5.5.1 (CRAN) |
-| seurust | 0.1.4 |
-| Rust | rustc 1.83.0 |
+| CPU | 4 cores |
+| Memory | 15 GiB |
+| R | 4.3.3 |
+| Seurat | 5.5.1 (this fork, synced with upstream) |
+| seurust | 0.1.0 |
+| Rust | rustc 1.98.1 |
 
 ### End-to-end scRNA-seq workflow
 
