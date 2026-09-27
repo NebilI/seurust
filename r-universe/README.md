@@ -22,6 +22,7 @@ install.packages(
 ## Automated publishing
 
 When you publish a [GitHub Release](https://github.com/NebilI/seurust/releases),
+or run **Actions → Release seurust → Run workflow**,
 [`publish-seurust-r.yaml`](../.github/workflows/publish-seurust-r.yaml):
 
 1. Builds an R source tarball and attaches it to the release.
@@ -49,7 +50,7 @@ Create the crates.io token at https://crates.io/settings/tokens (needs `publish-
 3. Update [`seurust/NEWS.md`](../seurust/NEWS.md) and [`seurust/cran-comments.md`](../seurust/cran-comments.md).
 4. Validate CRAN tarball:
    `docker compose -f docker/docker-compose.yml run --rm seurust-cran`
-5. Tag the release (for example `v0.1.0`) and publish a GitHub Release from that tag.
-6. Publish workflows run automatically; trigger `build-seurust-cran` for a CI CRAN tarball artifact.
+5. Merge a version bump to `main`. That tags the release. To republish the current version without a new commit, use **Actions → Release seurust → Run workflow**.
+6. That run updates r-universe and crates.io. Trigger `build-seurust-cran` when you also want a CI CRAN tarball artifact.
 7. For CRAN: use the Docker-built `seurust_*.tar.gz`, then `devtools::submit_cran()` from `seurust/`
    (or upload via the CRAN web form).

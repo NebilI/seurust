@@ -1,19 +1,20 @@
 name: Release seurust
 
-# A push to main that changes seurust/DESCRIPTION or these workflow files
-# publishes the version in DESCRIPTION. An existing release tag is reused.
+# Publishes the version in seurust/DESCRIPTION to GitHub Releases, crates.io,
+# and r-universe. An existing release tag is reused.
+# Run it from the Actions tab (Release seurust → Run workflow) to republish
+# the current version. A push to main that changes seurust/DESCRIPTION does
+# the same. CRAN submission stays manual.
 # GitHub does not start other workflows from a release created with the
 # default token, so this workflow calls the crates.io and r-universe jobs
-# directly. CRAN submission stays manual.
+# directly.
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
       - seurust/DESCRIPTION
-      - .github/workflows/release-seurust.yaml
-      - .github/workflows/publish-seurust-crate.yaml
-      - .github/workflows/publish-seurust-r.yaml
 
 concurrency:
   group: release-seurust
