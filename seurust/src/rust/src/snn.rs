@@ -1,4 +1,4 @@
-use crate::sparse::{csc_slots_from_sorted_triplets, CscSlots};
+use crate::sparse::{csc_slots_from_sorted_triplets, CscSlots, CscView};
 use extendr_api::prelude::*;
 use rayon::prelude::*;
 use sprs::{CsMat, TriMat};
@@ -381,7 +381,7 @@ fn compute_snn_accumulating_csc_parallel_from_data(
 }
 
 fn compute_snn_best_csc_from_data(data: &[f64], n_cells: usize, k: usize, prune: f64) -> CscSlots {
-    if n_cells >= 1000 {
+    if n_cells >= 256 {
         compute_snn_accumulating_csc_parallel_from_data(data, n_cells, k, prune)
     } else {
         compute_snn_accumulating_csc_from_data(data, n_cells, k, prune)
@@ -447,43 +447,105 @@ pub fn compute_snn_impl(nn_ranked: &RMatrix<f64>, prune: f64) -> extendr_api::Re
     Ok(compute_snn_best_csc_from_data(data, n_cells, k, prune))
 }
 
-/// Format like C++ `std::setprecision(15)` on a default-formatted stream
-/// (printf `%.15g`), so edge files are byte-identical to Seurat's.
-fn format_g15(val: f64) -> String {
+struct FmtBuf<'a> {
+    buf: &'a mut [u8],
+    len: usize,
+}
+
+impl std::fmt::Write for FmtBuf<'_> {
+    fn write_str(&mut self, s: &str) -> std::fmt::Result {
+        let bytes = s.as_bytes();
+        let end = self.len + bytes.len();
+        self.buf
+            .get_mut(self.len..end)
+            .ok_or(std::fmt::Error)?
+            .copy_from_slice(bytes);
+        self.len = end;
+        Ok(())
+    }
+}
+
+fn format_to(buf: &mut [u8], args: std::fmt::Arguments<'_>) -> usize {
+    let mut writer = FmtBuf { buf, len: 0 };
+    std::fmt::write(&mut writer, args).expect("format buffer");
+    writer.len
+}
+
+fn strip_trailing_zeros(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let Some(dot) = bytes.iter().position(|&b| b == b'.') else {
+        return s;
+    };
+    let mut end = bytes.len();
+    while end > dot + 1 && bytes[end - 1] == b'0' {
+        end -= 1;
+    }
+    if bytes[end - 1] == b'.' {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+fn push_usize(out: &mut Vec<u8>, mut n: usize) {
+    if n == 0 {
+        out.push(b'0');
+        return;
+    }
+    let mut tmp = [0u8; 20];
+    let mut i = tmp.len();
+    while n > 0 {
+        i -= 1;
+        tmp[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    out.extend_from_slice(&tmp[i..]);
+}
+
+/// Append a number the way C++ `std::setprecision(15)` prints it on a default
+/// stream, without allocating a string per edge.
+fn append_g15(out: &mut Vec<u8>, val: f64) {
     const PRECISION: i32 = 15;
     if val == 0.0 || !val.is_finite() {
-        return if val.is_nan() {
-            "nan".to_string()
+        if val.is_nan() {
+            out.extend_from_slice(b"nan");
         } else if val.is_infinite() {
-            if val > 0.0 { "inf" } else { "-inf" }.to_string()
+            out.extend_from_slice(if val > 0.0 { b"inf" } else { b"-inf" });
         } else {
-            "0".to_string()
-        };
+            out.push(b'0');
+        }
+        return;
     }
 
-    let sci = format!("{:.*e}", (PRECISION - 1) as usize, val);
-    let (mantissa, exp) = sci.split_once('e').expect("exponent in scientific format");
-    let exp: i32 = exp.parse().expect("integer exponent");
-
-    let strip = |s: &str| -> String {
-        if s.contains('.') {
-            s.trim_end_matches('0').trim_end_matches('.').to_string()
-        } else {
-            s.to_string()
-        }
-    };
+    let mut sci = [0u8; 64];
+    let sci_len = format_to(
+        &mut sci,
+        format_args!("{:.*e}", (PRECISION - 1) as usize, val),
+    );
+    let sci_str = std::str::from_utf8(&sci[..sci_len]).expect("utf8 scientific format");
+    let (mantissa, exp_str) = sci_str.split_once('e').expect("exponent");
+    let exp: i32 = exp_str.parse().expect("integer exponent");
 
     if !(-4..PRECISION).contains(&exp) {
-        let sign = if exp < 0 { '-' } else { '+' };
-        format!("{}e{sign}{:02}", strip(mantissa), exp.abs())
+        let mantissa = strip_trailing_zeros(mantissa);
+        out.extend_from_slice(mantissa.as_bytes());
+        out.push(b'e');
+        out.push(if exp < 0 { b'-' } else { b'+' });
+        let abs_exp = exp.unsigned_abs() as usize;
+        if abs_exp < 10 {
+            out.push(b'0');
+        }
+        push_usize(out, abs_exp);
     } else {
         let decimals = (PRECISION - 1 - exp).max(0) as usize;
-        strip(&format!("{val:.decimals$}"))
+        let mut fixed = [0u8; 64];
+        let n = format_to(&mut fixed, format_args!("{val:.decimals$}"));
+        let rendered = std::str::from_utf8(&fixed[..n]).expect("utf8 fixed format");
+        out.extend_from_slice(strip_trailing_zeros(rendered).as_bytes());
     }
 }
 
 pub fn write_edge_file_impl(
-    snn: &CscSlots,
+    snn: &CscView<'_>,
     filename: &str,
     _display_progress: bool,
 ) -> extendr_api::Result<()> {
@@ -493,17 +555,26 @@ pub fn write_edge_file_impl(
     let io_err = |err: std::io::Error| {
         extendr_api::Error::Other(format!("failed to write edge file '{filename}': {err}"))
     };
-    let mut file = BufWriter::new(File::create(filename).map_err(io_err)?);
     let ncols = snn.ncols as usize;
+    let mut buf = Vec::with_capacity(snn.x.len().saturating_mul(24));
     for col in 0..ncols {
-        for idx in snn.p[col] as usize..snn.p[col + 1] as usize {
+        let start = snn.p[col] as usize;
+        let end = snn.p[col + 1] as usize;
+        for idx in start..end {
             let row = snn.i[idx] as usize;
             if col >= row {
                 continue;
             }
-            writeln!(file, "{col}\t{row}\t{}", format_g15(snn.x[idx])).map_err(io_err)?;
+            push_usize(&mut buf, col);
+            buf.push(b'\t');
+            push_usize(&mut buf, row);
+            buf.push(b'\t');
+            append_g15(&mut buf, snn.x[idx]);
+            buf.push(b'\n');
         }
     }
+    let mut file = BufWriter::new(File::create(filename).map_err(io_err)?);
+    file.write_all(&buf).map_err(io_err)?;
     file.flush().map_err(io_err)
 }
 
@@ -514,7 +585,7 @@ pub fn direct_snn_to_file_impl(
     filename: &str,
 ) -> extendr_api::Result<CscSlots> {
     let snn = compute_snn_impl(nn_ranked, prune)?;
-    write_edge_file_impl(&snn, filename, display_progress)?;
+    write_edge_file_impl(&snn.as_view(), filename, display_progress)?;
     Ok(snn)
 }
 
@@ -620,6 +691,12 @@ mod tests {
             }
         }
         data
+    }
+
+    fn format_g15(val: f64) -> String {
+        let mut buf = Vec::new();
+        super::append_g15(&mut buf, val);
+        String::from_utf8(buf).unwrap()
     }
 
     #[test]
