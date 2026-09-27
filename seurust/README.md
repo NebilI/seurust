@@ -45,7 +45,7 @@ Download `seurust_*.tar.gz` from
 [GitHub Releases](https://github.com/NebilI/seurust/releases), then:
 
 ```r
-install.packages("path/to/seurust_0.1.3.tar.gz", repos = NULL, type = "source")
+install.packages("path/to/seurust_0.1.4.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
