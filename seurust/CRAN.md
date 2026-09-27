@@ -102,8 +102,9 @@ depending on reviewer load and issues found.
 |----------|---------|--------------|
 | `seurust_checks.yaml` | Pull requests / pushes touching seurust or Docker packaging | R CMD check + testthat for seurust |
 | `build-seurust-cran.yaml` | `workflow_dispatch`, GitHub Release | Docker Compose CRAN build/check; optional CRAN upload |
-| `publish-seurust-r.yaml` | GitHub Release | Release tarball + sync `NebilI.r-universe.dev` |
-| `publish-seurust-crate.yaml` | GitHub Release | `cargo publish` to crates.io |
+| `release-seurust.yaml` | Push that changes `seurust/DESCRIPTION`, or Actions → Run workflow | GitHub Release, then crates.io and r-universe |
+| `publish-seurust-r.yaml` | Called by the release workflow, or Run workflow | Release tarball + sync `NebilI.r-universe.dev` |
+| `publish-seurust-crate.yaml` | Called by the release workflow, or Run workflow | `cargo publish` to crates.io |
 
 ### Update / resubmit to CRAN from GitHub Actions
 
@@ -136,7 +137,7 @@ CRAN submission itself uses email confirmation, not a GitHub secret.
 ### Suggested release flow
 
 1. Land changes on `main` (PR checks via `seurust_checks.yaml`).
-2. Tag a release (for example `v0.1.2`) → r-universe + crates.io + CRAN tarball artifact.
+2. Tag a release (for example `v0.1.2`) by bumping `seurust/DESCRIPTION` on `main`, or rerun **Actions → Release seurust → Run workflow** to republish the current version. That updates r-universe and crates.io.
 3. Run **Build / submit seurust to CRAN** with `submit_to_cran=true` when ready.
 4. Confirm the CRAN email and watch https://cran.r-project.org/package=seurust.
 
