@@ -8,7 +8,6 @@
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{LogNorm}.
 }
-\author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}
 
 \examples{
 \dontrun{

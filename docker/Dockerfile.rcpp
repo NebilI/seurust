@@ -1,4 +1,4 @@
-# Development image for Seurat's original Rcpp/C++ implementation (Eigen, CXX17).
+# R toolchain image used as the base for seurust development and CRAN checks.
 # Build from repo root:
 #   docker build -f docker/Dockerfile.rcpp -t seurust-rcpp:dev .
 # Run with the repo mounted:
@@ -7,7 +7,7 @@
 FROM rocker/r2u:jammy
 
 LABEL org.opencontainers.image.title="seurust-rcpp-dev"
-LABEL org.opencontainers.image.description="R + toolchain for Seurat Rcpp/C++ development"
+LABEL org.opencontainers.image.description="R toolchain base for seurust development and CRAN checks"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \

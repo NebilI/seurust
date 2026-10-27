@@ -18,5 +18,4 @@ Useful links:
   \item Report bugs at \url{https://github.com/NebilI/seurust/issues}
 }
 }
-\author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}
 \keyword{internal}

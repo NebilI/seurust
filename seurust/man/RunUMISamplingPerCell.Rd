@@ -8,4 +8,3 @@
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{RunUMISamplingPerCell}.
 }
-\author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}

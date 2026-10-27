@@ -1,14 +1,17 @@
 #!/usr/bin/env Rscript
-# Install only Depends/Imports/LinkingTo (enough for compile_dll on a dev checkout).
+# Install Depends/Imports/LinkingTo for the seurust package in this repository.
 repos <- c(
   CRAN = "https://cloud.r-project.org",
   satijalab = "https://satijalab.r-universe.dev"
 )
 options(repos = repos)
-pkg_root <- Sys.getenv("SEURAT_PKG_ROOT", unset = "/workspace")
+pkg <- "/workspace/seurust"
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
 remotes::install_deps(
-  pkg_root,
+  pkg,
   dependencies = c("Depends", "Imports", "LinkingTo"),
   upgrade = "never"
 )
-message("Imports installed.")
+message("seurust Imports installed.")

@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
-# Install R packages needed to compile Seurat's Rcpp/C++ sources from a dev checkout.
-# Full package checks need additional Imports; run install-r-deps.R --full for those.
+# Install R packages used by the seurust dev/CRAN images.
+# Pass --full to also install Seurat from CRAN for parity checks.
 
 args <- commandArgs(trailingOnly = TRUE)
 full <- "--full" %in% args
@@ -34,12 +34,8 @@ message("Installing SeuratObject from satijalab r-universe...")
 install.packages("SeuratObject", repos = "https://satijalab.r-universe.dev")
 
 if (full) {
-  message("Installing all package dependencies from DESCRIPTION (this can take a while)...")
-  pkg_root <- Sys.getenv("SEURAT_PKG_ROOT", unset = "/workspace")
-  if (!file.exists(file.path(pkg_root, "DESCRIPTION"))) {
-    stop("SEURAT_PKG_ROOT does not contain DESCRIPTION: ", pkg_root)
-  }
-  remotes::install_deps(pkg_root, dependencies = TRUE, upgrade = "never")
+  message("Installing Seurat from CRAN (this repository does not vendor Seurat sources)...")
+  install.packages("Seurat", Ncpus = max(1L, parallel::detectCores() - 1L))
 }
 
 message("Done.")

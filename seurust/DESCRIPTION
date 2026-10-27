@@ -3,7 +3,7 @@ Title: 'Rust' Native Kernels for 'Seurat'
 Version: 0.1.0
 Authors@R: c(
     person(given = "Nebil", family = "Ibrahim",
-           email = "nebil.b.ibrahim@gmail.com",
+           email = "nebil080298@gmail.com",
            role = c("aut", "cre")),
     person(given = "Rahul", family = "Satija",
            role = "ctb",
@@ -16,8 +16,10 @@ Description: Provides 'Rust' implementations of performance-critical 'Seurat'
     native routines such as log-normalization, sparse row scaling, shared
     nearest-neighbor graph construction, and integration helpers. Install
     alongside 'Seurat' to use the same function signatures with a 'Rust'
-    backend. Builds require 'Cargo' and 'rustc' (>= 1.81); CRAN source builds
-    include offline crate sources under 'src/rust'.
+    backend. The interfaces follow the original 'Seurat' package by the
+    Satija Lab and collaborators (MIT license; <https://satijalab.org/seurat>).
+    Builds require 'Cargo' and 'rustc' (>= 1.81); CRAN source builds include
+    offline crate sources under 'src/rust'.
 License: MIT + file LICENSE
 URL: https://github.com/NebilI/seurust,
     https://github.com/NebilI/seurust/tree/main/seurust

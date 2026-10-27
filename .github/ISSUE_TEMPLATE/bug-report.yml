@@ -1,0 +1,18 @@
+name: Bug report
+description: Report a problem with the seurust package
+title: "BUG: "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead? Include the R version and the seurust version.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproducible example
+      description: A small example that uses installable packages only.
+      render: R
+    validations:
+      required: true

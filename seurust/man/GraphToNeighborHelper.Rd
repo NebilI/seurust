@@ -13,4 +13,3 @@ Reads each row of \code{mat} (cell \code{k}'s neighbors are the non-zero
 columns of row \code{k}), exactly like Seurat. Every row must have the same
 number of non-zero entries.
 }
-\author{Nebil Ibrahim \email{nebil.b.ibrahim@gmail.com}}
