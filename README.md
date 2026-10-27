@@ -1,10 +1,10 @@
 # seurust
 
-**A faster native backend for [Seurat](https://satijalab.org/seurat) — same workflows, same outputs, less time in the hot path.**
+**Rust native kernels for [Seurat](https://satijalab.org/seurat) — same function signatures, less time in the hot path.**
 
-This repository is a development fork of Seurat v5 that adds **[seurust](seurust/)**, a companion R package with Rust/extendr reimplementations of Seurat's performance-critical native routines. Install both packages, keep your existing analysis code, and swap the backend where kernels have been ported.
+[seurust](seurust/) is an R package that reimplements Seurat's performance-critical native routines with Rust and [extendr](https://extendr.github.io/). Install it next to Seurat, keep your analysis code, and call the same kernel names.
 
-> **Drop-in by design.** seurust exposes the same function signatures as Seurat's internal C++ layer (`LogNorm`, `FastSparseRowScale`, `ComputeSNN`, `IntegrateDataC`, and more). Parity tests assert bit-for-bit agreement with the original implementation on every ported routine.
+> **Drop-in by design.** seurust exposes the same function signatures as Seurat's internal C++ layer (`LogNorm`, `FastSparseRowScale`, `ComputeSNN`, `IntegrateDataC`, and more). Parity checks compare results with the installed Seurat package ([`seurust/tests/testthat/`](seurust/tests/testthat/), [`scripts/bench-all-kernels.R`](scripts/bench-all-kernels.R)).
 
 [![seurust CI](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml/badge.svg)](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml)
 [![r-universe](https://NebilI.r-universe.dev/badges/seurust)](https://NebilI.r-universe.dev/seurust)
@@ -20,35 +20,28 @@ Single-cell pipelines spend a surprising amount of time in a handful of native k
 
 seurust targets exactly that layer:
 
-- **Same Seurat API** — no new object model, no workflow rewrite
-- **Validated parity** — automated C++ vs Rust tests on every ported kernel ([`tests/testthat/test_rust_cpp_*.R`](tests/testthat/))
+- **Same Seurat kernel names** — no new object model
+- **Validated parity** — tests against the installed Seurat package on ported kernels
 - **Measurable speedups** — Rust wins on the preprocessing kernels that run on every dataset (see benchmarks below)
-- **Open development** — install from GitHub, run benchmarks locally, contribute kernel ports
+- **Open development** — install from GitHub, r-universe, or CRAN once accepted
 
-Seurat itself remains the user-facing package. **seurust** is the engine upgrade you install alongside it.
+Seurat remains the user-facing analysis package. **seurust** is the native backend you install alongside it.
 
 ---
 
-## Architecture
+## Layout
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Your R workflow (CreateSeuratObject, RunPCA, RunUMAP, …)   │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-              ┌─────────────┴─────────────┐
-              ▼                           ▼
-     ┌─────────────────┐         ┌─────────────────┐
-     │  Seurat (root)  │         │     seurust     │
-     │  C++ / Rcpp     │         │  Rust / extendr │
-     │  production API │         │  ported kernels │
-     └─────────────────┘         └─────────────────┘
-```
+| What | Where |
+|------|--------|
+| R package | [`seurust/`](seurust/) |
+| Rust crate | [`seurust/src/rust/`](seurust/src/rust/) |
+| Offline crates for CRAN | [`seurust/src/rust/vendor.tar.xz`](seurust/src/rust/vendor.tar.xz) |
+| Kernel benchmark | [`scripts/bench-all-kernels.R`](scripts/bench-all-kernels.R) |
+| Release-tag cleanup | [`scripts/prune-seurust-releases.sh`](scripts/prune-seurust-releases.sh) |
+| Docker / CRAN image | [`docker/`](docker/) |
+| r-universe registry notes | [`r-universe/`](r-universe/) |
 
-| Package | Location | Backend | Rust required? |
-|---------|----------|---------|----------------|
-| **Seurat** | repo root | C++/Rcpp | No |
-| **seurust** | [`seurust/`](seurust/) | Rust/extendr | Yes (build time) |
+Seurat itself is installed from CRAN (or r-universe). This repository does not contain Seurat's sources.
 
 ---
 
@@ -58,7 +51,7 @@ Median runtime for every ported native function, Seurat's C++ kernels against se
 
 ### seurust 0.1.0 (all 30 kernels)
 
-Measured after syncing this fork to **Seurat 5.5.1** (see [Machine](#machine)).
+Measured against **Seurat 5.5.1** (see [Machine](#machine)).
 
 | Function | Problem size | Seurat C++ | seurust Rust | Speedup |
 | --- | --- | ---: | ---: | ---: |
@@ -93,7 +86,7 @@ Measured after syncing this fork to **Seurat 5.5.1** (see [Machine](#machine)).
 | `row_mean_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.23 ms | 0.11 ms | **2.14×** |
 | `row_var_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.74 ms | 0.34 ms | **2.16×** |
 
-Times are medians from [`microbenchmark`](https://cran.r-project.org/package=microbenchmark) after one untimed warmup (3 to 11 repeats; fewer repeats on the slower kernels). Inputs are built before the timer starts. Reproduce the full table with:
+Times are medians from [`microbenchmark`](https://cran.r-project.org/package=microbenchmark) after one untimed warmup (3 to 11 repeats; fewer repeats on the slower kernels). Inputs are built before the timer starts. Reproduce the full table with Seurat and seurust installed:
 
 ```sh
 Rscript scripts/bench-all-kernels.R
@@ -156,13 +149,13 @@ These numbers were measured on the machine that ran the script:
 | CPU | 4 cores |
 | Memory | 15 GiB |
 | R | 4.3.3 |
-| Seurat | 5.5.1 (this fork, synced with upstream) |
+| Seurat | 5.5.1 |
 | seurust | 0.1.0 |
 | Rust | rustc 1.98.1 |
 
 ### End-to-end scRNA-seq workflow
 
-This is a separate, earlier measurement on Ubuntu 22.04 (Docker dev image, R 4.6, Rust 1.95), not the machine in the table above. It runs a simulated PBMC-style pipeline (~2,500 cells, 2,000 genes) with identical steps for both backends ([`examples/compare_scrna_workflows.R`](examples/compare_scrna_workflows.R)). PCA and UMAP use the same R code; only native kernel calls differ. **Speedup = C++ time ÷ Rust time** (> 1.0 means Rust is faster).
+This is a separate, earlier measurement on Ubuntu 22.04 (Docker dev image, R 4.6, Rust 1.95), not the machine in the table above. It ran a simulated PBMC-style pipeline (~2,500 cells, 2,000 genes) with identical steps for both backends. PCA and UMAP used the same R code; only native kernel calls differed. **Speedup = C++ time ÷ Rust time** (> 1.0 means Rust is faster). The helper scripts for that workflow are not in this repository anymore. Kernel timings above are the ones `scripts/bench-all-kernels.R` still reproduces.
 
 | Step | C++ (s) | Rust (s) | Speedup |
 |------|--------:|---------:|--------:|
@@ -175,29 +168,21 @@ This is a separate, earlier measurement on Ubuntu 22.04 (Docker dev image, R 4.6
 | Batch integration | 0.309 | 0.284 | **1.09×** |
 | **Total native kernels** | **2.39** | **2.33** | **1.03×** |
 
-Cluster assignments, normalization digests, SNN structure, and integration outputs **match exactly** between backends. Summed native-kernel time is ~**3% faster** with Rust on this workflow (1.03× overall).
-
-Reproduce locally:
-
-```sh
-docker compose -f docker/docker-compose.yml run --rm rust-dev \
-  Rscript docker/scripts/benchmark-rust-cpp.R
-
-docker compose -f docker/docker-compose.yml run --rm rust-dev \
-  Rscript examples/compare_scrna_workflows.R
-```
+Cluster assignments, normalization digests, SNN structure, and integration outputs **matched exactly** between backends on that run. Summed native-kernel time was ~**3% faster** with Rust on this workflow (1.03× overall).
 
 ---
 
 ## What's ported
 
-| Module | Seurat (C++) | seurust (Rust) | Status |
-|--------|--------------|----------------|--------|
-| Sparse row stats | `src/stats.cpp` | `stats.rs` | ✅ Ported |
-| Data manipulation | `src/data_manipulation.cpp` | `data_manipulation/` | ✅ Ported |
-| Integration | `src/integration.cpp` | `integration.rs` | ✅ Ported |
-| SNN / kNN | `src/snn.cpp`, `fast_NN_dist.cpp` | `snn.rs`, `fast_nn_dist.rs` | ✅ Ported |
-| Modularity | `src/ModularityOptimizer.cpp` | C++ bridge | 🔶 Bridge (pure Rust port planned) |
+| Module | Seurat (upstream C++) | seurust | Status |
+|--------|----------------------|---------|--------|
+| Sparse row stats | `stats.cpp` | [`seurust/src/rust/src/stats.rs`](seurust/src/rust/src/stats.rs) | Ported |
+| Data manipulation | `data_manipulation.cpp` | [`seurust/src/rust/src/data_manipulation/`](seurust/src/rust/src/data_manipulation/) | Ported |
+| Integration | `integration.cpp` | [`seurust/src/rust/src/integration.rs`](seurust/src/rust/src/integration.rs) | Ported |
+| SNN / kNN | `snn.cpp`, `fast_NN_dist.cpp` | [`snn.rs`](seurust/src/rust/src/snn.rs), [`fast_nn_dist.rs`](seurust/src/rust/src/fast_nn_dist.rs) | Ported |
+| Modularity | `ModularityOptimizer.cpp` | [`seurust/src/rust/src/modularity.rs`](seurust/src/rust/src/modularity.rs) | Ported |
+
+The modularity optimizer is a Rust port of Seurat's C++ translation of Ludo Waltman's Java [ModularityOptimizer](http://www.ludowaltman.nl/slm/). A copy of that C++ translation is kept at [`seurust/src/cpp/`](seurust/src/cpp/) for reference. The package build links the Rust static library only.
 
 ---
 
@@ -242,38 +227,30 @@ all.equal(
 # [1] TRUE
 ```
 
-### Run the example workflow
-
-```sh
-Rscript examples/scrna_workflow_rust.R    # Rust backend
-Rscript examples/scrna_workflow_cpp.R     # C++ backend (comparison)
-Rscript examples/compare_scrna_workflows.R
-```
-
 ---
 
 ## Development
 
 ```sh
-# Build dev environment (Docker recommended)
 docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml run --rm rust-dev
-
-# Inside the container: compile, test, benchmark
-Rscript docker/scripts/build-and-test-rust.sh
-Rscript docker/scripts/benchmark-rust-cpp.R
+docker compose -f docker/docker-compose.yml run --rm rust-dev \
+  bash docker/scripts/build-and-test-rust.sh
 ```
 
 Full developer docs: [`docker/README.md`](docker/README.md).
 
+Publishing to GitHub Releases, crates.io, and r-universe is `release-seurust` (a push to `main` that changes `seurust/DESCRIPTION`, or **Actions → Release seurust**). The r-universe job updates `NebilI/NebilI.r-universe.dev`. Setup notes: [`r-universe/README.md`](r-universe/README.md).
+
 ---
 
-## Relationship to upstream Seurat
+## Relationship to Seurat
 
-This fork tracks [satijalab/seurat](https://github.com/satijalab/seurat) and adds the Rust migration layer under [`seurust/`](seurust/). Upstream Seurat documentation and vignettes still apply for analysis workflows:
+seurust follows native interfaces from [satijalab/seurat](https://github.com/satijalab/seurat). Upstream Seurat documentation still applies for analysis workflows:
 
 - https://satijalab.org/seurat
 - https://cran.r-project.org/package=Seurat
+
+`seurust/DESCRIPTION` lists Rahul Satija as a contributor for those original native APIs, and the Satija Lab and collaborators as copyright holders of the original Seurat / ModularityOptimizer code.
 
 Contributions welcome — especially kernel ports, parity tests, and benchmark improvements. Open an [issue](https://github.com/NebilI/seurust/issues) or PR on this repository.
 
@@ -281,4 +258,8 @@ Contributions welcome — especially kernel ports, parity tests, and benchmark i
 
 ## License
 
-MIT — same as upstream Seurat. See [LICENSE](LICENSE).
+MIT, the same license as current Seurat. See [LICENSE](LICENSE) and [LICENSE.md](LICENSE.md).
+
+Seurat 5.5.1, the version these kernels were checked against, is `License: MIT + file LICENSE`. Seurat 4.0.0 was `GPL-3 | file LICENSE`; by Seurat 4.4.0 the upstream package had switched to MIT. This package stays on that MIT grant. Copyright for the original Seurat interfaces and the ModularityOptimizer translation is recorded in [`seurust/DESCRIPTION`](seurust/DESCRIPTION) and [`seurust/LICENSE`](seurust/LICENSE).
+
+The modularity optimizer is a port of Seurat's C++ translation of Ludo Waltman's Java [ModularityOptimizer](http://www.ludowaltman.nl/slm/). That translation is included in MIT-licensed Seurat and the copy in this tree does not add a separate GPL header.

@@ -75,7 +75,7 @@ desc <- read.dcf("seurust/DESCRIPTION")
 authors <- desc[1, "Authors@R"]
 email <- sub('.*email\\s*=\\s*"([^"]+)".*', "\\1", authors)
 if (!grepl("@", email)) {
-  email <- "nebil080298@gmail.com"
+  stop("Could not read the maintainer email from seurust/DESCRIPTION Authors@R.")
 }
 name <- "Nebil Ibrahim"
 upload_url <- "https://xmpalantir.wu.ac.at/cransubmit/index2.php"

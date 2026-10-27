@@ -1,6 +1,4 @@
 * text=auto
-data/* binary
-src/* text=lf
 seurust/configure text eol=lf
 seurust/configure.win text eol=lf
 seurust/cleanup text eol=lf

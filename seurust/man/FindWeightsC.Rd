@@ -25,4 +25,3 @@ FindWeightsC(
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{FindWeightsC}.
 }
-\author{Nebil Ibrahim \email{nebil080298@gmail.com}}

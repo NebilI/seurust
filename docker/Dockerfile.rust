@@ -1,4 +1,4 @@
-# Development image for Seurat + Rust/extendr work.
+# Development image for seurust (Rust/extendr).
 # Extends the Rcpp dev image with Rust, bindgen/clang deps, and rextendr.
 #
 # Build from repo root (builds rcpp base first):
@@ -11,7 +11,7 @@ ARG RCPP_IMAGE=seurust-rcpp:dev
 FROM ${RCPP_IMAGE}
 
 LABEL org.opencontainers.image.title="seurust-rust-dev"
-LABEL org.opencontainers.image.description="R + Rcpp + Rust/extendr for Seurat rewrite development"
+LABEL org.opencontainers.image.description="R + Rust/extendr image for seurust development and CRAN checks"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/usr/local/rustup \

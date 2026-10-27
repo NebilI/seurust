@@ -1,11 +1,13 @@
 # Docker development images
 
-There is no Dockerfile in this repo for the upstream C++ tree; CI uses the pre-built [`satijalab/seurat-ci`](https://hub.docker.com/r/satijalab/seurat-ci) image. These images are for **local development** with your checkout mounted at `/workspace`.
+These images are for local seurust development and for the CRAN build. CI for
+pull requests uses GitHub-hosted runners (`seurust Checks`), not these images.
+The CRAN workflow builds them with `docker compose`.
 
 | Image | Dockerfile | Purpose |
 |-------|------------|---------|
-| `seurust-rcpp:dev` | `Dockerfile.rcpp` | R 4.x (r2u), compilers, Rcpp/RcppEigen/RcppProgress, SeuratObject |
-| `seurust-rust:dev` | `Dockerfile.rust` | Above + Rust stable, bindgen/clang, `rextendr` |
+| `seurust-rcpp:dev` | `Dockerfile.rcpp` | R toolchain base (compilers and common libraries) |
+| `seurust-rust:dev` | `Dockerfile.rust` | Above, plus Rust stable, bindgen/clang, and `rextendr` |
 
 ## Quick start
 
@@ -13,141 +15,80 @@ From the repository root:
 
 ```sh
 docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml run --rm rcpp-dev
-```
-
-Rust / extendr work:
-
-```sh
 docker compose -f docker/docker-compose.yml run --rm rust-dev
 ```
 
-## Two-package layout
+`rcpp-dev` is only the base image. `rust-dev` is the image to use for seurust.
 
-| Package | Native backend | Rust required? |
-|---------|----------------|----------------|
-| **Seurat** (root) | C++/Rcpp | No |
-| **seurust** (`seurust/`) | Rust/extendr | Yes |
+## Install and test seurust
 
-Install both to compare implementations:
-
-```r
-devtools::load_all()                    # Seurat (C++)
-devtools::install("seurust")       # Rust backend
-library(seurust)
-
-all.equal(
-  Seurat:::LogNorm(mat, 1e4, FALSE),
-  seurust::LogNorm(mat, 1e4, FALSE)
-)
-```
-
-## Common tasks inside the container
-
-**Compile Seurat (C++ only):**
-
-```sh
-Rscript -e "pkgbuild::compile_dll(debug = FALSE)"
-Rscript -e "devtools::load_all()"
-```
-
-**Build and install seurust:**
-
-```sh
-cd seurust && Rscript tools/config.R && cd ..
-R CMD INSTALL seurust
-```
-
-The Rust crate lives in `seurust/src/rust/`. `seurust/configure` generates `Makevars` and runs `cargo build` + the `document` binary to refresh `R/extendr-wrappers.R`.
-
-**Run Rust unit tests:**
-
-```sh
-cargo test --manifest-path seurust/src/rust/Cargo.toml
-```
-
-**Regenerate Rcpp exports after editing `src/*.cpp`:**
-
-```sh
-Rscript -e "Rcpp::compileAttributes()"
-```
-
-**Regenerate extendr wrappers after editing `seurust/src/rust/`:**
-
-```sh
-cd seurust/src/rust && cargo run --bin document --release && cd ../../..
-```
-
-**End-to-end build + parity checks** (installs Seurat Imports, then builds both packages):
+Inside the container, or in one shot from the host:
 
 ```sh
 bash docker/scripts/build-and-test-rust.sh
 ```
 
-Or from the host in one shot:
-
 ```sh
-docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/scripts/build-and-test-rust.sh
+docker compose -f docker/docker-compose.yml run --rm rust-dev \
+  bash docker/scripts/build-and-test-rust.sh
 ```
 
-The first run installs many R packages from `DESCRIPTION` and can take several minutes.
+That installs seurust's R dependencies, runs `R CMD INSTALL seurust`, runs the
+Rust library tests, and runs `seurust/tests/testthat`.
 
-**CRAN-style build + check for seurust** (vendored crates, offline cargo, `--as-cran`):
+Compare kernels with an installed copy of Seurat (CRAN) from the repo root:
+
+```sh
+Rscript scripts/bench-all-kernels.R
+```
+
+Seurat is not built from this repository. `docker/scripts/bootstrap-dev-env.R`
+installs it from CRAN when a script needs it.
+
+## CRAN build and submit
 
 ```sh
 docker compose -f docker/docker-compose.yml run --rm seurust-cran
 ```
 
-**Submit to CRAN** (same Docker image; emails Maintainer for confirmation):
-
 ```sh
 # dry-run: build/check only
 docker compose -f docker/docker-compose.yml run --rm seurust-cran-submit
 
-# upload only when maintainer explicitly approves publishing
+# upload only when the maintainer explicitly approves publishing
 docker compose -f docker/docker-compose.yml run --rm \
   -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes \
   seurust-cran-submit
 ```
 
-From GitHub: **Actions → Build / submit seurust to CRAN → Run workflow**, with
-`submit_to_cran` checked when uploading. PR packaging/tests use `seurust Checks`.
+The upload reads the maintainer email from `seurust/DESCRIPTION`. CRAN then
+sends the confirmation message to that address.
+
+From GitHub: **Actions → Build / submit seurust to CRAN → Run workflow**.
+Leave `submit_to_cran` unchecked for a dry-run artifact.
 
 Full process: [`seurust/CRAN.md`](../seurust/CRAN.md).
 
-Refresh vendored crates before a CRAN release if Rust deps changed:
+Refresh vendored crates before a CRAN release if Rust dependencies changed:
 
 ```sh
-docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/scripts/vendor-seurust.sh
+docker compose -f docker/docker-compose.yml run --rm rust-dev \
+  bash docker/scripts/vendor-seurust.sh
 ```
 
-Each `docker compose run` starts a **fresh container**. Standalone scripts call
-`docker/scripts/bootstrap-dev-env.R` first to install Imports, compile Seurat,
-and install seurust if needed:
+## Rust crate
+
+The crate lives in `seurust/src/rust/`. `seurust/configure` generates `Makevars`
+and runs `cargo build`. Dev builds (`NOT_CRAN` set) also run the `document`
+binary to refresh `R/extendr-wrappers.R`.
 
 ```sh
-docker compose -f docker/docker-compose.yml run --rm rust-dev Rscript docker/scripts/run-rust-parity.R
+cargo test --manifest-path seurust/src/rust/Cargo.toml --lib
 ```
-
-**C++ vs Rust timing benchmarks** (set `SEURAT_REQUIRE_RUST_FASTER=1` to fail when Rust is slower):
 
 ```sh
-Rscript docker/scripts/benchmark-rust-cpp.R
+cd seurust/src/rust && cargo run --bin document --release && cd ../../..
 ```
-
-Ratio `> 1.0` means Rust is faster. Modularity currently calls the same C++ optimizer through a bridge, so C++ is expected to win until a pure Rust port lands.
-
-## Rust rewrite status
-
-Seurat remains the production package (C++/Rcpp). **seurust** is a sibling package with the same R API for ported kernels, used for parity testing and benchmarks.
-
-| Module | Seurat (C++) | seurust |
-|--------|--------------|------------|
-| Sparse row stats | `src/stats.cpp` | `seurust/src/rust/src/stats.rs` |
-| Data manipulation | `src/data_manipulation.cpp` | `seurust/src/rust/src/data_manipulation/` |
-| Integration | `src/integration.cpp` | `seurust/src/rust/src/integration.rs` |
-| SNN / kNN | `src/snn.cpp`, `src/fast_NN_dist.cpp` | `seurust/src/rust/src/snn.rs`, `fast_nn_dist.rs` |
-| Modularity | `src/ModularityOptimizer.cpp` | C++ bridge in `seurust/src/rust/` |
 
 ## Build without Compose
 
@@ -161,6 +102,6 @@ On Windows PowerShell, replace `$(pwd)` with `${PWD}`.
 
 ## Notes
 
-- Base image `rocker/r2u:jammy` matches the **r2u** stack referenced in `.github/workflows/merge_checks.yaml`.
-- The rust image mounts a named volume at `seurust/src/rust/target` so `cargo` artifacts stay off the bind mount.
-- Production/user-facing images remain [`satijalab/seurat`](https://hub.docker.com/r/satijalab/seurat); these are dev-only.
+- The base image is `rocker/r2u:jammy`.
+- The rust image mounts a named volume at `seurust/src/rust/target` so Cargo artifacts stay off the bind mount.
+- `seurust/src/rust/vendor.tar.xz` is the offline crate source used by CRAN builds. Do not delete it.

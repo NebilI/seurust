@@ -1,15 +1,8 @@
 #!/usr/bin/env Rscript
-# Ensure Seurat dev DLL, seurust, and Imports exist (each `docker compose run`
-# starts a fresh container without prior install state).
+# Ensure seurust is installed inside a fresh container. Seurat is installed
+# from CRAN when it is missing so parity examples can call Seurat:::.
 
-pkg_root <- if (file.exists("DESCRIPTION")) {
-  normalizePath(".", winslash = "/")
-} else if (file.exists("../DESCRIPTION")) {
-  normalizePath("..", winslash = "/")
-} else {
-  Sys.getenv("SEURAT_PKG_ROOT", unset = "/workspace")
-}
-setwd(pkg_root)
+setwd("/workspace")
 
 run_or_stop <- function(cmd, args = character()) {
   status <- system2(cmd, args, stdout = "", stderr = "")
@@ -19,17 +12,12 @@ run_or_stop <- function(cmd, args = character()) {
   invisible(status)
 }
 
-if (!requireNamespace("ggplot2", quietly = TRUE)) {
-  message("==> Installing Seurat Imports...")
-  run_or_stop("Rscript", "docker/scripts/install-imports.R")
-}
-
-if (length(Sys.glob("src/Seurat.{so,dll}")) == 0) {
-  message("==> Compiling Seurat (C++)...")
-  suppressPackageStartupMessages({
-    library(pkgbuild)
-  })
-  compile_dll(debug = FALSE, compile_attributes = FALSE)
+if (!requireNamespace("Matrix", quietly = TRUE) || !requireNamespace("Seurat", quietly = TRUE)) {
+  message("==> Installing Matrix and Seurat from CRAN...")
+  install.packages(
+    c("Matrix", "Seurat"),
+    repos = c("https://cloud.r-project.org", "https://satijalab.r-universe.dev")
+  )
 }
 
 seurust_ok <- function() {

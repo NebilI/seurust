@@ -8,4 +8,3 @@
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{FastRBind}.
 }
-\author{Nebil Ibrahim \email{nebil080298@gmail.com}}
