@@ -113,6 +113,12 @@ test_that("DirectSNNToFile returns a dgCMatrix and writes the edge file", {
 })
 
 test_that("DirectSNNToFile and WriteEdgeFile match Seurat byte-for-byte", {
+  skip_if_not_installed("Seurat")
+  # Seurat 5.6 dropped this internal entry point. seurust still implements it;
+  # the previous test covers that behavior without a Seurat reference.
+  if (!exists("DirectSNNToFile", envir = asNamespace("Seurat"), inherits = FALSE)) {
+    skip("Installed Seurat no longer provides DirectSNNToFile")
+  }
   seurat_direct <- seurat_native("DirectSNNToFile")
   nn <- cbind(1:60, knn_graph(seed = 7)$idx)
   f_seurat <- tempfile()
