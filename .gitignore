@@ -1,19 +1,26 @@
+# R session and project files
 .Rproj.user
 .Rhistory
 .RData
 .RDataTmp
-src/*.o
-src/*.so
-src/*.dll
-src/rust/target/
-.DS_Store
-*.pdf
-docs/
+.Ruserdata
+
+# Package check and build output
+*.Rcheck
+*.tar.gz
+*.o
+*.so
+*.dll
 Rplots.pdf
+docs/
 revdep/
-Seurat.Rcheck/
-seurust.Rcheck/
-seurust_*.tar.gz
+
+# Rust build output. The unpacked crate vendor directory is generated from
+# seurust/src/rust/vendor.tar.xz, which CRAN builds need and which stays tracked.
+target/
+vendor/
+
+# Written by docker/scripts/submit-seurust-cran.sh; contains the maintainer email.
 seurust/CRAN-SUBMISSION
-seurust/src/rust/target/
-/examples/output
+
+.DS_Store

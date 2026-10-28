@@ -12,4 +12,3 @@ inputs and errors on a \code{dgCMatrix}. This version accepts either layout
 (or any coercible matrix) and converts to row-compressed form first; for
 \code{RsparseMatrix} inputs the result is identical to Seurat's.
 }
-\author{Nebil Ibrahim \email{nebil080298@gmail.com}}

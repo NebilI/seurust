@@ -6,7 +6,7 @@ release is **`v0.1.0`** on GitHub and r-universe.
 
 ## Test environments
 
-* GitHub Actions (ubuntu-latest), R release — `build-seurust-cran.yaml`, merge checks
+* GitHub Actions (ubuntu-latest), R release — `seurust_checks.yaml`, `build-seurust-cran.yaml`
 * Local Docker CRAN check via `docker compose … run --rm seurust-cran`
 
 ## R CMD check results

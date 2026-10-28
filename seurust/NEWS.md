@@ -8,10 +8,12 @@ release tags).
 
 * **30** native kernels ported to Rust with parity tests against Seurat's C++
   implementations.
-* Benchmark tables in the root `README.md` refreshed against **Seurat 5.5.1**
-  from this repository (`scripts/bench-all-kernels.R`).
-* Workflow benchmarks under `benchmarks/` target the same Seurat + seurust
-  pairing (PBMC 3K/8K tutorials and `seurat-standard-analysis` scripts).
+* Benchmark tables in the repository `README.md` were refreshed against
+  **Seurat 5.5.1**. Per-kernel medians can be reproduced with
+  `scripts/bench-all-kernels.R` against an installed copy of Seurat.
+* Workflow-level timings (PBMC tutorials and a standard analysis script) used
+  the same Seurat 5.5.1 and seurust 0.1.0 pairing. Those helper scripts are
+  not part of the installed package.
 
 ## Notes
 

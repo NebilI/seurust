@@ -10,4 +10,3 @@ the distances in the same order as the neighbor indices. An empty list if
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{fast_dist}.
 }
-\author{Nebil Ibrahim \email{nebil080298@gmail.com}}

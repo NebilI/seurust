@@ -11,4 +11,3 @@ Computes the SNN graph as \code{\link{ComputeSNN}} does and writes its lower
 triangle to \code{filename} in the same tab-separated format as
 \code{\link{WriteEdgeFile}}.
 }
-\author{Nebil Ibrahim \email{nebil080298@gmail.com}}
