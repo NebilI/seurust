@@ -64,6 +64,8 @@ jobs:
     uses: ./.github/workflows/publish-seurust-crate.yaml
     secrets: inherit
 
+  # Shared registry: the called workflow upserts only the seurust entry in
+  # NebilI.r-universe.dev packages.json and leaves every other package.
   publish-r:
     name: Publish R package and r-universe
     needs: create-release
