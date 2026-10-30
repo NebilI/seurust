@@ -2,8 +2,8 @@
 \name{Standardize}
 \alias{Standardize}
 \title{Standardize columns of a dense matrix}
-\usage{Standardize(mat, display_progress = TRUE)}
-\arguments{\item{mat}{Numeric matrix.}\item{display_progress}{Logical.}}
+\usage{Standardize(mat, display_progress = TRUE, nthreads = 1L)}
+\arguments{\item{mat}{Numeric matrix.}\item{display_progress}{Logical.}\item{nthreads}{Integer thread hint.}}
 \value{A numeric matrix.}
 \description{
 Rust/extendr reimplementation matching Seurat's native API for \code{Standardize}.

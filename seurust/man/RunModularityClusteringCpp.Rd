@@ -12,12 +12,13 @@ RunModularityClusteringCpp(
   nIterations = 1,
   randomSeed = 0,
   printOutput = FALSE,
-  edgefilename = ""
+  edgefilename = "",
+  nThreads = 1L
 )
 }
 \arguments{
 \item{SNN}{Sparse SNN graph.}
-\item{modularityFunction, algorithm, nRandomStarts, nIterations, randomSeed}{Integers.}
+\item{modularityFunction, algorithm, nRandomStarts, nIterations, randomSeed, nThreads}{Integers.}
 \item{resolution}{Numeric.}
 \item{printOutput}{Logical.}
 \item{edgefilename}{Optional path.}

@@ -111,8 +111,12 @@ LogNorm <- function(data, scale_factor, display_progress = TRUE) {
 #'
 #' @return A numeric matrix with standardized columns.
 #' @export
-Standardize <- function(mat, display_progress = TRUE) {
-  standardize(mat = AsDoubleMatrix(x = mat), display_progress = display_progress)
+Standardize <- function(mat, display_progress = TRUE, nthreads = 1L) {
+  standardize(
+    mat = AsDoubleMatrix(x = mat),
+    display_progress = display_progress,
+    `_nthreads` = as.integer(nthreads)
+  )
 }
 
 #' Fast covariance of a dense matrix
@@ -321,11 +325,19 @@ FastLogVMR <- function(mat, display_progress) {
 #'
 #' @return A dense numeric matrix of scaled values.
 #' @export
-FastSparseRowScale <- function(mat, scale = TRUE, center = TRUE, scale_max = 10, display_progress = TRUE) {
+FastSparseRowScale <- function(
+    mat,
+    scale = TRUE,
+    center = TRUE,
+    scale_max = 10,
+    display_progress = TRUE,
+    features = integer(),
+    nthreads = 1L) {
   s <- CscSlots(mat = mat)
   fast_sparse_row_scale(
     x = s$x, i = s$i, p = s$p,
     nrows = s$nrows, ncols = s$ncols,
+    features = as.integer(x = features),
     scale = scale, center = center, scale_max = scale_max,
     display_progress = display_progress
   )
@@ -395,8 +407,12 @@ RunUMISamplingPerCell <- function(data, sample_val, upsample = FALSE, display_pr
 #'
 #' @return A sparse SNN graph as a `dgCMatrix`.
 #' @export
-ComputeSNN <- function(nn_ranked, prune) {
-  compute_snn(nn_ranked = AsDoubleMatrix(x = nn_ranked), prune = prune)
+ComputeSNN <- function(nn_ranked, prune, nthreads = 1L) {
+  compute_snn(
+    nn_ranked = AsDoubleMatrix(x = nn_ranked),
+    prune = prune,
+    `_nthreads` = as.integer(nthreads)
+  )
 }
 
 #' Integrate expression using anchor weights
@@ -432,7 +448,8 @@ IntegrateDataC <- function(integration_matrix, weights, expression_cells2) {
 #' @return A sparse weight `dgCMatrix`.
 #' @export
 FindWeightsC <- function(cells2, distances, anchor_cells2, integration_matrix_rownames,
-                         cell_index, anchor_score, min_dist, sd, display_progress) {
+                         cell_index, anchor_score, min_dist, sd, display_progress,
+                         nthreads = 1L) {
   CscFromList(find_weights(
     cells2 = as.double(x = cells2),
     distances = AsDoubleMatrix(x = distances),
@@ -442,7 +459,8 @@ FindWeightsC <- function(cells2, distances, anchor_cells2, integration_matrix_ro
     anchor_score = as.double(x = anchor_score),
     min_dist = min_dist,
     sd = sd,
-    display_progress = display_progress
+    display_progress = display_progress,
+    `_nthreads` = as.integer(nthreads)
   ))
 }
 
@@ -459,7 +477,7 @@ FindWeightsC <- function(cells2, distances, anchor_cells2, integration_matrix_ro
 #' @return Numeric scores matching Seurat's helper.
 #' @export
 ScoreHelper <- function(snn, query_pca, query_dists, corrected_nns, k_snn,
-                        subtract_first_nn, display_progress) {
+                        subtract_first_nn, display_progress, nthreads = 1L) {
   s <- CscSlots(snn)
   score_helper(
     x = s$x, i = s$i, p = s$p,
@@ -469,7 +487,8 @@ ScoreHelper <- function(snn, query_pca, query_dists, corrected_nns, k_snn,
     corrected_nns = AsDoubleMatrix(x = corrected_nns),
     k_snn = k_snn,
     subtract_first_nn = subtract_first_nn,
-    display_progress = display_progress
+    display_progress = display_progress,
+    `_nthreads` = as.integer(nthreads)
   )
 }
 
@@ -557,7 +576,8 @@ RunModularityClusteringCpp <- function(
     nIterations = 1,
     randomSeed = 0,
     printOutput = FALSE,
-    edgefilename = "") {
+    edgefilename = "",
+    nThreads = 1L) {
   s <- CscSlots(mat = SNN)
   run_modularity_clustering(
     x = s$x,
@@ -572,7 +592,353 @@ RunModularityClusteringCpp <- function(
     n_iterations = nIterations,
     random_seed = as.integer(randomSeed),
     print_output = as.logical(printOutput),
-    edgefilename = edgefilename
+    edgefilename = edgefilename,
+    n_threads = as.integer(nThreads)
+  )
+}
+
+#' Run modularity clustering at multiple resolutions
+#'
+#' Rust reimplementation of Seurat 5.6 `RunModularityClusteringCpp_multi`.
+#' Builds the network once and clusters at each resolution.
+#'
+#' @inheritParams RunModularityClusteringCpp
+#' @param resolutions Numeric vector of clustering resolutions.
+#'
+#' @return A list of integer cluster assignment vectors, one per resolution.
+#' @export
+RunModularityClusteringCpp_multi <- function(
+    SNN,
+    modularityFunction = 1,
+    resolutions,
+    algorithm = 1,
+    nRandomStarts = 1,
+    nIterations = 1,
+    randomSeed = 0,
+    printOutput = FALSE,
+    edgefilename = "",
+    nThreads = 1L) {
+  s <- CscSlots(mat = SNN)
+  run_modularity_clustering_multi(
+    x = s$x,
+    i = s$i,
+    p = s$p,
+    nrows = s$nrows,
+    ncols = s$ncols,
+    modularity_function = modularityFunction,
+    resolutions = as.double(x = resolutions),
+    algorithm = algorithm,
+    n_random_starts = nRandomStarts,
+    n_iterations = nIterations,
+    random_seed = as.integer(randomSeed),
+    print_output = as.logical(printOutput),
+    edgefilename = edgefilename,
+    n_threads = as.integer(nThreads)
+  )
+}
+
+#' Scale and/or center dense matrix rows
+#'
+#' Rust reimplementation of Seurat 5.6 `FastDenseRowScale`.
+#'
+#' @param mat Numeric matrix (features x cells).
+#' @param features Optional 0-based integer row subset. Empty means all rows.
+#' @param scale Logical; scale rows.
+#' @param center Logical; center rows.
+#' @param scale_max Maximum scaled value.
+#' @param nthreads Integer thread hint (Rust uses the rayon pool).
+#' @param display_progress Logical; show progress when supported.
+#'
+#' @return A dense numeric matrix of scaled values.
+#' @export
+FastDenseRowScale <- function(
+    mat,
+    features = integer(),
+    scale = TRUE,
+    center = TRUE,
+    scale_max = 10,
+    nthreads = 1L,
+    display_progress = FALSE) {
+  fast_dense_row_scale(
+    mat = AsDoubleMatrix(x = mat),
+    features = as.integer(x = features),
+    scale = scale,
+    center = center,
+    scale_max = scale_max,
+    `_nthreads` = as.integer(nthreads),
+    display_progress = display_progress
+  )
+}
+
+#' Sparse row means and variances in one pass
+#'
+#' Rust reimplementation of Seurat 5.6 `SparseRowMeanVar`.
+#'
+#' @param x Numeric non-zero values, or a `dgCMatrix`.
+#' @param i Integer row indices (ignored when `x` is a `dgCMatrix`).
+#' @param p Integer column pointers.
+#' @param rows,cols Integer matrix dimensions.
+#' @param nthreads Integer thread hint.
+#' @param display_progress Logical; show progress when supported.
+#'
+#' @return A list with `mean` and `variance` numeric vectors.
+#' @export
+SparseRowMeanVar <- function(x, i, p, rows, cols, nthreads = 1L, display_progress = FALSE) {
+  if (inherits(x = x, what = "sparseMatrix") && missing(i)) {
+    s <- CscSlots(mat = x)
+    x <- s$x
+    i <- s$i
+    p <- s$p
+    rows <- s$nrows
+    cols <- s$ncols
+  }
+  sparse_row_mean_var(
+    x = x, i = i, p = p, nrows = rows, ncols = cols,
+    `_nthreads` = as.integer(nthreads),
+    `_display_progress` = display_progress
+  )
+}
+
+#' Legacy sparse row means and variances
+#'
+#' Rust reimplementation of Seurat 5.6 `SparseRowMeanVarLegacy` (pre-5.6 VST arithmetic).
+#'
+#' @inheritParams SparseRowMeanVar
+#'
+#' @return A list with `mean` and `variance` numeric vectors.
+#' @export
+SparseRowMeanVarLegacy <- function(x, i, p, rows, cols, display_progress = FALSE) {
+  if (inherits(x = x, what = "sparseMatrix") && missing(i)) {
+    s <- CscSlots(mat = x)
+    x <- s$x
+    i <- s$i
+    p <- s$p
+    rows <- s$nrows
+    cols <- s$ncols
+  }
+  sparse_row_mean_var_legacy(
+    x = x, i = i, p = p, nrows = rows, ncols = cols,
+    `_display_progress` = display_progress
+  )
+}
+
+#' Clipped standardized variances for a row subset
+#'
+#' Rust reimplementation of Seurat 5.6 `SparseRowVarStdLegacyRows`.
+#' `rows_use` is 0-based.
+#'
+#' @inheritParams SparseRowMeanVar
+#' @param mu Numeric vector of row means.
+#' @param sd Numeric vector of row standard deviations.
+#' @param vmax Maximum standardized value.
+#' @param rows_use Integer vector of 0-based row indices.
+#'
+#' @return Numeric vector of clipped row variances for `rows_use`.
+#' @export
+SparseRowVarStdLegacyRows <- function(
+    x, i, p, mu, sd, vmax, rows, cols, rows_use,
+    nthreads = 1L, display_progress = FALSE) {
+  if (inherits(x = x, what = "sparseMatrix") && missing(i)) {
+    s <- CscSlots(mat = x)
+    x <- s$x
+    i <- s$i
+    p <- s$p
+    rows <- s$nrows
+    cols <- s$ncols
+  }
+  sparse_row_var_std_legacy_rows(
+    x = x, i = i, p = p,
+    mu = as.double(x = mu), sd = as.double(x = sd), vmax = vmax,
+    `_rows` = rows, `_cols` = cols,
+    rows_use = as.integer(x = rows_use),
+    `_nthreads` = as.integer(nthreads),
+    `_display_progress` = display_progress
+  )
+}
+
+#' Bulk sparse fold-change statistics for FindAllMarkers
+#'
+#' Rust reimplementation of Seurat 5.6 `FindAllMarkersSparseFoldChangeStats`.
+#' `groups` is 1-based.
+#'
+#' @inheritParams SparseRowMeanVar
+#' @param groups Integer vector of 1-based group ids, length `cols`.
+#' @param n_groups Number of groups.
+#' @param log_normalize Logical; apply `expm1` to values before summing.
+#'
+#' @return A list with `group_sum`, `rest_sum`, `detected`, and `total_detected`.
+#' @export
+FindAllMarkersSparseFoldChangeStats <- function(
+    x, i, p, rows, cols, groups, n_groups, log_normalize, nthreads = 1L) {
+  if (inherits(x = x, what = "sparseMatrix") && missing(i)) {
+    s <- CscSlots(mat = x)
+    groups <- i
+    n_groups <- p
+    log_normalize <- rows
+    nthreads <- if (!missing(cols)) cols else 1L
+    x <- s$x
+    i <- s$i
+    p <- s$p
+    rows <- s$nrows
+    cols <- s$ncols
+  }
+  find_all_markers_sparse_fold_change_stats(
+    x = x, i = i, p = p, rows = rows, cols = cols,
+    groups = as.integer(x = groups),
+    n_groups = as.integer(n_groups),
+    log_normalize = log_normalize,
+    `_nthreads` = as.integer(nthreads)
+  )
+}
+
+#' Implicit CCA matvec without a cell-by-cell cross-product
+#'
+#' Rust reimplementation of Seurat 5.6 `CcaCrossprodMultiply`.
+#' Computes `t(left) %*% (right %*% x)`.
+#'
+#' @param left,right Numeric matrices with the same number of rows.
+#' @param x Numeric vector whose length matches `ncol(right)`.
+#'
+#' @return Numeric vector of length `ncol(left)`.
+#' @export
+CcaCrossprodMultiply <- function(left, right, x) {
+  cca_crossprod_multiply(
+    left = AsDoubleMatrix(x = left),
+    right = AsDoubleMatrix(x = right),
+    x = as.double(x = x)
+  )
+}
+
+#' Count unique shared neighbors of integration anchors
+#'
+#' Rust reimplementation of Seurat 5.6 `CountAnchorSharedNeighbors`.
+#' Neighbor indices are 1-based; dataset B ids are shifted by `offset`.
+#'
+#' @param indices_aa,indices_ab,indices_ba,indices_bb Integer/numeric neighbor index matrices.
+#' @param anchor_cell1,anchor_cell2 Integer 1-based anchor cell ids.
+#' @param offset Integer offset applied to dataset B indices.
+#' @param k_score Integer number of neighbors to score.
+#' @param nthreads Integer thread hint.
+#'
+#' @return Integer vector of shared-neighbor counts, one per anchor.
+#' @export
+CountAnchorSharedNeighbors <- function(
+    indices_aa, indices_ab, indices_ba, indices_bb,
+    anchor_cell1, anchor_cell2, offset, k_score, nthreads = 1L) {
+  count_anchor_shared_neighbors(
+    indices_aa = AsDoubleMatrix(x = indices_aa),
+    indices_ab = AsDoubleMatrix(x = indices_ab),
+    indices_ba = AsDoubleMatrix(x = indices_ba),
+    indices_bb = AsDoubleMatrix(x = indices_bb),
+    anchor_cell1 = as.integer(x = anchor_cell1),
+    anchor_cell2 = as.integer(x = anchor_cell2),
+    offset = as.integer(offset),
+    k_score = as.integer(k_score),
+    `_nthreads` = as.integer(nthreads)
+  )
+}
+
+#' Approximate PCA from the Gram matrix X X'
+#'
+#' Rust reimplementation of Seurat 5.6 `EigenGramPCA`.
+#'
+#' @param object Numeric matrix of scaled data (features x cells).
+#' @param npcs Integer number of principal components.
+#' @param weight_by_var Logical; if `FALSE`, embeddings are divided by singular values.
+#' @param nthreads Integer thread hint.
+#'
+#' @return A list with `loadings`, `embeddings`, and `sdev`.
+#' @export
+EigenGramPCA <- function(object, npcs, weight_by_var = TRUE, nthreads = 1L) {
+  eigen_gram_pca(
+    object = AsDoubleMatrix(x = object),
+    npcs = as.integer(npcs),
+    weight_by_var = weight_by_var,
+    nthreads = as.integer(nthreads)
+  )
+}
+
+#' SCTransform residual statistics and optional corrected counts
+#'
+#' Rust reimplementation of Seurat 5.6 `SCTResidualStatsAndCorrected`.
+#'
+#' @inheritParams SparseRowMeanVar
+#' @param theta,intercept,slope Numeric per-feature model parameters.
+#' @param log_umi Numeric per-cell log UMI values.
+#' @param target_log_umi Numeric target log UMI for corrected counts.
+#' @param min_var Minimum model variance.
+#' @param residual_clip_min,residual_clip_max Residual clip range.
+#' @param n_threads Integer thread hint.
+#' @param compute_corrected Logical; also return corrected UMI counts.
+#'
+#' @return A list with `residual_mean`, `residual_variance`, and optionally `corrected`.
+#' @export
+SCTResidualStatsAndCorrected <- function(
+    x, i, p, rows, cols, theta, intercept, slope, log_umi,
+    target_log_umi, min_var, residual_clip_min, residual_clip_max,
+    n_threads = 1L, compute_corrected = TRUE) {
+  if (inherits(x = x, what = "sparseMatrix") && missing(i)) {
+    s <- CscSlots(mat = x)
+    x <- s$x
+    i <- s$i
+    p <- s$p
+    rows <- s$nrows
+    cols <- s$ncols
+  }
+  sct_residual_stats_and_corrected(
+    x = x, i = i, p = p, rows = rows, cols = cols,
+    theta = as.double(x = theta),
+    intercept = as.double(x = intercept),
+    slope = as.double(x = slope),
+    log_umi = as.double(x = log_umi),
+    target_log_umi = target_log_umi,
+    min_var = min_var,
+    residual_clip_min = residual_clip_min,
+    residual_clip_max = residual_clip_max,
+    `_n_threads` = as.integer(n_threads),
+    compute_corrected = compute_corrected
+  )
+}
+
+#' SCTransform Pearson residual matrix for selected features
+#'
+#' Rust reimplementation of Seurat 5.6 `SCTPearsonResidualMatrix`.
+#' `feature_index` is 0-based.
+#'
+#' @inheritParams SCTResidualStatsAndCorrected
+#' @param feature_index Integer 0-based feature indices to emit.
+#' @param min_var Numeric scalar or per-selected-feature minimum variance.
+#' @param clip_min,clip_max Residual clip range.
+#' @param do_center Logical; subtract per-feature means after filling.
+#' @param display_progress Logical; show progress when supported.
+#'
+#' @return Dense numeric matrix (selected features x cells).
+#' @export
+SCTPearsonResidualMatrix <- function(
+    x, i, p, rows, cols, theta, intercept, slope, log_umi,
+    feature_index, min_var, clip_min, clip_max, do_center = TRUE,
+    n_threads = 1L, display_progress = FALSE) {
+  if (inherits(x = x, what = "sparseMatrix") && missing(i)) {
+    s <- CscSlots(mat = x)
+    x <- s$x
+    i <- s$i
+    p <- s$p
+    rows <- s$nrows
+    cols <- s$ncols
+  }
+  sct_pearson_residual_matrix(
+    x = x, i = i, p = p, rows = rows, cols = cols,
+    theta = as.double(x = theta),
+    intercept = as.double(x = intercept),
+    slope = as.double(x = slope),
+    log_umi = as.double(x = log_umi),
+    feature_index = as.integer(x = feature_index),
+    min_var = as.double(x = min_var),
+    clip_min = clip_min,
+    clip_max = clip_max,
+    do_center = do_center,
+    `_n_threads` = as.integer(n_threads),
+    `_display_progress` = display_progress
   )
 }
 

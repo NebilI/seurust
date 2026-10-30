@@ -21,6 +21,20 @@ suppressPackageStartupMessages({
 
 seurat_fn <- function(name) getFromNamespace(name, "Seurat")
 
+has_seurat <- function(name) {
+  exists(name, envir = asNamespace("Seurat"), inherits = FALSE)
+}
+
+`%||%` <- function(a, b) if (is.null(a) || (length(a) == 1 && is.na(a))) b else a
+
+nthreads <- max(1L, as.integer(parallel::detectCores()) - 1L)
+if (has_seurat("setThreads")) {
+  Seurat::setThreads(n = nthreads, verbose = FALSE)
+}
+if (has_seurat("getThreads")) {
+  nthreads <- as.integer(Seurat::getThreads(verbose = FALSE) %||% nthreads)
+}
+
 counts_sparse <- function(nrow, ncol, density = 0.05, seed = 1L) {
   set.seed(seed)
   as(
@@ -251,7 +265,8 @@ fmt_figs <- function(stats) {
 
 cat("Seurat ", as.character(packageVersion("Seurat")),
     "  seurust ", as.character(packageVersion("seurust")),
-    "  R ", R.version.string, "\n\n", sep = "")
+    "  R ", R.version.string,
+    "  nthreads ", nthreads, "\n\n", sep = "")
 
 # Shared inputs. Built once so setup is not part of the timed call.
 set.seed(1)
@@ -265,7 +280,7 @@ rbind_a <- dense_mat(4000L, 150L, seed = 4L)
 graph <- regular_graph(2000L, 15L)
 nn <- nn_index(1500L, 21L, seed = 5L)
 nn_file <- nn_index(400L, 16L, seed = 6L)
-snn_file <- seurat_fn("ComputeSNN")(nn_file, 1 / 15)
+snn_file <- seurat_fn("ComputeSNN")(nn_file, 1 / 15, nthreads)
 umi <- counts_sparse(2000L, 1500L, density = 0.08, seed = 7L)
 umi_per_cell <- as.numeric(rep(40, ncol(umi)))
 
@@ -295,7 +310,7 @@ integration_rownames <- paste0("cell", sample.int(80L, n_anchors, replace = TRUE
 anchor_score <- runif(n_anchors, min = 0.1, max = 1)
 
 score_nn <- nn_index(300L, 12L, seed = 15L)
-score_snn <- seurat_fn("ComputeSNN")(score_nn, 0)
+score_snn <- seurat_fn("ComputeSNN")(score_nn, 0, nthreads)
 query_pca <- dense_mat(16L, 300L, seed = 16L)
 query_dists <- abs(dense_mat(300L, 12L, seed = 17L))
 corrected_nns <- nn_index(300L, 12L, seed = 18L)
@@ -311,7 +326,7 @@ row_nr <- nrow(row_mat)
 row_nc <- ncol(row_mat)
 
 mod_nn <- nn_index(250L, 15L, seed = 22L)
-mod_snn <- seurat_fn("ComputeSNN")(mod_nn, 0.01)
+mod_snn <- seurat_fn("ComputeSNN")(mod_nn, 0.01, nthreads)
 embed <- dense_mat(nrow(snn_file), 10L, seed = 23L)
 nearest_dist <- abs(rnorm(nrow(snn_file)))
 nearest_dist[c(1L, 5L)] <- 0
@@ -322,98 +337,180 @@ direct_cpp <- tempfile(fileext = ".txt")
 direct_rust <- tempfile(fileext = ".txt")
 on.exit(unlink(c(edge_cpp, edge_rust, direct_cpp, direct_rust)), add = TRUE)
 
-cases <- list(
-  list("LogNorm", "5,000 × 2,000 sparse, 5% nonzero", 5L,
-    function() seurat_fn("LogNorm")(sparse, 1e4, FALSE),
-    function() seurust::LogNorm(sparse, 1e4, FALSE)),
-  list("Standardize", "2,000 × 120 dense", 7L,
-    function() seurat_fn("Standardize")(dense, FALSE),
-    function() seurust::Standardize(dense, FALSE)),
-  list("FastCov", "2,000 × 80 dense", 5L,
+align_pc_signs <- function(a, b) {
+  for (j in seq_len(ncol(a))) {
+    if (sum(a[, j] * b[, j]) < 0) a[, j] <- -a[, j]
+  }
+  a
+}
+
+set.seed(24)
+sct_mat <- counts_sparse(800L, 400L, 0.08, seed = 24L)
+sct_theta <- runif(nrow(sct_mat), 1, 8)
+sct_intercept <- rnorm(nrow(sct_mat), -1, 0.15)
+sct_slope <- rep(0.9, nrow(sct_mat))
+sct_log_umi <- log1p(Matrix::colSums(sct_mat))
+sct_clip <- sqrt(ncol(sct_mat))
+sct_features <- as.integer(seq(0L, length.out = 80L))
+
+pca_mat <- dense_mat(120L, 400L, seed = 25L)
+cca_left <- dense_mat(80L, 200L, seed = 26L)
+cca_right <- dense_mat(80L, 180L, seed = 27L)
+cca_x <- rnorm(180L)
+dense_scale <- dense_mat(800L, 300L, seed = 28L)
+
+n_a <- 200L
+n_b <- 180L
+k_score <- 10L
+mk_nn <- function(nrow, ncol, nmax, seed) {
+  set.seed(seed)
+  m <- matrix(sample.int(nmax, nrow * ncol, replace = TRUE), nrow = nrow)
+  storage.mode(m) <- "double"
+  m
+}
+idx_aa <- mk_nn(n_a, k_score, n_a, 29L)
+idx_ab <- mk_nn(n_a, k_score, n_b, 30L)
+idx_ba <- mk_nn(n_b, k_score, n_a, 31L)
+idx_bb <- mk_nn(n_b, k_score, n_b, 32L)
+anchor_n <- 80L
+anchor_c1 <- sample.int(n_a, anchor_n, replace = TRUE)
+anchor_c2 <- sample.int(n_b, anchor_n, replace = TRUE)
+marker_groups <- as.integer(rep(1:4, length.out = ncol(sparse)))
+legacy_rows <- as.integer(seq(0L, by = 10L, length.out = 80L))
+
+maybe_case <- function(name, size, times, cpp_fn, rust_fn, requires = name) {
+  if (!has_seurat(requires)) {
+    message("skip ", name, " (not exported by installed Seurat)")
+    return(NULL)
+  }
+  list(name, size, times, cpp_fn, rust_fn)
+}
+
+cases <- Filter(Negate(is.null), list(
+  maybe_case("LogNorm", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+    function() seurat_fn("LogNorm")(sparse@x, sparse@p, 1e4, nthreads, FALSE),
+    function() seurust::LogNorm(sparse, 1e4, FALSE)@x),
+  maybe_case("Standardize", "2,000 × 120 dense", 7L,
+    function() seurat_fn("Standardize")(dense, FALSE, nthreads),
+    function() seurust::Standardize(dense, FALSE, nthreads)),
+  maybe_case("FastCov", "2,000 × 80 dense", 5L,
     function() seurat_fn("FastCov")(cov_a, TRUE),
     function() seurust::FastCov(cov_a, TRUE)),
-  list("FastCovMats", "2,000 × 80 and 2,000 × 40 dense", 5L,
+  maybe_case("FastCovMats", "2,000 × 80 and 2,000 × 40 dense", 5L,
     function() seurat_fn("FastCovMats")(cov_a, cov_b, TRUE),
     function() seurust::FastCovMats(cov_a, cov_b, TRUE)),
-  list("FastRBind", "two 4,000 × 150 dense", 7L,
+  maybe_case("FastRBind", "two 4,000 × 150 dense", 7L,
     function() seurat_fn("FastRBind")(rbind_a, rbind_a),
     function() seurust::FastRBind(rbind_a, rbind_a)),
-  list("RowVar", "2,000 × 120 dense", 7L,
+  maybe_case("RowVar", "2,000 × 120 dense", 7L,
     function() seurat_fn("RowVar")(dense),
     function() seurust::RowVar(dense)),
-  list("FastExpMean", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+  maybe_case("FastExpMean", "5,000 × 2,000 sparse, 5% nonzero", 5L,
     function() seurat_fn("FastExpMean")(sparse, FALSE),
     function() seurust::FastExpMean(sparse, FALSE)),
-  list("SparseRowVar", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+  maybe_case("SparseRowVar", "5,000 × 2,000 sparse, 5% nonzero", 5L,
     function() seurat_fn("SparseRowVar")(sparse, FALSE),
     function() seurust::SparseRowVar(sparse, FALSE)),
-  list("SparseRowVar2", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+  maybe_case("SparseRowVar2", "5,000 × 2,000 sparse, 5% nonzero", 5L,
     function() seurat_fn("SparseRowVar2")(sparse, mu, FALSE),
     function() seurust::SparseRowVar2(sparse, mu, FALSE)),
-  list("SparseRowVarStd", "5,000 × 2,000 sparse, 5% nonzero", 5L,
-    function() seurat_fn("SparseRowVarStd")(sparse, mu, sigma, 10, FALSE),
+  maybe_case("SparseRowVarStd", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+    function() seurat_fn("SparseRowVarStd")(sparse@x, sparse@i, sparse@p, mu, sigma, nrow(sparse), ncol(sparse), 10, nthreads, FALSE),
     function() seurust::SparseRowVarStd(sparse, mu, sigma, 10, FALSE)),
-  list("FastLogVMR", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+  maybe_case("SparseRowMeanVar", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+    function() seurat_fn("SparseRowMeanVar")(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), nthreads, FALSE),
+    function() seurust::SparseRowMeanVar(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), nthreads, FALSE)),
+  maybe_case("SparseRowMeanVarLegacy", "5,000 × 2,000 sparse, 5% nonzero", 5L,
+    function() seurat_fn("SparseRowMeanVarLegacy")(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), FALSE),
+    function() seurust::SparseRowMeanVarLegacy(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), FALSE)),
+  maybe_case("SparseRowVarStdLegacyRows", "5,000 × 2,000 sparse, 80 rows", 5L,
+    function() seurat_fn("SparseRowVarStdLegacyRows")(sparse@x, sparse@i, sparse@p, mu, sigma, 10, nrow(sparse), ncol(sparse), legacy_rows, nthreads, FALSE),
+    function() seurust::SparseRowVarStdLegacyRows(sparse@x, sparse@i, sparse@p, mu, sigma, 10, nrow(sparse), ncol(sparse), legacy_rows, nthreads, FALSE)),
+  maybe_case("FastLogVMR", "5,000 × 2,000 sparse, 5% nonzero", 5L,
     function() seurat_fn("FastLogVMR")(sparse, FALSE),
     function() seurust::FastLogVMR(sparse, FALSE)),
-  list("FastSparseRowScale", "5,000 × 2,000 sparse, 5% nonzero", 3L,
-    function() seurat_fn("FastSparseRowScale")(sparse, TRUE, TRUE, 10, FALSE),
+  maybe_case("FastSparseRowScale", "5,000 × 2,000 sparse, 5% nonzero", 3L,
+    function() seurat_fn("FastSparseRowScale")(sparse, features = integer(), scale = TRUE, center = TRUE, scale_max = 10, nthreads = nthreads, display_progress = FALSE),
     function() seurust::FastSparseRowScale(sparse, TRUE, TRUE, 10, FALSE)),
-  list("FastSparseRowScaleWithKnownStats", "5,000 × 2,000 sparse, 5% nonzero", 3L,
+  maybe_case("FastDenseRowScale", "800 × 300 dense", 3L,
+    function() seurat_fn("FastDenseRowScale")(dense_scale, integer(), TRUE, TRUE, 10, nthreads, FALSE),
+    function() seurust::FastDenseRowScale(dense_scale, integer(), TRUE, TRUE, 10, nthreads, FALSE)),
+  maybe_case("FastSparseRowScaleWithKnownStats", "5,000 × 2,000 sparse, 5% nonzero", 3L,
     function() seurat_fn("FastSparseRowScaleWithKnownStats")(sparse, mu, sigma, TRUE, TRUE, 10, FALSE),
     function() seurust::FastSparseRowScaleWithKnownStats(sparse, mu, sigma, TRUE, TRUE, 10, FALSE)),
-  list("RowMergeMatrices", "1,500 × 400 and 1,200 × 350 CSR", 5L,
+  maybe_case("RowMergeMatrices", "1,500 × 400 and 1,200 × 350 CSR", 5L,
     function() seurat_fn("RowMergeMatrices")(merge_a, merge_b, rn1, rn2, all_rn),
     function() seurust::RowMergeMatrices(merge_a, merge_b, rn1, rn2, all_rn)),
-  list("ReplaceColsC", "2,000 × 600 sparse, replace 20 columns", 7L,
+  maybe_case("ReplaceColsC", "2,000 × 600 sparse, replace 20 columns", 7L,
     function() seurat_fn("ReplaceColsC")(replace_mat, replace_idx, replace_src),
     function() seurust::ReplaceColsC(replace_mat, replace_idx, replace_src)),
-  list("GraphToNeighborHelper", "2,000 cells, 30 neighbors, symmetric", 7L,
+  maybe_case("GraphToNeighborHelper", "2,000 cells, 30 neighbors, symmetric", 7L,
     function() seurat_fn("GraphToNeighborHelper")(graph),
     function() seurust::GraphToNeighborHelper(graph)),
-  list("RunUMISampling", "2,000 × 1,500 counts, 8% nonzero", 5L,
+  maybe_case("RunUMISampling", "2,000 × 1,500 counts, 8% nonzero", 5L,
     function() seurat_fn("RunUMISampling")(umi, 50, FALSE, FALSE),
     function() seurust::RunUMISampling(umi, 50, FALSE, FALSE)),
-  list("RunUMISamplingPerCell", "2,000 × 1,500 counts, 8% nonzero", 5L,
+  maybe_case("RunUMISamplingPerCell", "2,000 × 1,500 counts, 8% nonzero", 5L,
     function() seurat_fn("RunUMISamplingPerCell")(umi, umi_per_cell, FALSE, FALSE),
     function() seurust::RunUMISamplingPerCell(umi, umi_per_cell, FALSE, FALSE)),
-  list("ComputeSNN", "1,500 cells, k = 20", 7L,
-    function() seurat_fn("ComputeSNN")(nn, 1 / 15),
-    function() seurust::ComputeSNN(nn, 1 / 15)),
-  list("IntegrateDataC", "800 genes × 200 cells, 60 anchors", 5L,
+  maybe_case("ComputeSNN", "1,500 cells, k = 20", 7L,
+    function() seurat_fn("ComputeSNN")(nn, 1 / 15, nthreads),
+    function() seurust::ComputeSNN(nn, 1 / 15, nthreads)),
+  maybe_case("IntegrateDataC", "800 genes × 200 cells, 60 anchors", 5L,
     function() seurat_fn("IntegrateDataC")(im, weights, expr),
     function() seurust::IntegrateDataC(im, weights, expr)),
-  list("FindWeightsC", "400 cells, 600 anchors, k = 10", 5L,
-    function() seurat_fn("FindWeightsC")(cells2, distances, anchor_cells2, integration_rownames, cell_index, anchor_score, 0, 1, FALSE),
-    function() seurust::FindWeightsC(cells2, distances, anchor_cells2, integration_rownames, cell_index, anchor_score, 0, 1, FALSE)),
-  list("ScoreHelper", "300 cells × 16 dimensions", 5L,
-    function() seurat_fn("ScoreHelper")(score_snn, query_pca, query_dists, corrected_nns, 8L, FALSE, FALSE),
-    function() seurust::ScoreHelper(score_snn, query_pca, query_dists, corrected_nns, 8L, FALSE, FALSE)),
-  list("WriteEdgeFile", "400-cell SNN", 3L,
+  maybe_case("FindWeightsC", "400 cells, 600 anchors, k = 10", 5L,
+    function() seurat_fn("FindWeightsC")(cells2, distances, anchor_cells2, integration_rownames, cell_index, anchor_score, 0, 1, FALSE, nthreads),
+    function() seurust::FindWeightsC(cells2, distances, anchor_cells2, integration_rownames, cell_index, anchor_score, 0, 1, FALSE, nthreads)),
+  maybe_case("ScoreHelper", "300 cells × 16 dimensions", 5L,
+    function() seurat_fn("ScoreHelper")(score_snn, query_pca, query_dists, corrected_nns, 8L, FALSE, FALSE, nthreads),
+    function() seurust::ScoreHelper(score_snn, query_pca, query_dists, corrected_nns, 8L, FALSE, FALSE, nthreads)),
+  maybe_case("WriteEdgeFile", "400-cell SNN", 3L,
     function() { seurat_fn("WriteEdgeFile")(snn_file, edge_cpp, FALSE); invisible(NULL) },
     function() { seurust::WriteEdgeFile(snn_file, edge_rust, FALSE); invisible(NULL) }),
-  list("DirectSNNToFile", "400 cells, k = 15", 3L,
+  maybe_case("DirectSNNToFile", "400 cells, k = 15", 3L,
     function() seurat_fn("DirectSNNToFile")(nn_file, 1 / 15, FALSE, direct_cpp),
     function() seurust::DirectSNNToFile(nn_file, 1 / 15, FALSE, direct_rust)),
-  list("SNN_SmallestNonzero_Dist", "400 cells × 10 dimensions", 7L,
+  maybe_case("SNN_SmallestNonzero_Dist", "400 cells × 10 dimensions", 7L,
     function() seurat_fn("SNN_SmallestNonzero_Dist")(snn_file, embed, 5L, nearest_dist),
     function() seurust::SNN_SmallestNonzero_Dist(snn_file, embed, 5L, nearest_dist)),
-  list("RunModularityClusteringCpp", "250-cell SNN, 10 iterations", 3L,
-    function() seurat_fn("RunModularityClusteringCpp")(mod_snn, 1L, 1, 3L, 1L, 10L, 42L, FALSE, ""),
-    function() seurust::RunModularityClusteringCpp(mod_snn, 1L, 1, 3L, 1L, 10L, 42L, FALSE, "")),
-  list("fast_dist", "800 × 20 dense, 10 neighbors", 5L,
+  maybe_case("RunModularityClusteringCpp", "250-cell SNN, 10 iterations", 3L,
+    function() seurat_fn("RunModularityClusteringCpp")(mod_snn, 1L, 1, 3L, 1L, 10L, 42L, FALSE, "", 1L),
+    function() seurust::RunModularityClusteringCpp(mod_snn, 1L, 1, 3L, 1L, 10L, 42L, FALSE, "", 1L)),
+  maybe_case("RunModularityClusteringCpp_multi", "250-cell SNN, 3 resolutions", 3L,
+    function() seurat_fn("RunModularityClusteringCpp_multi")(mod_snn, 1L, c(0.4, 0.8, 1.2), 1L, 1L, 5L, 42L, FALSE, "", 1L),
+    function() seurust::RunModularityClusteringCpp_multi(mod_snn, 1L, c(0.4, 0.8, 1.2), 1L, 1L, 5L, 42L, FALSE, "", 1L)),
+  maybe_case("FindAllMarkersSparseFoldChangeStats", "5,000 × 2,000 sparse, 4 groups", 5L,
+    function() seurat_fn("FindAllMarkersSparseFoldChangeStats")(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), marker_groups, 4L, TRUE, nthreads),
+    function() seurust::FindAllMarkersSparseFoldChangeStats(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), marker_groups, 4L, TRUE, nthreads)),
+  maybe_case("CcaCrossprodMultiply", "80 × 200 and 80 × 180 dense", 7L,
+    function() seurat_fn("CcaCrossprodMultiply")(cca_left, cca_right, cca_x),
+    function() seurust::CcaCrossprodMultiply(cca_left, cca_right, cca_x)),
+  maybe_case("CountAnchorSharedNeighbors", "80 anchors, k = 10", 7L,
+    function() seurat_fn("CountAnchorSharedNeighbors")(idx_aa, idx_ab, idx_ba, idx_bb, anchor_c1, anchor_c2, n_a, k_score, nthreads),
+    function() seurust::CountAnchorSharedNeighbors(idx_aa, idx_ab, idx_ba, idx_bb, anchor_c1, anchor_c2, n_a, k_score, nthreads)),
+  maybe_case("EigenGramPCA", "120 features × 400 cells, 10 PCs", 3L,
+    function() seurat_fn("EigenGramPCA")(pca_mat, 10L, TRUE, nthreads),
+    function() seurust::EigenGramPCA(pca_mat, 10L, TRUE, nthreads)),
+  maybe_case("SCTResidualStatsAndCorrected", "800 × 400 sparse SCT", 3L,
+    function() seurat_fn("SCTResidualStatsAndCorrected")(sct_mat@x, sct_mat@i, sct_mat@p, nrow(sct_mat), ncol(sct_mat), sct_theta, sct_intercept, sct_slope, sct_log_umi, median(sct_log_umi), 0.04, -sct_clip, sct_clip, nthreads, TRUE),
+    function() seurust::SCTResidualStatsAndCorrected(sct_mat@x, sct_mat@i, sct_mat@p, nrow(sct_mat), ncol(sct_mat), sct_theta, sct_intercept, sct_slope, sct_log_umi, median(sct_log_umi), 0.04, -sct_clip, sct_clip, nthreads, TRUE)),
+  maybe_case("SCTPearsonResidualMatrix", "800 × 400 sparse, 80 features", 3L,
+    function() seurat_fn("SCTPearsonResidualMatrix")(sct_mat@x, sct_mat@i, sct_mat@p, nrow(sct_mat), ncol(sct_mat), sct_theta, sct_intercept, sct_slope, sct_log_umi, sct_features, 0.04, -sct_clip, sct_clip, TRUE, nthreads, FALSE),
+    function() seurust::SCTPearsonResidualMatrix(sct_mat@x, sct_mat@i, sct_mat@p, nrow(sct_mat), ncol(sct_mat), sct_theta, sct_intercept, sct_slope, sct_log_umi, sct_features, 0.04, -sct_clip, sct_clip, TRUE, nthreads, FALSE)),
+  maybe_case("fast_dist", "800 × 20 dense, 10 neighbors", 5L,
     function() seurat_fn("fast_dist")(dist_x, dist_y, dist_n),
     function() seurust::fast_dist(dist_x, dist_y, dist_n)),
-  list("row_sum_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
+  maybe_case("row_sum_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
     function() seurat_fn("row_sum_dgcmatrix")(row_x, row_i, row_nr, row_nc),
     function() seurust::row_sum_dgcmatrix(row_x, row_i, row_nr, row_nc)),
-  list("row_mean_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
+  maybe_case("row_mean_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
     function() seurat_fn("row_mean_dgcmatrix")(row_x, row_i, row_nr, row_nc),
     function() seurust::row_mean_dgcmatrix(row_x, row_i, row_nr, row_nc)),
-  list("row_var_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
+  maybe_case("row_var_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
     function() seurat_fn("row_var_dgcmatrix")(row_x, row_i, row_nr, row_nc),
     function() seurust::row_var_dgcmatrix(row_x, row_i, row_nr, row_nc))
-)
+))
 
 bench_mode <- tolower(Sys.getenv("SEURUST_BENCH_MODE", unset = "time"))
 rows <- vector("list", length(cases))
@@ -437,6 +534,12 @@ if (bench_mode == "error") {
           object_agreement(cpp, rust),
           edge_file_agreement(direct_cpp, direct_rust)
         )
+      } else if (name == "EigenGramPCA") {
+        cpp <- case[[4]]()
+        rust <- case[[5]]()
+        rust$loadings <- align_pc_signs(rust$loadings, cpp$loadings)
+        rust$embeddings <- align_pc_signs(rust$embeddings, cpp$embeddings)
+        object_agreement(cpp, rust)
       } else if (name %in% c("RunUMISampling", "RunUMISamplingPerCell")) {
         # Both kernels draw from R's RNG. Start each side from the same seed.
         set.seed(1)

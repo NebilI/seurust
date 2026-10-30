@@ -17,6 +17,114 @@ fn col_distance_column_major(data: &[f64], nrows: usize, col_a: usize, col_b: us
     sum.sqrt()
 }
 
+/// `out = t(left) %*% (right %*% x)` without materializing the cell-by-cell product.
+pub fn cca_crossprod_multiply_impl(
+    left: &RMatrix<f64>,
+    right: &RMatrix<f64>,
+    x: &[f64],
+) -> extendr_api::Result<Doubles> {
+    let nfeatures = left.nrows();
+    let ncells = left.ncols();
+    if right.nrows() != nfeatures {
+        return Err(extendr_api::Error::Other(
+            "CCA matrices must have the same number of rows.".into(),
+        ));
+    }
+    if right.ncols() != x.len() {
+        return Err(extendr_api::Error::Other(
+            "CCA multiplier length must match the number of columns in the right matrix.".into(),
+        ));
+    }
+    let left_data = left.data();
+    let right_data = right.data();
+    let right_cells = right.ncols();
+    let mut feature_scores = vec![0.0; nfeatures];
+    for col in 0..right_cells {
+        let xv = x[col];
+        let base = col * nfeatures;
+        for row in 0..nfeatures {
+            feature_scores[row] += right_data[base + row] * xv;
+        }
+    }
+    let out: Vec<f64> = (0..ncells)
+        .into_par_iter()
+        .map(|col| {
+            let base = col * nfeatures;
+            let mut s = 0.0;
+            for row in 0..nfeatures {
+                s += left_data[base + row] * feature_scores[row];
+            }
+            s
+        })
+        .collect();
+    Ok(Doubles::from_values(out))
+}
+
+/// Count unique nearest neighbors shared by each anchor pair.
+pub fn count_anchor_shared_neighbors_impl(
+    indices_aa: &RMatrix<f64>,
+    indices_ab: &RMatrix<f64>,
+    indices_ba: &RMatrix<f64>,
+    indices_bb: &RMatrix<f64>,
+    anchor_cell1: &[i32],
+    anchor_cell2: &[i32],
+    offset: i32,
+    k_score: i32,
+) -> Integers {
+    let nanchors = anchor_cell1.len();
+    let max_neighbor = (offset + indices_bb.nrows() as i32) as usize;
+    let k_score = k_score.max(0) as usize;
+    let aa = indices_aa.data();
+    let ab = indices_ab.data();
+    let ba = indices_ba.data();
+    let bb = indices_bb.data();
+    let aa_rows = indices_aa.nrows();
+    let ab_rows = indices_ab.nrows();
+    let ba_rows = indices_ba.nrows();
+    let bb_rows = indices_bb.nrows();
+    let offset = offset as usize;
+
+    let scores: Vec<i32> = (0..nanchors)
+        .into_par_iter()
+        .map(|anchor| {
+            let mut neighbors_a = vec![0u32; max_neighbor + 1];
+            let mut seen_b = vec![0u32; max_neighbor + 1];
+            let stamp = (anchor as u32).wrapping_add(1);
+            let anchor_cell_a = (anchor_cell1[anchor] - 1) as usize;
+            let anchor_cell_b = (anchor_cell2[anchor] - 1) as usize;
+            for k in 0..k_score {
+                let aa_id = aa[anchor_cell_a + k * aa_rows] as usize;
+                let ab_id = ab[anchor_cell_a + k * ab_rows] as usize + offset;
+                if aa_id < neighbors_a.len() {
+                    neighbors_a[aa_id] = stamp;
+                }
+                if ab_id < neighbors_a.len() {
+                    neighbors_a[ab_id] = stamp;
+                }
+            }
+            let mut shared = 0i32;
+            for k in 0..k_score {
+                let neighbor_ba = ba[anchor_cell_b + k * ba_rows] as usize;
+                if neighbor_ba < seen_b.len() && seen_b[neighbor_ba] != stamp {
+                    seen_b[neighbor_ba] = stamp;
+                    if neighbors_a[neighbor_ba] == stamp {
+                        shared += 1;
+                    }
+                }
+                let neighbor_bb = bb[anchor_cell_b + k * bb_rows] as usize + offset;
+                if neighbor_bb < seen_b.len() && seen_b[neighbor_bb] != stamp {
+                    seen_b[neighbor_bb] = stamp;
+                    if neighbors_a[neighbor_bb] == stamp {
+                        shared += 1;
+                    }
+                }
+            }
+            shared
+        })
+        .collect();
+    Integers::from_values(scores)
+}
+
 pub fn find_weights_impl(
     cells2: &[i32],
     distances: &RMatrix<f64>,

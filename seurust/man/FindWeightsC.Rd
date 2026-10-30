@@ -12,7 +12,8 @@ FindWeightsC(
   anchor_score,
   min_dist,
   sd,
-  display_progress
+  display_progress,
+  nthreads = 1L
 )
 }
 \arguments{
@@ -20,6 +21,7 @@ FindWeightsC(
 \item{distances, anchor_score, min_dist, sd}{Numeric.}
 \item{cell_index}{Integer.}
 \item{display_progress}{Logical.}
+\item{nthreads}{Integer thread hint.}
 }
 \value{A dgCMatrix.}
 \description{

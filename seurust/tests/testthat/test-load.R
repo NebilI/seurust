@@ -7,6 +7,9 @@ test_that("core kernel helpers are exported", {
   expect_true(exists("LogNorm", where = ns, mode = "function"))
   expect_true(exists("FastSparseRowScale", where = ns, mode = "function"))
   expect_true(exists("ComputeSNN", where = ns, mode = "function"))
+  expect_true(exists("EigenGramPCA", where = ns, mode = "function"))
+  expect_true(exists("SparseRowMeanVar", where = ns, mode = "function"))
+  expect_true(exists("SCTResidualStatsAndCorrected", where = ns, mode = "function"))
 })
 
 test_that("LogNorm returns a dgCMatrix with finite values", {

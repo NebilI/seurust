@@ -45,7 +45,7 @@ Download `seurust_*.tar.gz` from
 [GitHub Releases](https://github.com/NebilI/seurust/releases), then:
 
 ```r
-install.packages("path/to/seurust_0.1.0.tar.gz", repos = NULL, type = "source")
+install.packages("path/to/seurust_0.2.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Example
@@ -56,23 +56,29 @@ library(seurust)
 library(Matrix)
 
 mat <- Matrix::sparseMatrix(i = c(1, 3, 2), j = c(1, 2, 3), x = 1:3, dims = c(3, 3))
-all.equal(
-  Seurat:::LogNorm(mat, 1e4, FALSE),
-  seurust::LogNorm(mat, 1e4, FALSE)
-)
+# Seurat 5.6.0's C++ LogNorm fills the x slot; seurust still returns a dgCMatrix.
+mat_seurat <- mat
+mat_seurat@x <- Seurat:::LogNorm(mat@x, mat@p, 1e4, 1L, FALSE)
+all.equal(mat_seurat, seurust::LogNorm(mat, 1e4, FALSE))
 ```
 
 ## Differences from Seurat's C++ entry points
 
-Every exported function takes the same arguments and returns the same kind of
-object as the Seurat function of the same name. Integer inputs are accepted
+Most exported functions take the same arguments and return the same kind of
+object as the Seurat 5.6.0 function of the same name. Integer inputs are accepted
 wherever Seurat's Rcpp signature would coerce them (for example integer
 neighbor ids in `fast_dist` or an integer `nn_ranked` matrix in `ComputeSNN`).
 
-One deliberate difference: Seurat's `RowMergeMatrices` only accepts
-row-compressed (`RsparseMatrix`) inputs and errors on a `dgCMatrix`.
-`seurust::RowMergeMatrices` accepts either layout and converts first; for
-`RsparseMatrix` inputs the result is identical.
+Deliberate differences:
+
+- Seurat 5.6.0's C++ `LogNorm` takes CSC `x`/`p` slots and returns the
+  normalized non-zeros. `seurust::LogNorm` still accepts a `dgCMatrix` and
+  returns a `dgCMatrix` (the same object `Seurat::LogNormalize` builds).
+- Seurat's `RowMergeMatrices` only accepts row-compressed (`RsparseMatrix`)
+  inputs and errors on a `dgCMatrix`. `seurust::RowMergeMatrices` accepts
+  either layout and converts first; for `RsparseMatrix` inputs the result is
+  identical.
+- `AnnoySearchCpp` is not ported.
 
 ## Further documentation
 

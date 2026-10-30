@@ -264,8 +264,18 @@ fn gene_mean_sdev(
     (mean, col_sdev)
 }
 
+fn feature_row_map(nrows: usize, features: &[i32]) -> (usize, Vec<i32>) {
+    if features.is_empty() {
+        (nrows, (0..nrows as i32).collect())
+    } else {
+        (features.len(), features.to_vec())
+    }
+}
+
+/// Scale sparse rows, optionally a 0-based feature subset, matching Seurat 5.6.
 pub fn fast_sparse_row_scale_impl(
     view: CscView<'_>,
+    features: &[i32],
     scale: bool,
     center: bool,
     scale_max: f64,
@@ -273,29 +283,84 @@ pub fn fast_sparse_row_scale_impl(
 ) -> RMatrix<f64> {
     let n_genes = view.nrows as usize;
     let n_cells = view.ncols as usize;
-    let row_index = RowIndex::from_csc_view(&view);
-    let mut data = vec![0.0; n_genes * n_cells];
-    let out_addr = data.as_mut_ptr() as usize;
-
-    (0..n_genes).into_par_iter().for_each(|gene| {
-        let (mean, col_sdev) = gene_mean_sdev(&view, &row_index, gene, n_cells, scale, center);
-        let inv_sdev = 1.0 / col_sdev;
-        let out_ptr = out_addr as *mut f64;
-        unsafe {
-            for cell in 0..n_cells {
-                let value = scale_clip((0.0 - mean) * inv_sdev, scale_max);
-                *out_ptr.add(gene + cell * n_genes) = value;
-            }
-            for pos in row_index.row_range(gene) {
-                let cell = row_index.row_cols[pos];
-                let val = view.x[row_index.row_x_idx[pos]];
-                let value = scale_clip((val - mean) * inv_sdev, scale_max);
-                *out_ptr.add(gene + cell * n_genes) = value;
+    let (n_sel, selected) = feature_row_map(n_genes, features);
+    let mut gmap = vec![-1i32; n_genes];
+    for (out_row, &src) in selected.iter().enumerate() {
+        if src >= 0 {
+            let src = src as usize;
+            if src < n_genes {
+                gmap[src] = out_row as i32;
             }
         }
-    });
+    }
 
-    rmatrix_from_column_major(&data, n_genes, n_cells)
+    let mut row_sum = vec![0.0; n_sel];
+    let mut row_sq_sum = vec![0.0; n_sel];
+    for idx in 0..view.x.len() {
+        let mapped = gmap[view.i[idx] as usize];
+        if mapped >= 0 {
+            let row = mapped as usize;
+            let value = view.x[idx];
+            row_sum[row] += value;
+            row_sq_sum[row] += value * value;
+        }
+    }
+
+    let clip = scale_max.is_finite();
+    let mut mu = vec![0.0; n_sel];
+    let mut inv_sigma = vec![0.0; n_sel];
+    let mut zero_value = vec![0.0; n_sel];
+    let mut valid = vec![false; n_sel];
+    let cols_d = n_cells as f64;
+    for row in 0..n_sel {
+        let mean = if n_cells == 0 {
+            0.0
+        } else {
+            row_sum[row] / cols_d
+        };
+        mu[row] = if center { mean } else { 0.0 };
+        let sigma = if scale {
+            let variance_numerator = if center {
+                row_sq_sum[row] - (row_sum[row] * row_sum[row] / cols_d)
+            } else {
+                row_sq_sum[row]
+            };
+            (variance_numerator / (n_cells.max(2) - 1) as f64).sqrt()
+        } else {
+            1.0
+        };
+        if sigma > 0.0 && sigma.is_finite() {
+            valid[row] = true;
+            inv_sigma[row] = 1.0 / sigma;
+            let mut z = (0.0 - mu[row]) * inv_sigma[row];
+            if clip {
+                z = scale_clip(z, scale_max);
+            }
+            zero_value[row] = z;
+        }
+    }
+
+    let mut data = vec![0.0; n_sel * n_cells];
+    data.par_chunks_mut(n_sel.max(1))
+        .enumerate()
+        .for_each(|(col, out_col)| {
+            out_col.copy_from_slice(&zero_value);
+            for ptr in view.p[col] as usize..view.p[col + 1] as usize {
+                let mapped = gmap[view.i[ptr] as usize];
+                if mapped >= 0 {
+                    let row = mapped as usize;
+                    if valid[row] {
+                        let mut value = (view.x[ptr] - mu[row]) * inv_sigma[row];
+                        if clip {
+                            value = scale_clip(value, scale_max);
+                        }
+                        out_col[row] = value;
+                    }
+                }
+            }
+        });
+
+    rmatrix_from_column_major(&data, n_sel, n_cells)
 }
 
 pub fn fast_sparse_row_scale_with_known_stats_impl(
@@ -537,6 +602,142 @@ fn sparse_row_var_values(view: &CscView<'_>) -> Vec<f64> {
 
 pub fn sparse_row_var_impl(view: CscView<'_>, _display_progress: bool) -> Doubles {
     Doubles::from_values(sparse_row_var_values(&view))
+}
+
+/// One-pass row mean and sample variance (Seurat 5.6 `SparseRowMeanVar`).
+pub fn sparse_row_mean_var_impl(view: CscView<'_>) -> (Vec<f64>, Vec<f64>) {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let cols_d = n_cells as f64;
+    let denom = (n_cells.max(2) - 1) as f64;
+    let (sums, sumsq) = (0..n_cells)
+        .into_par_iter()
+        .fold(
+            || (vec![0.0; n_genes], vec![0.0; n_genes]),
+            |mut acc, col| {
+                for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                    let row = view.i[idx] as usize;
+                    let value = view.x[idx];
+                    acc.0[row] += value;
+                    acc.1[row] += value * value;
+                }
+                acc
+            },
+        )
+        .reduce(
+            || (vec![0.0; n_genes], vec![0.0; n_genes]),
+            |mut left, right| {
+                for gene in 0..n_genes {
+                    left.0[gene] += right.0[gene];
+                    left.1[gene] += right.1[gene];
+                }
+                left
+            },
+        );
+    let mut means = vec![0.0; n_genes];
+    let mut vars = vec![0.0; n_genes];
+    for gene in 0..n_genes {
+        let sum = sums[gene];
+        means[gene] = if n_cells == 0 { 0.0 } else { sum / cols_d };
+        vars[gene] = (sumsq[gene] - (sum * sum / cols_d)) / denom;
+    }
+    (means, vars)
+}
+
+/// Two-pass mean/variance including explicit zeros (Seurat 5.6 `SparseRowMeanVarLegacy`).
+pub fn sparse_row_mean_var_legacy_impl(view: CscView<'_>) -> (Vec<f64>, Vec<f64>) {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let cols_d = n_cells as f64;
+    let denom = (n_cells.max(2) - 1) as f64;
+    let (sums, nnz) = par_row_sums_and_counts(&view, &|_, val, sum, count| {
+        *count += 1;
+        *sum += val;
+    });
+    let means: Vec<f64> = sums
+        .iter()
+        .map(|sum| if n_cells == 0 { 0.0 } else { sum / cols_d })
+        .collect();
+    let sq = par_row_sums(&view, &|row, val, sum| {
+        let diff = val - means[row];
+        *sum += diff * diff;
+    });
+    let vars: Vec<f64> = (0..n_genes)
+        .map(|row| {
+            (sq[row] + (n_cells - nnz[row]) as f64 * means[row] * means[row]) / denom
+        })
+        .collect();
+    (means, vars)
+}
+
+/// Clipped standardized variances for a 0-based row subset (`SparseRowVarStdLegacyRows`).
+pub fn sparse_row_var_std_legacy_rows_impl(
+    view: CscView<'_>,
+    mu: &[f64],
+    sd: &[f64],
+    vmax: f64,
+    rows_use: &[i32],
+) -> Vec<f64> {
+    let n_genes = view.nrows as usize;
+    let n_cells = view.ncols as usize;
+    let n_use = rows_use.len();
+    let mut row_map = vec![-1i32; n_genes];
+    for (j, &row) in rows_use.iter().enumerate() {
+        if row >= 0 {
+            let row = row as usize;
+            if row < n_genes {
+                row_map[row] = j as i32;
+            }
+        }
+    }
+    let denom = (n_cells.max(2) - 1) as f64;
+    let (sums, nnz) = (0..n_cells)
+        .into_par_iter()
+        .fold(
+            || (vec![0.0; n_use], vec![0usize; n_use]),
+            |mut acc, col| {
+                for idx in view.p[col] as usize..view.p[col + 1] as usize {
+                    let src = view.i[idx] as usize;
+                    let j = row_map[src];
+                    if j < 0 {
+                        continue;
+                    }
+                    let j = j as usize;
+                    if sd[src] == 0.0 || !sd[src].is_finite() {
+                        continue;
+                    }
+                    let standardized = ((view.x[idx] - mu[src]) / sd[src]).min(vmax);
+                    acc.0[j] += standardized * standardized;
+                    acc.1[j] += 1;
+                }
+                acc
+            },
+        )
+        .reduce(
+            || (vec![0.0; n_use], vec![0usize; n_use]),
+            |mut left, right| {
+                for j in 0..n_use {
+                    left.0[j] += right.0[j];
+                    left.1[j] += right.1[j];
+                }
+                left
+            },
+        );
+
+    (0..n_use)
+        .map(|j| {
+            let src = rows_use[j];
+            if src < 0 {
+                return 0.0;
+            }
+            let src = src as usize;
+            if src >= n_genes || sd[src] == 0.0 || !sd[src].is_finite() {
+                return 0.0;
+            }
+            let zero = (0.0 - mu[src]) / sd[src];
+            (sums[j] + zero * zero * (n_cells - nnz[j]) as f64) / denom
+        })
+        .collect()
 }
 
 pub fn replace_cols_impl(

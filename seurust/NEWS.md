@@ -1,3 +1,38 @@
+# seurust 0.2.0
+
+Ported the native kernels added in **Seurat 5.6.0** and refreshed parity tests
+and kernel benchmarks against that release.
+
+## New kernels (Seurat 5.6.0)
+
+* `FastDenseRowScale` — dense row center/scale/clip used by `ScaleData`.
+* `SparseRowMeanVar` / `SparseRowMeanVarLegacy` / `SparseRowVarStdLegacyRows`
+  — shared sparse VST statistics.
+* `FindAllMarkersSparseFoldChangeStats` — bulk fold-change / detection prep.
+* `EigenGramPCA` — Gram-matrix PCA backend used by default `RunPCA`.
+* `SCTResidualStatsAndCorrected` / `SCTPearsonResidualMatrix` — SCTransform
+  Pearson residuals and corrected counts.
+* `CcaCrossprodMultiply` / `CountAnchorSharedNeighbors` — CCA integration
+  matvec and threaded anchor scoring.
+* `RunModularityClusteringCpp_multi` — reuse one SNN network across
+  resolutions.
+
+## Signature updates
+
+Existing wrappers accept the extra `nthreads` (and, where Seurat added it,
+`features`) arguments from 5.6.0. Convenience matrix-taking APIs such as
+`LogNorm()` and `FastSparseRowScale()` keep working with seurust 0.1.0
+positional calls. Seurat 5.6.0's C++ `LogNorm` now returns only the `x` slot;
+`seurust::LogNorm` still returns a full `dgCMatrix`, matching
+`Seurat::LogNormalize`.
+
+`AnnoySearchCpp` is **not** ported (on-disk Annoy index search stays in Seurat).
+`WriteEdgeFile`, `DirectSNNToFile`, and `SparseRowVar2` remain available in
+seurust even though Seurat 5.6.0 dropped those R exports.
+
+Benchmark tables in the repository `README.md` were remeasured against
+**Seurat 5.6.0**.
+
 # seurust 0.1.0
 
 Fresh baseline release after syncing this fork with upstream **Seurat 5.5.1** and
