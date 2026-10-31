@@ -371,27 +371,28 @@ pub fn fast_sparse_row_scale_with_known_stats_impl(
 ) -> RMatrix<f64> {
     let n_genes = view.nrows as usize;
     let n_cells = view.ncols as usize;
-    let row_index = RowIndex::from_csc_view(&view);
+    let mut col_mean = vec![0.0; n_genes];
+    let mut inv_sdev = vec![0.0; n_genes];
+    let mut zero_value = vec![0.0; n_genes];
+    for gene in 0..n_genes {
+        let mean = if center { mu[gene] } else { 0.0 };
+        let sdev = if scale { sigma[gene] } else { 1.0 };
+        col_mean[gene] = mean;
+        inv_sdev[gene] = 1.0 / sdev;
+        zero_value[gene] = scale_clip((0.0 - mean) * inv_sdev[gene], scale_max);
+    }
+
     rmatrix_with_data(n_genes, n_cells, |data| {
-        let out_addr = data.as_mut_ptr() as usize;
-        (0..n_genes).into_par_iter().for_each(|gene| {
-            let col_mean = if center { mu[gene] } else { 0.0 };
-            let col_sdev = if scale { sigma[gene] } else { 1.0 };
-            let inv_sdev = 1.0 / col_sdev;
-            let out_ptr = out_addr as *mut f64;
-            unsafe {
-                for cell in 0..n_cells {
-                    let value = scale_clip((0.0 - col_mean) * inv_sdev, scale_max);
-                    *out_ptr.add(gene + cell * n_genes) = value;
+        data.par_chunks_mut(n_genes.max(1))
+            .enumerate()
+            .for_each(|(col, out_col)| {
+                out_col.copy_from_slice(&zero_value);
+                for ptr in view.p[col] as usize..view.p[col + 1] as usize {
+                    let row = view.i[ptr] as usize;
+                    out_col[row] =
+                        scale_clip((view.x[ptr] - col_mean[row]) * inv_sdev[row], scale_max);
                 }
-                for pos in row_index.row_range(gene) {
-                    let cell = row_index.row_cols[pos];
-                    let val = view.x[row_index.row_x_idx[pos]];
-                    let value = scale_clip((val - col_mean) * inv_sdev, scale_max);
-                    *out_ptr.add(gene + cell * n_genes) = value;
-                }
-            }
-        });
+            });
     })
 }
 
