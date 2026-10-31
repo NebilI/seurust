@@ -31,13 +31,15 @@ impl VOSClusteringTechnique {
 
     pub fn calc_quality_function(&self) -> f64 {
         let mut quality_function = 0.0;
-        for i in 0..self.network.n_nodes {
-            let j = self.clustering.cluster[i as usize];
-            let start = self.network.first_neighbor_index[i as usize] as usize;
-            let end = self.network.first_neighbor_index[(i + 1) as usize] as usize;
-            for k in start..end {
-                if self.clustering.cluster[self.network.neighbor[k] as usize] == j {
-                    quality_function += self.network.edge_weight[k];
+        for i in 0..self.network.n_nodes as usize {
+            let j = self.clustering.cluster[i];
+            let start = self.network.first_neighbor_index[i] as usize;
+            let end = self.network.first_neighbor_index[i + 1] as usize;
+            let neighbors = &self.network.neighbor[start..end];
+            let weights = &self.network.edge_weight[start..end];
+            for (&nbr, &w) in neighbors.iter().zip(weights.iter()) {
+                if self.clustering.cluster[nbr as usize] == j {
+                    quality_function += w;
                 }
             }
         }
@@ -93,17 +95,26 @@ impl VOSClusteringTechnique {
 
             let start = self.network.first_neighbor_index[j as usize] as usize;
             let end = self.network.first_neighbor_index[(j + 1) as usize] as usize;
-            for k in start..end {
-                let l = self.clustering.cluster[self.network.neighbor[k] as usize];
-                if edge_weight_per_cluster[l as usize] == 0.0 {
+            let neighbors = &self.network.neighbor[start..end];
+            let weights = &self.network.edge_weight[start..end];
+            for (&nbr, &w) in neighbors.iter().zip(weights.iter()) {
+                let lu = nbr as usize;
+                debug_assert!(lu < self.clustering.cluster.len());
+                let l = unsafe { *self.clustering.cluster.get_unchecked(lu) };
+                let l_idx = l as usize;
+                debug_assert!(l_idx < edge_weight_per_cluster.len());
+                let ew = unsafe { edge_weight_per_cluster.get_unchecked_mut(l_idx) };
+                if *ew == 0.0 {
                     neighboring_cluster[n_neighboring_clusters as usize] = l;
                     n_neighboring_clusters += 1;
                 }
-                edge_weight_per_cluster[l as usize] += self.network.edge_weight[k];
+                *ew += w;
             }
 
-            let old_cluster = self.clustering.cluster[j as usize] as usize;
-            cluster_weight[old_cluster] -= self.network.node_weight[j as usize];
+            let ju = j as usize;
+            let node_w = self.network.node_weight[ju];
+            let old_cluster = self.clustering.cluster[ju] as usize;
+            cluster_weight[old_cluster] -= node_w;
             n_nodes_per_cluster[old_cluster] -= 1;
             if n_nodes_per_cluster[old_cluster] == 0 {
                 unused_cluster[n_unused_clusters as usize] = old_cluster as i32;
@@ -112,19 +123,24 @@ impl VOSClusteringTechnique {
 
             let mut best_cluster = -1i32;
             let mut max_quality_function = 0.0;
-            for k in 0..n_neighboring_clusters {
-                let l = neighboring_cluster[k as usize];
-                let quality_function = edge_weight_per_cluster[l as usize]
-                    - self.network.node_weight[j as usize]
-                        * cluster_weight[l as usize]
-                        * self.resolution;
+            for k in 0..n_neighboring_clusters as usize {
+                let l = neighboring_cluster[k];
+                let l_idx = l as usize;
+                debug_assert!(l_idx < edge_weight_per_cluster.len());
+                debug_assert!(l_idx < cluster_weight.len());
+                let quality_function = unsafe {
+                    *edge_weight_per_cluster.get_unchecked(l_idx)
+                        - node_w * *cluster_weight.get_unchecked(l_idx) * self.resolution
+                };
                 if (quality_function > max_quality_function)
                     || ((quality_function == max_quality_function) && (l < best_cluster))
                 {
                     best_cluster = l;
                     max_quality_function = quality_function;
                 }
-                edge_weight_per_cluster[l as usize] = 0.0;
+                unsafe {
+                    *edge_weight_per_cluster.get_unchecked_mut(l_idx) = 0.0;
+                }
             }
 
             if max_quality_function == 0.0 {
@@ -133,12 +149,12 @@ impl VOSClusteringTechnique {
             }
 
             let best = best_cluster as usize;
-            cluster_weight[best] += self.network.node_weight[j as usize];
+            cluster_weight[best] += node_w;
             n_nodes_per_cluster[best] += 1;
-            if best_cluster == self.clustering.cluster[j as usize] {
+            if best_cluster == self.clustering.cluster[ju] {
                 n_stable_nodes += 1;
             } else {
-                self.clustering.cluster[j as usize] = best_cluster;
+                self.clustering.cluster[ju] = best_cluster;
                 n_stable_nodes = 1;
                 update = true;
             }

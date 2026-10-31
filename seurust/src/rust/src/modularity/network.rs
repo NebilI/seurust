@@ -8,6 +8,8 @@ pub struct Network {
     pub neighbor: Vec<i32>,
     pub edge_weight: Vec<f64>,
     pub total_edge_weight_self_links: f64,
+    /// `sum(edge_weight) / 2`, cached so quality evaluations skip a scan.
+    pub total_edge_weight: f64,
 }
 
 impl Network {
@@ -20,7 +22,26 @@ impl Network {
             neighbor: Vec::new(),
             edge_weight: Vec::new(),
             total_edge_weight_self_links: 0.0,
+            total_edge_weight: 0.0,
         }
+    }
+
+    fn node_weights_from_edges(
+        n_nodes: i32,
+        first_neighbor_index: &[i32],
+        edge_weight: &[f64],
+    ) -> Vec<f64> {
+        (0..n_nodes as usize)
+            .map(|i| {
+                let start = first_neighbor_index[i] as usize;
+                let end = first_neighbor_index[i + 1] as usize;
+                edge_weight[start..end].iter().sum()
+            })
+            .collect()
+    }
+
+    fn cached_total_edge_weight(edge_weight: &[f64]) -> f64 {
+        edge_weight.iter().sum::<f64>() / 2.0
     }
 
     pub fn from_adjacency(
@@ -39,17 +60,9 @@ impl Network {
         let node_weight_vec = if let Some(nw) = node_weight {
             nw.to_vec()
         } else {
-            let net = Self {
-                n_nodes,
-                n_edges,
-                node_weight: Vec::new(),
-                first_neighbor_index: first_neighbor_index.clone(),
-                neighbor: neighbor.clone(),
-                edge_weight: edge_weight_vec.clone(),
-                total_edge_weight_self_links: 0.0,
-            };
-            net.get_total_edge_weight_per_node()
+            Self::node_weights_from_edges(n_nodes, &first_neighbor_index, &edge_weight_vec)
         };
+        let total_edge_weight = Self::cached_total_edge_weight(&edge_weight_vec);
 
         Self {
             n_nodes,
@@ -59,6 +72,7 @@ impl Network {
             neighbor,
             edge_weight: edge_weight_vec,
             total_edge_weight_self_links: 0.0,
+            total_edge_weight,
         }
     }
 
@@ -104,17 +118,9 @@ impl Network {
         let node_weight_vec = if let Some(nw) = node_weight {
             nw.to_vec()
         } else {
-            let net = Self {
-                n_nodes,
-                n_edges,
-                node_weight: Vec::new(),
-                first_neighbor_index: first_neighbor_index.clone(),
-                neighbor: neighbor.clone(),
-                edge_weight: edge_weight2.clone(),
-                total_edge_weight_self_links,
-            };
-            net.get_total_edge_weight_per_node()
+            Self::node_weights_from_edges(n_nodes, &first_neighbor_index, &edge_weight2)
         };
+        let total_edge_weight = Self::cached_total_edge_weight(&edge_weight2);
 
         Self {
             n_nodes,
@@ -124,6 +130,7 @@ impl Network {
             neighbor,
             edge_weight: edge_weight2,
             total_edge_weight_self_links,
+            total_edge_weight,
         }
     }
 
@@ -140,7 +147,7 @@ impl Network {
     }
 
     pub fn get_total_edge_weight(&self) -> f64 {
-        self.edge_weight.iter().sum::<f64>() / 2.0
+        self.total_edge_weight
     }
 
     pub fn get_total_edge_weight_node(&self, node: i32) -> f64 {
@@ -228,6 +235,8 @@ impl Network {
             reduced_network_neighbor1[..reduced_network.n_edges as usize].to_vec();
         reduced_network.edge_weight =
             reduced_network_edge_weight1[..reduced_network.n_edges as usize].to_vec();
+        reduced_network.total_edge_weight =
+            Self::cached_total_edge_weight(&reduced_network.edge_weight);
         reduced_network
     }
 
@@ -241,6 +250,7 @@ impl Network {
             neighbor: self.neighbor.clone(),
             edge_weight: self.edge_weight.clone(),
             total_edge_weight_self_links: self.total_edge_weight_self_links,
+            total_edge_weight: self.total_edge_weight,
         }
     }
 
@@ -292,6 +302,7 @@ impl Network {
         }
 
         subnetwork.total_edge_weight_self_links = 0.0;
+        subnetwork.total_edge_weight = Self::cached_total_edge_weight(&subnetwork.edge_weight);
         subnetwork
     }
 }
@@ -480,4 +491,31 @@ pub fn read_input_file(fname: &str, modularity_function: i32) -> Result<Network,
         modularity_function,
         n_nodes,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_adjacency_derives_node_weights_and_caches_total() {
+        let first = vec![0, 1, 2];
+        let neighbor = vec![1, 0];
+        let ew = vec![2.0, 2.0];
+        let net = Network::from_adjacency(2, None, first, neighbor, Some(&ew));
+        assert_eq!(net.node_weight, vec![2.0, 2.0]);
+        assert!((net.get_total_edge_weight() - 2.0).abs() < 1e-12);
+        assert_eq!(net.get_total_edge_weight_per_node(), vec![2.0, 2.0]);
+    }
+
+    #[test]
+    fn from_adjacency_keeps_supplied_node_weights() {
+        let first = vec![0, 1, 2];
+        let neighbor = vec![1, 0];
+        let ew = vec![2.0, 2.0];
+        let nw = vec![1.0, 1.0];
+        let net = Network::from_adjacency(2, Some(&nw), first, neighbor, Some(&ew));
+        assert_eq!(net.node_weight, nw);
+        assert!((net.get_total_edge_weight() - 2.0).abs() < 1e-12);
+    }
 }
