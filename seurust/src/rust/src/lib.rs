@@ -581,8 +581,8 @@ fn cca_crossprod_multiply(
     right: RMatrix<f64>,
     x: Doubles,
 ) -> extendr_api::Result<Doubles> {
-    let x = vec_from_doubles(&x);
-    cca_crossprod_multiply_impl(&left, &right, &x)
+    let x = x.as_robj().as_real_slice().expect("numeric x");
+    cca_crossprod_multiply_impl(&left, &right, x)
 }
 
 #[extendr]
