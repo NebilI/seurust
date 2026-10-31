@@ -37,7 +37,7 @@ use snn::{
     write_edge_file_impl,
 };
 use sparse::{
-    doubles_from_slice, strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView,
+    doubles_uninit, strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView,
     CsrView,
 };
 use stats::{row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl};
@@ -67,25 +67,14 @@ fn log_norm(
     scale_factor: i32,
     display_progress: bool,
 ) -> Doubles {
-    let col_sums = {
-        let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
-        view.col_sums()
-    };
-    let p_slice = p.as_robj().as_integer_slice().expect("integer p");
-    let x_in = x.as_robj().as_real_slice().expect("numeric x");
-    let mut out = doubles_from_slice(x_in);
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    let _ = display_progress;
+    let mut out = doubles_uninit(view.x.len());
     let x_out = out
         .as_robj_mut()
         .as_real_slice_mut()
         .expect("numeric output");
-    log_norm_impl(
-        x_out,
-        p_slice,
-        &col_sums,
-        ncols as usize,
-        scale_factor,
-        display_progress,
-    );
+    log_norm_impl(view.x, x_out, view.p, view.ncols as usize, scale_factor);
     out
 }
 

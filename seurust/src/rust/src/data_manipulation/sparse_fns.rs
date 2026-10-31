@@ -13,42 +13,51 @@ fn expm1(x: f64) -> f64 {
     x.exp_m1()
 }
 
-/// Normalize CSC `x` values in place.
-pub fn log_norm_impl(
-    x: &mut [f64],
-    p: &[i32],
-    col_sums: &[f64],
-    ncols: usize,
-    scale_factor: i32,
-    _display_progress: bool,
-) {
-    let scale = scale_factor as f64;
-
-    for col in 0..ncols {
-        for idx in p[col] as usize..p[col + 1] as usize {
-            x[idx] = log1p(x[idx] / col_sums[col] * scale);
-        }
+fn log_norm_column(values: &mut [f64], scale: f64) {
+    let sum: f64 = values.iter().sum();
+    for value in values.iter_mut() {
+        *value = log1p(*value / sum * scale);
     }
 }
 
-pub fn log_norm_owned_impl(mat: &mut CscSlots, scale_factor: i32, display_progress: bool) {
-    let view = CscView {
-        x: &mat.x,
-        i: &mat.i,
-        p: &mat.p,
-        nrows: mat.nrows,
-        ncols: mat.ncols,
-    };
-    let col_sums = view.col_sums();
+/// Write `log1p(x / colsum * scale)` for each CSC column into `x_out`.
+///
+/// Each column is summed and transformed before the next, so the arithmetic
+/// matches the previous two-pass version. Columns are disjoint in `x_out`,
+/// so they can be filled in parallel.
+pub fn log_norm_impl(x_in: &[f64], x_out: &mut [f64], p: &[i32], ncols: usize, scale_factor: i32) {
+    debug_assert_eq!(x_in.len(), x_out.len());
+    let scale = scale_factor as f64;
+    let out_addr = x_out.as_mut_ptr() as usize;
+    (0..ncols).into_par_iter().for_each(|col| {
+        let start = p[col] as usize;
+        let end = p[col + 1] as usize;
+        let src = &x_in[start..end];
+        let dst = unsafe {
+            std::slice::from_raw_parts_mut((out_addr as *mut f64).add(start), end - start)
+        };
+        let sum: f64 = src.iter().sum();
+        for (dest, &value) in dst.iter_mut().zip(src) {
+            *dest = log1p(value / sum * scale);
+        }
+    });
+}
+
+pub fn log_norm_in_place(x: &mut [f64], p: &[i32], ncols: usize, scale_factor: i32) {
+    let scale = scale_factor as f64;
+    let addr = x.as_mut_ptr() as usize;
+    (0..ncols).into_par_iter().for_each(|col| {
+        let start = p[col] as usize;
+        let end = p[col + 1] as usize;
+        let values =
+            unsafe { std::slice::from_raw_parts_mut((addr as *mut f64).add(start), end - start) };
+        log_norm_column(values, scale);
+    });
+}
+
+pub fn log_norm_owned_impl(mat: &mut CscSlots, scale_factor: i32, _display_progress: bool) {
     let ncols = mat.ncols as usize;
-    log_norm_impl(
-        &mut mat.x,
-        &mat.p,
-        &col_sums,
-        ncols,
-        scale_factor,
-        display_progress,
-    );
+    log_norm_in_place(&mut mat.x, &mat.p, ncols, scale_factor);
 }
 
 pub fn run_umi_sampling_impl(mut mat: CscSlots, sample_val: i32, upsample: bool) -> CscSlots {
@@ -889,6 +898,29 @@ mod tests {
         let mut mat = toy_csc();
         log_norm_owned_impl(&mut mat, 10_000, false);
         assert!(mat.x.iter().all(|v| v.is_finite() && *v >= 0.0));
+        // One nonzero per column: log1p(value / value * 10000) = log1p(10000).
+        let expected = 10_000f64.ln_1p();
+        for value in &mat.x {
+            assert!((value - expected).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn log_norm_fuses_sum_and_matches_two_pass() {
+        let x_in = vec![1.0, 3.0, 2.0, 4.0];
+        let p = vec![0, 2, 4];
+        let mut two_pass = x_in.clone();
+        let sums = [1.0 + 3.0, 2.0 + 4.0];
+        for col in 0..2 {
+            for idx in p[col] as usize..p[col + 1] as usize {
+                two_pass[idx] = (two_pass[idx] / sums[col] * 10_000.0_f64).ln_1p();
+            }
+        }
+        let mut fused = vec![0.0; x_in.len()];
+        log_norm_impl(&x_in, &mut fused, &p, 2, 10_000);
+        for (got, expected) in fused.iter().zip(two_pass) {
+            assert!((got - expected).abs() < 1e-15);
+        }
     }
 
     #[test]
