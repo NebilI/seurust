@@ -46,11 +46,16 @@ Create the crates.io token at https://crates.io/settings/tokens (needs `publish-
 
 ### Release checklist
 
+Full process: [`RELEASING.md`](../RELEASING.md). Short form:
+
 1. If Rust deps changed, refresh vendoring via Docker:
    `docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/scripts/vendor-seurust.sh`
-2. Bump `Version` in [`seurust/DESCRIPTION`](../seurust/DESCRIPTION) and `version` in
-   [`seurust/src/rust/Cargo.toml`](../seurust/src/rust/Cargo.toml) together.
-3. Update [`seurust/NEWS.md`](../seurust/NEWS.md).
-4. Merge a version bump to `main`. That tags the release and publishes the crate
-   plus the r-universe package. To republish the current version without a new
-   commit, use **Actions → Release seurust → Run workflow**.
+2. Draft the top `# seurust X.Y.Z` section in [`seurust/NEWS.md`](../seurust/NEWS.md)
+   (every improvement and fix for that version).
+3. Run `scripts/prepare-release.sh X.Y.Z` to bump
+   [`seurust/DESCRIPTION`](../seurust/DESCRIPTION),
+   [`seurust/src/rust/Cargo.toml`](../seurust/src/rust/Cargo.toml), and
+   `Cargo.lock`, and to verify the NEWS section extracts cleanly.
+4. Merge the version bump to `main`. That tags the release (notes from NEWS),
+   publishes the crate, and updates r-universe. To republish the current
+   version without a new commit, use **Actions → Release seurust → Run workflow**.

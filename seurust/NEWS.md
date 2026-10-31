@@ -1,3 +1,64 @@
+# seurust 0.3.0
+
+Performance release: seven kernel optimizations from
+[`OPTIMIZATION_ROADMAP.md`](https://github.com/NebilI/seurust/blob/main/OPTIMIZATION_ROADMAP.md),
+plus a single publish path for GitHub Releases, crates.io, and r-universe.
+Public R signatures and per-entry arithmetic are unchanged from **0.2.0**
+(results stay bit-identical or within the same numeric-error bands as before).
+
+## Improvements
+
+* **In-place dense writes** — Large dense outputs
+  (`Standardize`, `FastSparseRowScale`, `FastDenseRowScale`,
+  `FastSparseRowScaleWithKnownStats`, `SCTPearsonResidualMatrix`,
+  `EigenGramPCA`, `GraphToNeighborHelper`, `LogNorm`, and related helpers)
+  fill uninitialized R allocations directly instead of building a Rust `Vec`
+  and copying it on one thread.
+* **Column-parallel `FastSparseRowScaleWithKnownStats`** — Precomputes per-row
+  means, inverse sdevs, and zero-column values, then fills each output column
+  in parallel from CSC nonzeros (drops the serial `RowIndex` and gene-strided
+  writes).
+* **Fused, parallel `LogNorm`** — Sums each CSC column and writes
+  `log1p(x / colsum * scale)` in the same pass, with columns on rayon and an
+  uninitialized output buffer (no extra copy or separate `col_sums` scan).
+* **Faster `ComputeSNN`** — Builds a flat `n × k` neighbor index with `u32`
+  ids, inverts it once, prunes SNN edges before the per-column sort, and writes
+  integer CSC slots into uninitialized R allocations.
+* **Leaner `FindWeightsC`** — Keys integration rownames by interned `CHARSXP`,
+  buckets weights by cell, applies Eigen last-wins with a stable per-column
+  sort, and returns a `dgCMatrix` from Rust (no `String` / `HashMap` / `sprs`
+  path; R wrapper skips `methods::new`).
+* **Parallel multi-resolution modularity** —
+  `RunModularityClusteringCpp_multi` runs independent resolutions with rayon
+  (each still starts its own `JavaRandom`, so labels stay bit-identical). The
+  Louvain local-moving loop caches total edge weight, derives node weights from
+  borrowed slices, and walks neighbor ranges with slice iterators.
+* **Serial fast path for tiny kernels** — Shared helper skips rayon when work
+  is under a 64k-op floor. At benchmark size that covers
+  `CcaCrossprodMultiply`, `CountAnchorSharedNeighbors`, `FastCovMats` scaling,
+  and loading-sign flips; large kernels stay parallel.
+* **Optimization roadmap** — Added `OPTIMIZATION_ROADMAP.md` and
+  `scripts/rust-prototype-bench/` so remaining kernel work is measured against
+  the seurust 0.2.0 / Seurat 5.6.0 baseline.
+
+## Fixes / packaging
+
+* **One release workflow** — Dropped the CRAN submit path and separate
+  crates.io / r-universe Actions. **Release seurust** now creates the GitHub
+  Release, publishes the Rust crate, builds the R tarball, and upserts
+  r-universe in one job graph.
+* **Release notes from NEWS** — GitHub Release bodies are generated from the
+  matching `# seurust <version>` section in this file (see
+  [`RELEASING.md`](https://github.com/NebilI/seurust/blob/main/RELEASING.md)
+  and `scripts/prepare-release.sh`).
+
+## Compatibility
+
+Requires **Seurat (>= 5.6.0)** for the same kernel surface as 0.2.0.
+`AnnoySearchCpp` remains unported. `WriteEdgeFile`, `DirectSNNToFile`, and
+`SparseRowVar2` remain available in seurust even though Seurat 5.6.0 dropped
+those R exports.
+
 # seurust 0.2.0
 
 Ported the native kernels added in **Seurat 5.6.0** and refreshed parity tests
