@@ -16,6 +16,7 @@ install.packages(
 ## crates.io
 
 This crate is published to [crates.io](https://crates.io/crates/seurust) on GitHub
-Releases via `.github/workflows/release-seurust.yaml`. It is primarily
-consumed as an R extension (`crate-type = ["rlib", "staticlib"]`), not as a
-standalone Rust library API.
+Releases via `.github/workflows/release-seurust.yaml` (release notes from
+`seurust/NEWS.md`; see `RELEASING.md`). It is primarily consumed as an R
+extension (`crate-type = ["rlib", "staticlib"]`), not as a standalone Rust
+library API.

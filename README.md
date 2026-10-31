@@ -37,6 +37,8 @@ Seurat remains the user-facing analysis package. **seurust** is the native backe
 | Rust crate | [`seurust/src/rust/`](seurust/src/rust/) |
 | Offline Rust crates | [`seurust/src/rust/vendor.tar.xz`](seurust/src/rust/vendor.tar.xz) |
 | Kernel benchmark | [`scripts/bench-all-kernels.R`](scripts/bench-all-kernels.R) |
+| Release process | [`RELEASING.md`](RELEASING.md) |
+| Release helpers | [`scripts/prepare-release.sh`](scripts/prepare-release.sh), [`scripts/extract-release-notes.sh`](scripts/extract-release-notes.sh) |
 | Release-tag cleanup | [`scripts/prune-seurust-releases.sh`](scripts/prune-seurust-releases.sh) |
 | Docker development images | [`docker/`](docker/) |
 | r-universe registry notes | [`r-universe/`](r-universe/) |
@@ -256,7 +258,7 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 
 Full developer docs: [`docker/README.md`](docker/README.md).
 
-Publishing the Rust crate and the r-universe R package is `release-seurust` (a push to `main` that changes `seurust/DESCRIPTION`, or **Actions → Release seurust**). That workflow creates the GitHub Release, publishes to crates.io, and updates `NebilI/NebilI.r-universe.dev`. Setup notes: [`r-universe/README.md`](r-universe/README.md).
+Publishing the Rust crate and the r-universe R package is `release-seurust` (a push to `main` that changes `seurust/DESCRIPTION`, or **Actions → Release seurust**). That workflow creates the GitHub Release with notes from [`seurust/NEWS.md`](seurust/NEWS.md), publishes to crates.io, and updates `NebilI/NebilI.r-universe.dev`. How to cut a release: [`RELEASING.md`](RELEASING.md). Setup notes: [`r-universe/README.md`](r-universe/README.md).
 
 ---
 

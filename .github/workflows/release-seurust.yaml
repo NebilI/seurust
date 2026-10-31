@@ -1,10 +1,10 @@
 name: Release seurust
 
 # Publishes the version in seurust/DESCRIPTION to GitHub Releases, crates.io,
-# and r-universe. An existing release tag is reused.
-# Run it from the Actions tab (Release seurust → Run workflow) to republish
-# the current version. A push to main that changes seurust/DESCRIPTION does
-# the same.
+# and r-universe. Release notes come from seurust/NEWS.md (see RELEASING.md).
+# An existing release tag is reused. Run it from the Actions tab
+# (Release seurust → Run workflow) to republish the current version. A push
+# to main that changes seurust/DESCRIPTION does the same.
 
 on:
   workflow_dispatch:
@@ -47,10 +47,12 @@ jobs:
             echo "Release ${tag} already exists."
             exit 0
           fi
+          notes_file="$(mktemp)"
+          bash scripts/extract-release-notes.sh "${version}" >"${notes_file}"
           gh release create "${tag}" \
             --target "${GITHUB_SHA}" \
             --title "seurust ${version}" \
-            --notes "seurust ${version}. See seurust/NEWS.md."
+            --notes-file "${notes_file}"
 
   publish-crate:
     name: Publish Rust crate
