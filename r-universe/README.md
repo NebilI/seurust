@@ -32,7 +32,21 @@ publish workflow. A push to `main` that changes `seurust/DESCRIPTION`, or
    `seurust` object in `packages.json` on `NebilI/NebilI.r-universe.dev` so
    `branch` is the release tag. Other entries stay, in order.
 
-`NebilI.r-universe.dev` is shared by every package in this universe. [`scripts/sync-r-universe.sh`](../scripts/sync-r-universe.sh) fetches the current array, replaces only the object whose `package` is `seurust` (`url` `https://github.com/NebilI/seurust`, `subdir` `seurust`), and keeps everything else. It creates a one-element array only when `packages.json` is missing (HTTP 404). Any other fetch failure, or a file that is not a JSON array, fails the job and does not commit. A run that does not change the seurust entry does not commit.
+`NebilI.r-universe.dev` is shared by every package in this universe (today
+**seurust** and **harmorust**). [`scripts/sync-r-universe.sh`](../scripts/sync-r-universe.sh)
+fetches the current array, replaces only the object whose `package` is
+`seurust` (`url` `https://github.com/NebilI/seurust`, `subdir` `seurust`), and
+keeps every other entry unchanged — including `harmorust`. It creates a
+one-element array only when `packages.json` is missing (HTTP 404). Any other
+fetch failure, a non-array file, or a result that would drop/rewrite a
+non-seurust package fails the job and does not commit. A run that does not
+change the seurust entry does not commit.
+
+Local regression check:
+
+```sh
+bash scripts/test-sync-r-universe.sh
+```
 
 ### One-time GitHub secrets (in `NebilI/seurust`)
 

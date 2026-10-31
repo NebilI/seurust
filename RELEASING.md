@@ -63,5 +63,6 @@ Always keep DESCRIPTION and the Rust crate version identical.
 |--------|------|
 | [`scripts/prepare-release.sh`](scripts/prepare-release.sh) | Bump versions + require NEWS |
 | [`scripts/extract-release-notes.sh`](scripts/extract-release-notes.sh) | Print NEWS section for GitHub |
-| [`scripts/sync-r-universe.sh`](scripts/sync-r-universe.sh) | Upsert r-universe registry entry |
+| [`scripts/sync-r-universe.sh`](scripts/sync-r-universe.sh) | Upsert seurust only; preserve harmorust and neighbors |
+| [`scripts/test-sync-r-universe.sh`](scripts/test-sync-r-universe.sh) | Regression: harmorust must survive a seurust bump |
 | [`scripts/prune-seurust-releases.sh`](scripts/prune-seurust-releases.sh) | Clean stale `v0.1.*` tags if needed |
