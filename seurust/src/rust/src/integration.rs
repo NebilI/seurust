@@ -1,8 +1,7 @@
-use crate::sparse::{csc_from_triplets, CscSlots, CscView};
+use crate::sparse::{CscSlots, CscView};
 use crate::utils::sort_indexes;
 use extendr_api::prelude::*;
 use rayon::prelude::*;
-use std::collections::HashMap;
 
 fn matrix_value(data: &[f64], nrows: usize, row: usize, col: usize) -> f64 {
     data[row + col * nrows]
@@ -125,11 +124,217 @@ pub fn count_anchor_shared_neighbors_impl(
     Integers::from_values(scores)
 }
 
+/// Rows of `integration_matrix_rownames` grouped by interned CHARSXP.
+struct NameRows {
+    keys: Vec<usize>,
+    ptr: Vec<u32>,
+    rows: Vec<u32>,
+}
+
+impl NameRows {
+    fn from_names(names: &Strings) -> Self {
+        let mut keyed: Vec<(usize, u32)> = names
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| (crate::data_manipulation::char_key(name), idx as u32))
+            .collect();
+        keyed.sort_unstable_by_key(|&(key, idx)| (key, idx));
+
+        let mut keys = Vec::new();
+        let mut ptr = vec![0u32];
+        let mut rows = Vec::with_capacity(keyed.len());
+        let mut pos = 0usize;
+        while pos < keyed.len() {
+            let key = keyed[pos].0;
+            keys.push(key);
+            while pos < keyed.len() && keyed[pos].0 == key {
+                rows.push(keyed[pos].1);
+                pos += 1;
+            }
+            ptr.push(rows.len() as u32);
+        }
+        Self { keys, ptr, rows }
+    }
+
+    fn rows_for(&self, key: usize) -> &[u32] {
+        match self.keys.binary_search(&key) {
+            Ok(uid) => {
+                let lo = self.ptr[uid] as usize;
+                let hi = self.ptr[uid + 1] as usize;
+                &self.rows[lo..hi]
+            }
+            Err(_) => &[],
+        }
+    }
+}
+
+fn weight_from_dist(dist: f64, score: f64, sd_term: f64) -> f64 {
+    1.0 - (-dist * score / sd_term).exp()
+}
+
+/// Collect at most `k_max` (row, weight) pairs for one query cell.
+fn cell_weight_entries(
+    cell: usize,
+    dist_data: &[f64],
+    dist_nrows: usize,
+    index_data: &[f64],
+    index_nrows: usize,
+    k_max: usize,
+    cell_map: &[Vec<u32>],
+    anchor_score: &[f64],
+    sd_term: f64,
+) -> Vec<(u32, f64)> {
+    let mut entries = Vec::with_capacity(k_max);
+    let mut k = 0usize;
+    for neigh in 0..k_max {
+        if k >= k_max {
+            break;
+        }
+        let anchor_idx = matrix_value(index_data, index_nrows, cell, neigh) as usize - 1;
+        let Some(mnn_idx) = cell_map.get(anchor_idx) else {
+            continue;
+        };
+        let dist = matrix_value(dist_data, dist_nrows, cell, neigh);
+        for &row in mnn_idx {
+            if k >= k_max {
+                break;
+            }
+            entries.push((
+                row,
+                weight_from_dist(dist, anchor_score[row as usize], sd_term),
+            ));
+            k += 1;
+        }
+    }
+    entries
+}
+
+/// Eigen `setFromTriplets(..., [](a, b) { return b; })`: keep the last value
+/// for each row, then sort rows. `sort_by_key` is stable.
+fn last_wins_sorted(entries: &mut Vec<(u32, f64)>) {
+    entries.sort_by_key(|&(row, _)| row);
+    let mut write = 0usize;
+    for read in 0..entries.len() {
+        if read + 1 == entries.len() || entries[read].0 != entries[read + 1].0 {
+            entries[write] = entries[read];
+            write += 1;
+        }
+    }
+    entries.truncate(write);
+}
+
+fn normalize_column(entries: &[(u32, f64)]) -> (Vec<i32>, Vec<f64>) {
+    let col_sum: f64 = entries.iter().map(|&(_, val)| val).sum();
+    let mut i = Vec::with_capacity(entries.len());
+    let mut x = Vec::with_capacity(entries.len());
+    for &(row, val) in entries {
+        i.push(row as i32);
+        x.push(val / col_sum);
+    }
+    (i, x)
+}
+
+fn find_weights_from_parts(
+    cells2: &[f64],
+    dist_data: &[f64],
+    dist_nrows: usize,
+    index_data: &[f64],
+    index_nrows: usize,
+    index_ncols: usize,
+    cell_map: &[Vec<u32>],
+    anchor_score: &[f64],
+    n_rows: usize,
+    n_cols: usize,
+    min_dist: f64,
+    sd: f64,
+) -> CscSlots {
+    let sd_term = (2.0 / sd).powi(2);
+    let mut buckets = vec![Vec::<(u32, f64)>::new(); n_cols];
+    for &cell_f in cells2 {
+        let cell = cell_f as usize;
+        if cell >= n_cols {
+            continue;
+        }
+        let extra = cell_weight_entries(
+            cell,
+            dist_data,
+            dist_nrows,
+            index_data,
+            index_nrows,
+            index_ncols,
+            cell_map,
+            anchor_score,
+            sd_term,
+        );
+        buckets[cell].extend(extra);
+    }
+
+    if min_dist == 0.0 {
+        let mut i = Vec::new();
+        let mut x = Vec::new();
+        let mut p = Vec::with_capacity(n_cols + 1);
+        for col in 0..n_cols {
+            p.push(x.len() as i32);
+            last_wins_sorted(&mut buckets[col]);
+            let (i_col, x_col) = normalize_column(&buckets[col]);
+            i.extend(i_col);
+            x.extend(x_col);
+        }
+        p.push(x.len() as i32);
+        CscSlots {
+            x,
+            i,
+            p,
+            nrows: n_rows as i32,
+            ncols: n_cols as i32,
+        }
+    } else {
+        let mut dense = vec![0.0; n_rows * n_cols];
+        for col in 0..n_cols {
+            for row in 0..n_rows {
+                dense[row + col * n_rows] = weight_from_dist(min_dist, anchor_score[row], sd_term);
+            }
+        }
+        for (col, entries) in buckets.iter().enumerate() {
+            for &(row, val) in entries {
+                dense[row as usize + col * n_rows] = val;
+            }
+        }
+
+        let mut x = Vec::with_capacity(n_rows * n_cols);
+        let mut i = Vec::with_capacity(n_rows * n_cols);
+        let mut p = Vec::with_capacity(n_cols + 1);
+        for col in 0..n_cols {
+            p.push(x.len() as i32);
+            let mut col_sum = 0.0;
+            let base = col * n_rows;
+            for row in 0..n_rows {
+                col_sum += dense[base + row];
+            }
+            for row in 0..n_rows {
+                let value = dense[base + row] / col_sum;
+                if value != 0.0 {
+                    i.push(row as i32);
+                    x.push(value);
+                }
+            }
+        }
+        p.push(x.len() as i32);
+        CscSlots {
+            x,
+            i,
+            p,
+            nrows: n_rows as i32,
+            ncols: n_cols as i32,
+        }
+    }
+}
+
 pub fn find_weights_impl(
-    cells2: &[i32],
+    cells2: &[f64],
     distances: &RMatrix<f64>,
-    anchor_cells2: &[String],
-    integration_matrix_rownames: &[String],
+    anchor_cells2: &Strings,
+    integration_matrix_rownames: &Strings,
     cell_index: &RMatrix<f64>,
     anchor_score: &[f64],
     min_dist: f64,
@@ -144,103 +349,29 @@ pub fn find_weights_impl(
         .as_robj()
         .as_real_slice()
         .expect("numeric cell_index");
-    let dist_nrows = distances.nrows();
-    let index_nrows = cell_index.nrows();
-    let index_ncols = cell_index.ncols();
-    let n_rows = integration_matrix_rownames.len();
-    let n_cols = cells2.len();
-    let sd_term = (2.0 / sd).powi(2);
-
-    let mut rows_by_name: HashMap<&str, Vec<usize>> = HashMap::new();
-    for (idx, rowname) in integration_matrix_rownames.iter().enumerate() {
-        rows_by_name.entry(rowname.as_str()).or_default().push(idx);
-    }
-
-    let mut cell_map: Vec<Vec<usize>> = Vec::with_capacity(anchor_cells2.len());
-    for name in anchor_cells2 {
-        cell_map.push(rows_by_name.get(name.as_str()).cloned().unwrap_or_default());
-    }
-
-    let mut triplets: Vec<(usize, usize, f64)> = Vec::new();
-    for &cell in cells2 {
-        let cell = cell as usize;
-        let n_idx = index_ncols;
-        let mut k = 0usize;
-        for i in 0..n_idx {
-            if k >= n_idx {
-                break;
-            }
-            let anchor_idx = matrix_value(index_data, index_nrows, cell, i) as usize - 1;
-            if let Some(mnn_idx) = cell_map.get(anchor_idx) {
-                for &row in mnn_idx {
-                    if k >= n_idx {
-                        break;
-                    }
-                    let dist = matrix_value(dist_data, dist_nrows, cell, i);
-                    let to_add = 1.0 - (-dist * anchor_score[row] / sd_term).exp();
-                    triplets.push((row, cell, to_add));
-                    k += 1;
-                }
-            }
-        }
-    }
-
-    if min_dist == 0.0 {
-        // Eigen setFromTriplets uses last-wins for duplicate (row, col) entries.
-        let mut last_wins: HashMap<(usize, usize), f64> = HashMap::new();
-        for &(row, col, val) in &triplets {
-            last_wins.insert((row, col), val);
-        }
-        let sparse_triplets: Vec<(usize, usize, f64)> =
-            last_wins.into_iter().map(|((r, c), v)| (r, c, v)).collect();
-        let mut mat = csc_from_triplets(n_rows, n_cols, &sparse_triplets);
-        let col_sums = mat.col_sums();
-        for col in 0..n_cols {
-            for idx in mat.p[col] as usize..mat.p[col + 1] as usize {
-                mat.x[idx] /= col_sums[col];
-            }
-        }
-        mat
-    } else {
-        let mut dense = vec![0.0; n_rows * n_cols];
-        for col in 0..n_cols {
-            for row in 0..n_rows {
-                dense[row + col * n_rows] = 1.0 - (-min_dist * anchor_score[row] / sd_term).exp();
-            }
-        }
-        for &(row, col, val) in &triplets {
-            dense[row + col * n_rows] = val;
-        }
-        let mut col_sums = vec![0.0; n_cols];
-        for col in 0..n_cols {
-            for row in 0..n_rows {
-                col_sums[col] += dense[row + col * n_rows];
-            }
-        }
-
-        let mut x = Vec::with_capacity(n_rows * n_cols);
-        let mut i = Vec::with_capacity(n_rows * n_cols);
-        let mut p = Vec::with_capacity(n_cols + 1);
-        for col in 0..n_cols {
-            p.push(x.len() as i32);
-            for row in 0..n_rows {
-                let value = dense[row + col * n_rows] / col_sums[col];
-                if value != 0.0 {
-                    i.push(row as i32);
-                    x.push(value);
-                }
-            }
-        }
-        p.push(x.len() as i32);
-
-        CscSlots {
-            x,
-            i,
-            p,
-            nrows: n_rows as i32,
-            ncols: n_cols as i32,
-        }
-    }
+    let groups = NameRows::from_names(integration_matrix_rownames);
+    let cell_map: Vec<Vec<u32>> = anchor_cells2
+        .iter()
+        .map(|name| {
+            groups
+                .rows_for(crate::data_manipulation::char_key(name))
+                .to_vec()
+        })
+        .collect();
+    find_weights_from_parts(
+        cells2,
+        dist_data,
+        distances.nrows(),
+        index_data,
+        cell_index.nrows(),
+        cell_index.ncols(),
+        &cell_map,
+        anchor_score,
+        integration_matrix_rownames.len(),
+        cells2.len(),
+        min_dist,
+        sd,
+    )
 }
 
 pub fn integrate_data_impl(
@@ -474,6 +605,129 @@ pub fn score_helper_impl(
 mod tests {
     use super::*;
     use crate::sparse::CscSlots;
+
+    fn csc_to_triplets(slots: &CscSlots) -> Vec<(usize, usize, f64)> {
+        let mut out = Vec::with_capacity(slots.x.len());
+        for col in 0..slots.ncols as usize {
+            for idx in slots.p[col] as usize..slots.p[col + 1] as usize {
+                out.push((slots.i[idx] as usize, col, slots.x[idx]));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn last_wins_keeps_latest_duplicate_row() {
+        let mut entries = vec![(1, 0.1), (0, 0.2), (1, 0.9), (0, 0.4)];
+        last_wins_sorted(&mut entries);
+        assert_eq!(entries, vec![(0, 0.4), (1, 0.9)]);
+    }
+
+    #[test]
+    fn find_weights_last_wins_and_normalizes() {
+        // One cell, k=3 neighbors. Anchor 0 maps to rows 0 and 1; only the
+        // first neighbor is used for both rows, then k hits the cap... wait:
+        // k_max=2 so neighbor 0 contributes rows 0 and 1, then k==2.
+        let cells2 = [0.0];
+        // distances: 1 cell × 2 neighbors, column-major
+        let dist_data = [0.5, 1.5];
+        // cell_index: neighbor 0 -> anchor 1 (1-based), neighbor 1 unused
+        let index_data = [1.0, 2.0];
+        // anchor 0 -> rows 0 then 1 (duplicate name group)
+        let cell_map = vec![vec![0, 1], vec![1]];
+        let anchor_score = [1.0, 0.5];
+        let sd = 1.0;
+        let sd_term = (2.0_f64 / sd).powi(2);
+        let w0 = weight_from_dist(0.5, 1.0, sd_term);
+        let w1 = weight_from_dist(0.5, 0.5, sd_term);
+        let slots = find_weights_from_parts(
+            &cells2,
+            &dist_data,
+            1,
+            &index_data,
+            1,
+            2,
+            &cell_map,
+            &anchor_score,
+            2,
+            1,
+            0.0,
+            sd,
+        );
+        let got = csc_to_triplets(&slots);
+        let sum = w0 + w1;
+        assert_eq!(got.len(), 2);
+        assert_eq!((got[0].0, got[0].1), (0, 0));
+        assert_eq!((got[1].0, got[1].1), (1, 0));
+        assert!((got[0].2 - w0 / sum).abs() < 1e-12);
+        assert!((got[1].2 - w1 / sum).abs() < 1e-12);
+    }
+
+    #[test]
+    fn find_weights_duplicate_row_keeps_last() {
+        // Same row emitted twice for one cell; last value wins.
+        let cells2 = [0.0];
+        let dist_data = [0.2, 0.8];
+        // both neighbors point at anchor 0, which maps to row 0 only
+        let index_data = [1.0, 1.0];
+        let cell_map = vec![vec![0]];
+        let anchor_score = [1.0];
+        let sd = 1.0;
+        let sd_term = (2.0_f64 / sd).powi(2);
+        let last = weight_from_dist(0.8, 1.0, sd_term);
+        let slots = find_weights_from_parts(
+            &cells2,
+            &dist_data,
+            1,
+            &index_data,
+            1,
+            2,
+            &cell_map,
+            &anchor_score,
+            1,
+            1,
+            0.0,
+            sd,
+        );
+        let got = csc_to_triplets(&slots);
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].0, got[0].1), (0, 0));
+        assert!((got[0].2 - 1.0).abs() < 1e-12);
+        assert!(last > 0.0);
+    }
+
+    #[test]
+    fn find_weights_min_dist_fills_then_overwrites() {
+        let cells2 = [0.0];
+        let dist_data = [0.4];
+        let index_data = [1.0];
+        let cell_map = vec![vec![0]];
+        let anchor_score = [1.0, 2.0];
+        let sd = 1.0;
+        let min_dist = 0.25;
+        let sd_term = (2.0_f64 / sd).powi(2);
+        let fill1 = weight_from_dist(min_dist, 2.0, sd_term);
+        let over0 = weight_from_dist(0.4, 1.0, sd_term);
+        let slots = find_weights_from_parts(
+            &cells2,
+            &dist_data,
+            1,
+            &index_data,
+            1,
+            1,
+            &cell_map,
+            &anchor_score,
+            2,
+            1,
+            min_dist,
+            sd,
+        );
+        let got = csc_to_triplets(&slots);
+        let sum = over0 + fill1;
+        assert_eq!(got.len(), 2);
+        assert!((got[0].2 - over0 / sum).abs() < 1e-12);
+        assert!((got[1].2 - fill1 / sum).abs() < 1e-12);
+    }
 
     #[test]
     fn integrate_data_stays_sparse() {

@@ -450,7 +450,7 @@ IntegrateDataC <- function(integration_matrix, weights, expression_cells2) {
 FindWeightsC <- function(cells2, distances, anchor_cells2, integration_matrix_rownames,
                          cell_index, anchor_score, min_dist, sd, display_progress,
                          nthreads = 1L) {
-  CscFromList(find_weights(
+  find_weights(
     cells2 = as.double(x = cells2),
     distances = AsDoubleMatrix(x = distances),
     anchor_cells2 = anchor_cells2,
@@ -461,7 +461,7 @@ FindWeightsC <- function(cells2, distances, anchor_cells2, integration_matrix_ro
     sd = sd,
     display_progress = display_progress,
     `_nthreads` = as.integer(nthreads)
-  ))
+  )
 }
 
 #' Score query cells using an SNN graph

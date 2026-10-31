@@ -119,7 +119,7 @@ pub fn run_umi_sampling_per_cell_impl(
 }
 
 /// R interns CHARSXP values, so equal names share a pointer.
-fn char_key(name: &Rstr) -> usize {
+pub(crate) fn char_key(name: &Rstr) -> usize {
     unsafe { name.get() as usize }
 }
 
