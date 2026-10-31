@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
-# Install R packages used by the seurust dev/CRAN images.
-# Pass --full to also install Seurat from CRAN for parity checks.
+# Install R packages used by the seurust development images.
+# Pass --full to also install Seurat for parity checks.
 
 args <- commandArgs(trailingOnly = TRUE)
 full <- "--full" %in% args
@@ -34,7 +34,7 @@ message("Installing SeuratObject from satijalab r-universe...")
 install.packages("SeuratObject", repos = "https://satijalab.r-universe.dev")
 
 if (full) {
-  message("Installing Seurat from CRAN (this repository does not vendor Seurat sources)...")
+  message("Installing Seurat (this repository does not vendor Seurat sources)...")
   install.packages("Seurat", Ncpus = max(1L, parallel::detectCores() - 1L))
 }
 

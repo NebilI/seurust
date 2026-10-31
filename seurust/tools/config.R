@@ -14,7 +14,7 @@ if (is_debug) {
 }
 
 if (!is_not_cran) {
-  message("Building for CRAN.")
+  message("Building with vendored crates.")
 }
 
 .cran_flags <- ifelse(
@@ -55,7 +55,7 @@ cfg <- if (is_debug) "debug" else "release"
 )
 
 # Dev builds may regenerate R/extendr-wrappers.R via the document binary.
-# CRAN/source installs ship committed wrappers and only build --lib.
+# Source installs ship committed wrappers and only build --lib.
 .run_document <- if (is_not_cran) "true" else "false"
 
 is_windows <- .Platform[["OS.type"]] == "windows"

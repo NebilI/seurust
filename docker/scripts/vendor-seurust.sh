@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refresh vendored Rust crates for seurust CRAN builds inside rust-dev.
+# Refresh vendored Rust crates for seurust source builds inside rust-dev.
 #
 # From repo root:
 #   docker compose -f docker/docker-compose.yml run --rm \

@@ -16,11 +16,8 @@ docs/
 revdep/
 
 # Rust build output. The unpacked crate vendor directory is generated from
-# seurust/src/rust/vendor.tar.xz, which CRAN builds need and which stays tracked.
+# seurust/src/rust/vendor.tar.xz, which stays tracked for offline source builds.
 target/
 vendor/
-
-# Written by docker/scripts/submit-seurust-cran.sh; contains the maintainer email.
-seurust/CRAN-SUBMISSION
 
 .DS_Store

@@ -4,13 +4,7 @@ Rust native kernels for the [seurust](https://github.com/NebilI/seurust/tree/mai
 
 ## Install the R package
 
-From [CRAN](https://cran.r-project.org/package=seurust):
-
-```r
-install.packages("seurust")
-```
-
-Or from r-universe:
+From [r-universe](https://NebilI.r-universe.dev/seurust):
 
 ```r
 install.packages(
@@ -22,6 +16,6 @@ install.packages(
 ## crates.io
 
 This crate is published to [crates.io](https://crates.io/crates/seurust) on GitHub
-Releases via `.github/workflows/publish-seurust-crate.yaml`. It is primarily
+Releases via `.github/workflows/release-seurust.yaml`. It is primarily
 consumed as an R extension (`crate-type = ["rlib", "staticlib"]`), not as a
 standalone Rust library API.

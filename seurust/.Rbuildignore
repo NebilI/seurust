@@ -10,9 +10,6 @@
 ^\.git$
 ^\.github$
 ^\.vscode$
-^cran-comments\.md$
-^CRAN\.md$
-^CRAN-SUBMISSION$
 ^tools/vendor\.sh$
 ^vignettes$
 Rplots\.pdf

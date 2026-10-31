@@ -18,7 +18,7 @@ Description: Provides 'Rust' implementations of performance-critical 'Seurat'
     PCA, and integration helpers. Install alongside 'Seurat' (>= 5.6.0) to
     use the same function signatures with a 'Rust' backend. The interfaces follow the original 'Seurat' package by the
     Satija Lab and collaborators (MIT license; <https://satijalab.org/seurat>).
-    Builds require 'Cargo' and 'rustc' (>= 1.81); CRAN source builds include
+    Builds require 'Cargo' and 'rustc' (>= 1.81); source builds include
     offline crate sources under 'src/rust'.
 License: MIT + file LICENSE
 URL: https://github.com/NebilI/seurust,

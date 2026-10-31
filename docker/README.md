@@ -1,8 +1,7 @@
 # Docker development images
 
-These images are for local seurust development and for the CRAN build. CI for
-pull requests uses GitHub-hosted runners (`seurust Checks`), not these images.
-The CRAN workflow builds them with `docker compose`.
+These images are for local seurust development. CI for pull requests uses
+GitHub-hosted runners (`seurust Checks`), not these images.
 
 | Image | Dockerfile | Purpose |
 |-------|------------|---------|
@@ -36,40 +35,16 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 That installs seurust's R dependencies, runs `R CMD INSTALL seurust`, runs the
 Rust library tests, and runs `seurust/tests/testthat`.
 
-Compare kernels with an installed copy of Seurat (CRAN) from the repo root:
+Compare kernels with an installed copy of Seurat from the repo root:
 
 ```sh
 Rscript scripts/bench-all-kernels.R
 ```
 
 Seurat is not built from this repository. `docker/scripts/bootstrap-dev-env.R`
-installs it from CRAN when a script needs it.
+installs it when a script needs it.
 
-## CRAN build and submit
-
-```sh
-docker compose -f docker/docker-compose.yml run --rm seurust-cran
-```
-
-```sh
-# dry-run: build/check only
-docker compose -f docker/docker-compose.yml run --rm seurust-cran-submit
-
-# upload only when the maintainer explicitly approves publishing
-docker compose -f docker/docker-compose.yml run --rm \
-  -e SUBMIT_CRAN=yes -e READY_TO_PUBLISH=yes \
-  seurust-cran-submit
-```
-
-The upload reads the maintainer email from `seurust/DESCRIPTION`. CRAN then
-sends the confirmation message to that address.
-
-From GitHub: **Actions → Build / submit seurust to CRAN → Run workflow**.
-Leave `submit_to_cran` unchecked for a dry-run artifact.
-
-Full process: [`seurust/CRAN.md`](../seurust/CRAN.md).
-
-Refresh vendored crates before a CRAN release if Rust dependencies changed:
+Refresh vendored crates if Rust dependencies changed:
 
 ```sh
 docker compose -f docker/docker-compose.yml run --rm rust-dev \
@@ -79,7 +54,7 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 ## Rust crate
 
 The crate lives in `seurust/src/rust/`. `seurust/configure` generates `Makevars`
-and runs `cargo build`. Dev builds (`NOT_CRAN` set) also run the `document`
+and runs `cargo build`. Development installs also run the `document`
 binary to refresh `R/extendr-wrappers.R`.
 
 ```sh
@@ -104,4 +79,4 @@ On Windows PowerShell, replace `$(pwd)` with `${PWD}`.
 
 - The base image is `rocker/r2u:jammy`.
 - The rust image mounts a named volume at `seurust/src/rust/target` so Cargo artifacts stay off the bind mount.
-- `seurust/src/rust/vendor.tar.xz` is the offline crate source used by CRAN builds. Do not delete it.
+- `seurust/src/rust/vendor.tar.xz` is the offline crate source used by source builds. Do not delete it.

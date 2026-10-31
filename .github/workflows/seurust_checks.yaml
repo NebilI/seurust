@@ -10,7 +10,6 @@ on:
       - 'docker/Dockerfile.rust'
       - 'docker/Dockerfile.rcpp'
       - '.github/workflows/seurust_checks.yaml'
-      - '.github/workflows/build-seurust-cran.yaml'
   push:
     branches:
       - main
@@ -22,7 +21,6 @@ on:
       - 'docker/Dockerfile.rust'
       - 'docker/Dockerfile.rcpp'
       - '.github/workflows/seurust_checks.yaml'
-      - '.github/workflows/build-seurust-cran.yaml'
   workflow_dispatch:
 
 concurrency:
