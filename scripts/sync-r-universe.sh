@@ -152,10 +152,48 @@ def upsert(data, package, url, subdir, branch):
                 changed = True
             updated.append(entry)
         else:
+            # Keep every other entry (including harmorust) byte-for-byte.
             updated.append(item)
     if not seen:
         updated.append(entry)
         changed = True
+
+    # Hard guard: never drop or rewrite non-seurust packages in the shared
+    # NebilI.r-universe.dev registry (harmorust and any future neighbors).
+    before_others = [
+        item for item in data
+        if not (isinstance(item, dict) and item.get("package") == package)
+    ]
+    after_others = [
+        item for item in updated
+        if not (isinstance(item, dict) and item.get("package") == package)
+    ]
+    if before_others != after_others:
+        fail(
+            "refusing to modify non-"
+            f"{package} entries in packages.json "
+            f"(before={before_others!r} after={after_others!r})"
+        )
+    before_names = {
+        item.get("package")
+        for item in before_others
+        if isinstance(item, dict) and isinstance(item.get("package"), str)
+    }
+    after_names = {
+        item.get("package")
+        for item in after_others
+        if isinstance(item, dict) and isinstance(item.get("package"), str)
+    }
+    if before_names != after_names:
+        fail(
+            "refusing to drop shared r-universe packages: "
+            f"lost={sorted(before_names - after_names)} "
+            f"gained={sorted(after_names - before_names)}"
+        )
+    # Named neighbor we share the universe with today.
+    if "harmorust" in before_names and "harmorust" not in after_names:
+        fail("refusing to overwrite or drop harmorust in packages.json")
+
     names = []
     for item in updated:
         if isinstance(item, dict) and isinstance(item.get("package"), str):
