@@ -31,9 +31,7 @@ positional calls. Seurat 5.6.0's C++ `LogNorm` now returns only the `x` slot;
 seurust even though Seurat 5.6.0 dropped those R exports.
 
 Benchmark tables in the repository `README.md` were remeasured against
-**Seurat 5.6.0**, then refreshed again after the Rust kernel optimizations in
-`OPTIMIZATION_ROADMAP.md` (items 1–7): **34 of 38** kernels beat Seurat C++
-on the published harness.
+**Seurat 5.6.0**.
 
 # seurust 0.1.0
 

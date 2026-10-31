@@ -2,9 +2,7 @@
 
 Where the Rust kernels still lose to (or barely beat) Seurat 5.6.0's C++, why, and what to change. Sorted from most to least impactful.
 
-**Status:** items **1–7 have landed** on `main`. The top-level [`README.md`](README.md) timing table is the post-opt remeasure (Seurat 5.6.0, `setThreads(3)`, 4-core machine): **34 of 38** kernels beat C++. Remaining losers: `CcaCrossprodMultiply` 0.71×, `EigenGramPCA` 0.78×, `SparseRowMeanVar` 0.80×, `fast_dist` 0.90×.
-
-**Pre-opt baseline** (used for the projections below): the earlier 0.2.0 README table before items 1–7. Eight of 38 kernels were slower than C++ then: `LogNorm` 0.34×, `CcaCrossprodMultiply` 0.39×, `FastSparseRowScale` 0.41×, `FindWeightsC` 0.56×, `ComputeSNN` 0.59×, `Standardize` 0.85×, `RunModularityClusteringCpp` 0.94×, `RunModularityClusteringCpp_multi` 0.95×.
+**Baseline:** the seurust 0.2.0 timing table in the top-level [`README.md`](README.md) (Seurat 5.6.0, `setThreads(3)`, 4-core machine). Eight of 38 kernels are slower than C++: `LogNorm` 0.34×, `CcaCrossprodMultiply` 0.39×, `FastSparseRowScale` 0.41×, `FindWeightsC` 0.56×, `ComputeSNN` 0.59×, `Standardize` 0.85×, `RunModularityClusteringCpp` 0.94×, `RunModularityClusteringCpp_multi` 0.95×.
 
 **How the estimates were made.** Items marked *measured* were prototyped in [`scripts/rust-prototype-bench/`](scripts/rust-prototype-bench/). That is a standalone Rust crate that runs the current kernel loop next to the proposed one, on the same input shapes as `scripts/bench-all-kernels.R` and on 4 cores. It does not link R, so a fresh untouched `malloc` stands in for R's `allocVector`, which also hands back unzeroed pages. That VM ran about 2× slower than the README machine overall, so only the **ratios** carry over. Items marked *estimated* come from reading the code. Projected speedups are relative to Seurat C++, computed as README Seurat time ÷ projected seurust time.
 
