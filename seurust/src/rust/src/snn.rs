@@ -3,8 +3,12 @@ use extendr_api::prelude::*;
 use rayon::prelude::*;
 use sprs::{CsMat, TriMat};
 
+fn scaled_snn(val: f64, k_f: f64) -> f64 {
+    val / (k_f + (k_f - val))
+}
+
 fn scale_and_prune(val: f64, k_f: f64, prune: f64) -> Option<f64> {
-    let scaled = val / (k_f + (k_f - val));
+    let scaled = scaled_snn(val, k_f);
     if scaled >= prune {
         Some(scaled)
     } else {
@@ -35,26 +39,125 @@ fn validate_nn_ranked_data(data: &[f64], n_cells: usize, k: usize) -> extendr_ap
     Ok(())
 }
 
-/// Per-cell neighbor lists with duplicate ranks summed, matching Eigen setFromTriplets.
-fn neighbors_per_cell_with_counts(
-    data: &[f64],
+/// Flat neighbor lists plus inverted index. Duplicate ranks are summed,
+/// matching Eigen `setFromTriplets`.
+struct NeighborIndex {
     n_cells: usize,
     k: usize,
-) -> Vec<Vec<(usize, u32)>> {
-    let mut neighbors = vec![Vec::with_capacity(k); n_cells];
+    nuniq: Vec<u32>,
+    nbr: Vec<u32>,
+    nbr_wt: Vec<u32>,
+    inv_ptr: Vec<u32>,
+    inv_cells: Vec<u32>,
+    inv_wt: Vec<u32>,
+}
+
+fn build_neighbor_index(data: &[f64], n_cells: usize, k: usize) -> NeighborIndex {
+    debug_assert!(n_cells <= u32::MAX as usize);
+    let mut nuniq = vec![0u32; n_cells];
+    let mut nbr = vec![0u32; n_cells.saturating_mul(k)];
+    let mut nbr_wt = vec![0u32; n_cells.saturating_mul(k)];
+
     for rank in 0..k {
         let base = rank * n_cells;
-        for i in 0..n_cells {
-            let m = data[base + i] as usize - 1;
-            let row = &mut neighbors[i];
-            if let Some((_, count)) = row.iter_mut().find(|(idx, _)| *idx == m) {
-                *count += 1;
+        for cell in 0..n_cells {
+            let m = data[base + cell] as u32 - 1;
+            let start = cell * k;
+            let n = nuniq[cell] as usize;
+            if let Some(j) = nbr[start..start + n].iter().position(|&id| id == m) {
+                nbr_wt[start + j] += 1;
             } else {
-                row.push((m, 1));
+                nbr[start + n] = m;
+                nbr_wt[start + n] = 1;
+                nuniq[cell] += 1;
             }
         }
     }
-    neighbors
+
+    let mut inv_count = vec![0u32; n_cells];
+    for cell in 0..n_cells {
+        let start = cell * k;
+        for j in 0..nuniq[cell] as usize {
+            inv_count[nbr[start + j] as usize] += 1;
+        }
+    }
+    let mut inv_ptr = vec![0u32; n_cells + 1];
+    for m in 0..n_cells {
+        inv_ptr[m + 1] = inv_ptr[m] + inv_count[m];
+    }
+    let total = inv_ptr[n_cells] as usize;
+    let mut inv_cells = vec![0u32; total];
+    let mut inv_wt = vec![0u32; total];
+    let mut inv_next = inv_ptr.clone();
+    for cell in 0..n_cells {
+        let start = cell * k;
+        for j in 0..nuniq[cell] as usize {
+            let m = nbr[start + j] as usize;
+            let pos = inv_next[m] as usize;
+            inv_next[m] += 1;
+            inv_cells[pos] = cell as u32;
+            inv_wt[pos] = nbr_wt[start + j];
+        }
+    }
+
+    NeighborIndex {
+        n_cells,
+        k,
+        nuniq,
+        nbr,
+        nbr_wt,
+        inv_ptr,
+        inv_cells,
+        inv_wt,
+    }
+}
+
+fn accumulate_column(
+    index: &NeighborIndex,
+    col: usize,
+    k_f: f64,
+    prune: f64,
+    accum: &mut [u32],
+    marks: &mut [u32],
+    touched: &mut Vec<usize>,
+    stamp: &mut u32,
+    i_col: &mut Vec<i32>,
+    x_col: &mut Vec<f64>,
+) {
+    *stamp = stamp.wrapping_add(1);
+    if *stamp == 0 {
+        marks.fill(0);
+        *stamp = 1;
+    }
+    touched.clear();
+    let start = col * index.k;
+    for j in 0..index.nuniq[col] as usize {
+        let m = index.nbr[start + j] as usize;
+        let col_weight = index.nbr_wt[start + j];
+        let inv_lo = index.inv_ptr[m] as usize;
+        let inv_hi = index.inv_ptr[m + 1] as usize;
+        for pos in inv_lo..inv_hi {
+            let row = index.inv_cells[pos] as usize;
+            let weight = index.inv_wt[pos] * col_weight;
+            if marks[row] == *stamp {
+                accum[row] += weight;
+            } else {
+                marks[row] = *stamp;
+                accum[row] = weight;
+                touched.push(row);
+            }
+        }
+    }
+    touched.retain(|&row| scaled_snn(accum[row] as f64, k_f) >= prune);
+    touched.sort_unstable();
+    i_col.clear();
+    x_col.clear();
+    i_col.extend(touched.iter().map(|&row| row as i32));
+    x_col.extend(
+        touched
+            .iter()
+            .map(|&row| scaled_snn(accum[row] as f64, k_f)),
+    );
 }
 
 /// SNN[i,l] = sum_m N[i,m] * N[l,m] where N counts neighbor multiplicity.
@@ -200,70 +303,34 @@ fn compute_snn_accumulating_csc_from_data(
     k: usize,
     prune: f64,
 ) -> CscSlots {
-    let neighbors = neighbors_per_cell_with_counts(data, n_cells, k);
-    let mut inv_count = vec![0usize; n_cells];
-    for nbrs in &neighbors {
-        for &(m, _) in nbrs {
-            inv_count[m] += 1;
-        }
-    }
-
-    let mut inv_ptr = vec![0usize; n_cells + 1];
-    for m in 0..n_cells {
-        inv_ptr[m + 1] = inv_ptr[m] + inv_count[m];
-    }
-
-    let total = inv_ptr[n_cells];
-    let mut inv_cells = vec![0usize; total];
-    let mut inv_weights = vec![0u32; total];
-    let mut inv_next = inv_ptr.clone();
-    for (cell, nbrs) in neighbors.iter().enumerate() {
-        for &(m, weight) in nbrs {
-            let pos = inv_next[m];
-            inv_next[m] += 1;
-            inv_cells[pos] = cell;
-            inv_weights[pos] = weight;
-        }
-    }
-
+    let index = build_neighbor_index(data, n_cells, k);
     let k_f = k as f64;
     let mut accum = vec![0u32; n_cells];
     let mut marks = vec![0u32; n_cells];
     let mut stamp = 1u32;
     let mut touched = Vec::new();
+    let mut i_col = Vec::new();
+    let mut x_col = Vec::new();
     let mut x = Vec::new();
     let mut i = Vec::new();
     let mut p = Vec::with_capacity(n_cells + 1);
 
     for col in 0..n_cells {
         p.push(x.len() as i32);
-        stamp = stamp.wrapping_add(1);
-        if stamp == 0 {
-            marks.fill(0);
-            stamp = 1;
-        }
-
-        for &(m, col_weight) in &neighbors[col] {
-            for pos in inv_ptr[m]..inv_ptr[m + 1] {
-                let row = inv_cells[pos];
-                let weight = inv_weights[pos] * col_weight;
-                if marks[row] == stamp {
-                    accum[row] += weight;
-                } else {
-                    marks[row] = stamp;
-                    accum[row] = weight;
-                    touched.push(row);
-                }
-            }
-        }
-
-        touched.sort_unstable();
-        for row in touched.drain(..) {
-            if let Some(scaled) = scale_and_prune(accum[row] as f64, k_f, prune) {
-                i.push(row as i32);
-                x.push(scaled);
-            }
-        }
+        accumulate_column(
+            &index,
+            col,
+            k_f,
+            prune,
+            &mut accum,
+            &mut marks,
+            &mut touched,
+            &mut stamp,
+            &mut i_col,
+            &mut x_col,
+        );
+        i.extend_from_slice(&i_col);
+        x.extend_from_slice(&x_col);
     }
     p.push(x.len() as i32);
 
@@ -282,37 +349,15 @@ fn compute_snn_accumulating_csc_parallel_from_data(
     k: usize,
     prune: f64,
 ) -> CscSlots {
-    let neighbors = neighbors_per_cell_with_counts(data, n_cells, k);
-    let mut inv_count = vec![0usize; n_cells];
-    for nbrs in &neighbors {
-        for &(m, _) in nbrs {
-            inv_count[m] += 1;
-        }
-    }
-
-    let mut inv_ptr = vec![0usize; n_cells + 1];
-    for m in 0..n_cells {
-        inv_ptr[m + 1] = inv_ptr[m] + inv_count[m];
-    }
-
-    let total = inv_ptr[n_cells];
-    let mut inv_cells = vec![0usize; total];
-    let mut inv_weights = vec![0u32; total];
-    let mut inv_next = inv_ptr.clone();
-    for (cell, nbrs) in neighbors.iter().enumerate() {
-        for &(m, weight) in nbrs {
-            let pos = inv_next[m];
-            inv_next[m] += 1;
-            inv_cells[pos] = cell;
-            inv_weights[pos] = weight;
-        }
-    }
+    let index = build_neighbor_index(data, n_cells, k);
 
     struct Scratch {
         accum: Vec<u32>,
         marks: Vec<u32>,
         touched: Vec<usize>,
         stamp: u32,
+        i_col: Vec<i32>,
+        x_col: Vec<f64>,
     }
 
     let k_f = k as f64;
@@ -324,38 +369,23 @@ fn compute_snn_accumulating_csc_parallel_from_data(
                 marks: vec![0u32; n_cells],
                 touched: Vec::new(),
                 stamp: 1,
+                i_col: Vec::new(),
+                x_col: Vec::new(),
             },
             |scratch, col| {
-                scratch.stamp = scratch.stamp.wrapping_add(1);
-                if scratch.stamp == 0 {
-                    scratch.marks.fill(0);
-                    scratch.stamp = 1;
-                }
-
-                for &(m, col_weight) in &neighbors[col] {
-                    for pos in inv_ptr[m]..inv_ptr[m + 1] {
-                        let row = inv_cells[pos];
-                        let weight = inv_weights[pos] * col_weight;
-                        if scratch.marks[row] == scratch.stamp {
-                            scratch.accum[row] += weight;
-                        } else {
-                            scratch.marks[row] = scratch.stamp;
-                            scratch.accum[row] = weight;
-                            scratch.touched.push(row);
-                        }
-                    }
-                }
-
-                scratch.touched.sort_unstable();
-                let mut i_col = Vec::with_capacity(scratch.touched.len());
-                let mut x_col = Vec::with_capacity(scratch.touched.len());
-                for row in scratch.touched.drain(..) {
-                    if let Some(scaled) = scale_and_prune(scratch.accum[row] as f64, k_f, prune) {
-                        i_col.push(row as i32);
-                        x_col.push(scaled);
-                    }
-                }
-                (i_col, x_col)
+                accumulate_column(
+                    &index,
+                    col,
+                    k_f,
+                    prune,
+                    &mut scratch.accum,
+                    &mut scratch.marks,
+                    &mut scratch.touched,
+                    &mut scratch.stamp,
+                    &mut scratch.i_col,
+                    &mut scratch.x_col,
+                );
+                (scratch.i_col.clone(), scratch.x_col.clone())
             },
         )
         .collect();
