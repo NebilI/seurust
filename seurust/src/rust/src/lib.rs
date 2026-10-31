@@ -3,7 +3,10 @@
 mod data_manipulation;
 mod fast_nn_dist;
 mod integration;
+mod markers;
 mod modularity;
+mod pca;
+mod sct;
 mod snn;
 mod sparse;
 mod stats;
@@ -12,20 +15,28 @@ mod utils;
 use extendr_api::prelude::*;
 
 use data_manipulation::{
-    fast_cov_impl, fast_cov_mats_impl, fast_exp_mean_impl, fast_log_vmr_impl, fast_rbind_impl,
-    fast_sparse_row_scale_impl, fast_sparse_row_scale_with_known_stats_impl,
-    graph_to_neighbor_helper_impl, log_norm_impl, replace_cols_impl, row_merge_matrices_impl,
-    row_var_impl, run_umi_sampling_impl, run_umi_sampling_per_cell_impl, sparse_row_var2_impl,
-    sparse_row_var_impl, sparse_row_var_std_impl, standardize_impl,
+    fast_cov_impl, fast_cov_mats_impl, fast_dense_row_scale_impl, fast_exp_mean_impl,
+    fast_log_vmr_impl, fast_rbind_impl, fast_sparse_row_scale_impl,
+    fast_sparse_row_scale_with_known_stats_impl, graph_to_neighbor_helper_impl, log_norm_impl,
+    replace_cols_impl, row_merge_matrices_impl, row_var_impl, run_umi_sampling_impl,
+    run_umi_sampling_per_cell_impl, sparse_row_mean_var_impl, sparse_row_mean_var_legacy_impl,
+    sparse_row_var2_impl, sparse_row_var_impl, sparse_row_var_std_impl,
+    sparse_row_var_std_legacy_rows_impl, standardize_impl,
 };
 use fast_nn_dist::fast_dist_impl;
-use integration::{find_weights_impl, integrate_data_impl, score_helper_impl};
-use modularity::run_modularity_clustering_impl;
+use integration::{
+    cca_crossprod_multiply_impl, count_anchor_shared_neighbors_impl, find_weights_impl,
+    integrate_data_impl, score_helper_impl,
+};
+use markers::find_all_markers_sparse_fold_change_stats_impl;
+use modularity::{run_modularity_clustering_impl, run_modularity_clustering_multi_impl};
+use pca::eigen_gram_pca_impl;
+use sct::{sct_pearson_residual_matrix_impl, sct_residual_stats_and_corrected_impl};
 use snn::{
     compute_snn_to_r_impl, direct_snn_to_file_impl, snn_smallest_nonzero_dist_impl,
     write_edge_file_impl,
 };
-use sparse::{strings_to_str_vec, vec_from_doubles, CscSlots, CscView, CsrView};
+use sparse::{strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView, CsrView};
 use stats::{row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl};
 
 #[extendr]
@@ -77,7 +88,7 @@ fn log_norm(
 }
 
 #[extendr]
-fn standardize(mat: RMatrix<f64>, display_progress: bool) -> RMatrix<f64> {
+fn standardize(mat: RMatrix<f64>, display_progress: bool, _nthreads: i32) -> RMatrix<f64> {
     standardize_impl(&mat, display_progress)
 }
 
@@ -184,13 +195,29 @@ fn fast_sparse_row_scale(
     p: Integers,
     nrows: i32,
     ncols: i32,
+    features: Integers,
     scale: bool,
     center: bool,
     scale_max: f64,
     display_progress: bool,
 ) -> RMatrix<f64> {
     let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
-    fast_sparse_row_scale_impl(view, scale, center, scale_max, display_progress)
+    let features = vec_from_integers(&features);
+    fast_sparse_row_scale_impl(view, &features, scale, center, scale_max, display_progress)
+}
+
+#[extendr]
+fn fast_dense_row_scale(
+    mat: RMatrix<f64>,
+    features: Integers,
+    scale: bool,
+    center: bool,
+    scale_max: f64,
+    _nthreads: i32,
+    display_progress: bool,
+) -> RMatrix<f64> {
+    let features = vec_from_integers(&features);
+    fast_dense_row_scale_impl(&mat, &features, scale, center, scale_max, display_progress)
 }
 
 #[extendr]
@@ -325,6 +352,7 @@ fn find_weights(
     min_dist: f64,
     sd: f64,
     display_progress: bool,
+    _nthreads: i32,
 ) -> List {
     let cells: Vec<i32> = vec_from_doubles(&cells2)
         .into_iter()
@@ -381,6 +409,7 @@ fn score_helper(
     k_snn: i32,
     subtract_first_nn: bool,
     display_progress: bool,
+    _nthreads: i32,
 ) -> Doubles {
     let snn = CscSlots::from_r(x, i, p, nrows, ncols);
     score_helper_impl(
@@ -395,7 +424,7 @@ fn score_helper(
 }
 
 #[extendr]
-fn compute_snn(nn_ranked: RMatrix<f64>, prune: f64) -> extendr_api::Result<Robj> {
+fn compute_snn(nn_ranked: RMatrix<f64>, prune: f64, _nthreads: i32) -> extendr_api::Result<Robj> {
     compute_snn_to_r_impl(&nn_ranked, prune)
 }
 
@@ -438,6 +467,7 @@ fn run_modularity_clustering(
     random_seed: i32,
     print_output: bool,
     edgefilename: &str,
+    n_threads: i32,
 ) -> Result<Integers, extendr_api::Error> {
     let clusters = run_modularity_clustering_impl(
         x.as_robj().as_real_slice().expect("numeric x"),
@@ -453,6 +483,7 @@ fn run_modularity_clustering(
         random_seed,
         print_output,
         edgefilename,
+        n_threads,
     )
     .map_err(|msg| extendr_api::Error::Other(msg.into()))?;
 
@@ -480,6 +511,237 @@ fn snn_smallest_nonzero_dist(
     snn_smallest_nonzero_dist_impl(snn, &mat, n, &nd)
 }
 
+#[extendr]
+fn sparse_row_mean_var(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    nrows: i32,
+    ncols: i32,
+    _nthreads: i32,
+    _display_progress: bool,
+) -> List {
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    let (mean, variance) = sparse_row_mean_var_impl(view);
+    list!(mean = Doubles::from_values(mean), variance = Doubles::from_values(variance))
+}
+
+#[extendr]
+fn sparse_row_mean_var_legacy(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    nrows: i32,
+    ncols: i32,
+    _display_progress: bool,
+) -> List {
+    let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
+    let (mean, variance) = sparse_row_mean_var_legacy_impl(view);
+    list!(mean = Doubles::from_values(mean), variance = Doubles::from_values(variance))
+}
+
+#[extendr]
+fn sparse_row_var_std_legacy_rows(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    mu: Doubles,
+    sd: Doubles,
+    vmax: f64,
+    _rows: i32,
+    _cols: i32,
+    rows_use: Integers,
+    _nthreads: i32,
+    _display_progress: bool,
+) -> Doubles {
+    let view = CscView::from_slots(&x, &i, &p, _rows, _cols);
+    let mu = vec_from_doubles(&mu);
+    let sd = vec_from_doubles(&sd);
+    let rows_use = vec_from_integers(&rows_use);
+    Doubles::from_values(sparse_row_var_std_legacy_rows_impl(
+        view, &mu, &sd, vmax, &rows_use,
+    ))
+}
+
+#[extendr]
+fn find_all_markers_sparse_fold_change_stats(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    rows: i32,
+    cols: i32,
+    groups: Integers,
+    n_groups: i32,
+    log_normalize: bool,
+    _nthreads: i32,
+) -> extendr_api::Result<Robj> {
+    let view = CscView::from_slots(&x, &i, &p, rows, cols);
+    let groups = vec_from_integers(&groups);
+    find_all_markers_sparse_fold_change_stats_impl(view, &groups, n_groups, log_normalize)
+}
+
+#[extendr]
+fn cca_crossprod_multiply(
+    left: RMatrix<f64>,
+    right: RMatrix<f64>,
+    x: Doubles,
+) -> extendr_api::Result<Doubles> {
+    let x = vec_from_doubles(&x);
+    cca_crossprod_multiply_impl(&left, &right, &x)
+}
+
+#[extendr]
+fn count_anchor_shared_neighbors(
+    indices_aa: RMatrix<f64>,
+    indices_ab: RMatrix<f64>,
+    indices_ba: RMatrix<f64>,
+    indices_bb: RMatrix<f64>,
+    anchor_cell1: Integers,
+    anchor_cell2: Integers,
+    offset: i32,
+    k_score: i32,
+    _nthreads: i32,
+) -> Integers {
+    let cell1 = vec_from_integers(&anchor_cell1);
+    let cell2 = vec_from_integers(&anchor_cell2);
+    count_anchor_shared_neighbors_impl(
+        &indices_aa,
+        &indices_ab,
+        &indices_ba,
+        &indices_bb,
+        &cell1,
+        &cell2,
+        offset,
+        k_score,
+    )
+}
+
+#[extendr]
+fn eigen_gram_pca(
+    object: RMatrix<f64>,
+    npcs: i32,
+    weight_by_var: bool,
+    nthreads: i32,
+) -> extendr_api::Result<Robj> {
+    eigen_gram_pca_impl(&object, npcs, weight_by_var, nthreads)
+}
+
+#[extendr]
+fn sct_residual_stats_and_corrected(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    rows: i32,
+    cols: i32,
+    theta: Doubles,
+    intercept: Doubles,
+    slope: Doubles,
+    log_umi: Doubles,
+    target_log_umi: f64,
+    min_var: f64,
+    residual_clip_min: f64,
+    residual_clip_max: f64,
+    _n_threads: i32,
+    compute_corrected: bool,
+) -> extendr_api::Result<Robj> {
+    let view = CscView::from_slots(&x, &i, &p, rows, cols);
+    sct_residual_stats_and_corrected_impl(
+        view,
+        &vec_from_doubles(&theta),
+        &vec_from_doubles(&intercept),
+        &vec_from_doubles(&slope),
+        &vec_from_doubles(&log_umi),
+        target_log_umi,
+        min_var,
+        residual_clip_min,
+        residual_clip_max,
+        compute_corrected,
+    )
+}
+
+#[extendr]
+fn sct_pearson_residual_matrix(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    rows: i32,
+    cols: i32,
+    theta: Doubles,
+    intercept: Doubles,
+    slope: Doubles,
+    log_umi: Doubles,
+    feature_index: Integers,
+    min_var: Doubles,
+    clip_min: f64,
+    clip_max: f64,
+    do_center: bool,
+    _n_threads: i32,
+    _display_progress: bool,
+) -> extendr_api::Result<RMatrix<f64>> {
+    let view = CscView::from_slots(&x, &i, &p, rows, cols);
+    sct_pearson_residual_matrix_impl(
+        view,
+        &vec_from_doubles(&theta),
+        &vec_from_doubles(&intercept),
+        &vec_from_doubles(&slope),
+        &vec_from_doubles(&log_umi),
+        &vec_from_integers(&feature_index),
+        &vec_from_doubles(&min_var),
+        clip_min,
+        clip_max,
+        do_center,
+    )
+}
+
+#[extendr]
+fn run_modularity_clustering_multi(
+    x: Doubles,
+    i: Integers,
+    p: Integers,
+    nrows: i32,
+    ncols: i32,
+    modularity_function: i32,
+    resolutions: Doubles,
+    algorithm: i32,
+    n_random_starts: i32,
+    n_iterations: i32,
+    random_seed: i32,
+    print_output: bool,
+    edgefilename: &str,
+    n_threads: i32,
+) -> Result<List, extendr_api::Error> {
+    let clusters = run_modularity_clustering_multi_impl(
+        x.as_robj().as_real_slice().expect("numeric x"),
+        i.as_robj().as_integer_slice().expect("integer i"),
+        p.as_robj().as_integer_slice().expect("integer p"),
+        nrows,
+        ncols,
+        modularity_function,
+        &vec_from_doubles(&resolutions),
+        algorithm,
+        n_random_starts,
+        n_iterations,
+        random_seed,
+        print_output,
+        edgefilename,
+        n_threads,
+    )
+    .map_err(|msg| extendr_api::Error::Other(msg.into()))?;
+
+    let items: Vec<Robj> = clusters
+        .into_iter()
+        .map(|labels| {
+            let mut out = Integers::new(labels.len());
+            out.as_robj_mut()
+                .as_integer_slice_mut()
+                .expect("cluster labels")
+                .copy_from_slice(&labels);
+            Robj::from(out)
+        })
+        .collect();
+    Ok(List::from_values(items))
+}
+
 extendr_module! {
     mod seurust;
     fn row_sum_dgcmatrix;
@@ -498,6 +760,7 @@ extendr_module! {
     fn fast_log_vmr;
     fn fast_sparse_row_scale;
     fn fast_sparse_row_scale_with_known_stats;
+    fn fast_dense_row_scale;
     fn run_umi_sampling;
     fn run_umi_sampling_per_cell;
     fn row_merge_matrices;
@@ -512,4 +775,14 @@ extendr_module! {
     fn direct_snn_to_file;
     fn snn_smallest_nonzero_dist;
     fn run_modularity_clustering;
+    fn run_modularity_clustering_multi;
+    fn sparse_row_mean_var;
+    fn sparse_row_mean_var_legacy;
+    fn sparse_row_var_std_legacy_rows;
+    fn find_all_markers_sparse_fold_change_stats;
+    fn cca_crossprod_multiply;
+    fn count_anchor_shared_neighbors;
+    fn eigen_gram_pca;
+    fn sct_residual_stats_and_corrected;
+    fn sct_pearson_residual_matrix;
 }

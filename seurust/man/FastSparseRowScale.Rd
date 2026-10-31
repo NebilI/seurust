@@ -8,7 +8,9 @@ FastSparseRowScale(
   scale = TRUE,
   center = TRUE,
   scale_max = 10,
-  display_progress = TRUE
+  display_progress = TRUE,
+  features = integer(),
+  nthreads = 1L
 )
 }
 \arguments{
@@ -16,6 +18,8 @@ FastSparseRowScale(
 \item{scale, center}{Logical.}
 \item{scale_max}{Numeric.}
 \item{display_progress}{Logical.}
+\item{features}{Optional 0-based integer row subset.}
+\item{nthreads}{Integer thread hint.}
 }
 \value{Dense numeric matrix.}
 \description{

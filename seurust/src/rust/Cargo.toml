@@ -1,6 +1,6 @@
 [package]
 name = "seurust"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.81"
 description = "Rust native kernels for single-cell analysis (seurust / Seurat backend)"
@@ -24,6 +24,7 @@ bench = false
 extendr-api = "0.9.0"
 extendr-ffi = "0.9.0"
 matrixmultiply = "0.3"
+nalgebra = { version = "0.33", default-features = false, features = ["std"] }
 ndarray = "0.16.1"
 rayon = "1.10"
 sprs = "=0.11.3"

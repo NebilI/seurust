@@ -10,7 +10,8 @@ ScoreHelper(
   corrected_nns,
   k_snn,
   subtract_first_nn,
-  display_progress
+  display_progress,
+  nthreads = 1L
 )
 }
 \arguments{
@@ -18,6 +19,7 @@ ScoreHelper(
 \item{query_pca, query_dists, corrected_nns}{Numeric inputs.}
 \item{k_snn}{Integer.}
 \item{subtract_first_nn, display_progress}{Logical.}
+\item{nthreads}{Integer thread hint.}
 }
 \value{Numeric scores.}
 \description{

@@ -183,6 +183,87 @@ pub fn fast_rbind_impl(
     Ok(out)
 }
 
+fn scale_clip(value: f64, scale_max: f64) -> f64 {
+    if value > scale_max {
+        scale_max
+    } else {
+        value
+    }
+}
+
+/// Dense row scaling with an optional 0-based feature subset (Seurat 5.6).
+pub fn fast_dense_row_scale_impl(
+    mat: &RMatrix<f64>,
+    features: &[i32],
+    scale: bool,
+    center: bool,
+    scale_max: f64,
+    _display_progress: bool,
+) -> RMatrix<f64> {
+    let full_rows = mat.nrows();
+    let cols = mat.ncols();
+    let values = mat.data();
+    let (n_sel, selected) = if features.is_empty() {
+        (full_rows, (0..full_rows as i32).collect::<Vec<_>>())
+    } else {
+        (features.len(), features.to_vec())
+    };
+    let sel: Vec<usize> = selected.iter().map(|&r| r.max(0) as usize).collect();
+
+    let mut row_sum = vec![0.0; n_sel];
+    let mut row_sq_sum = vec![0.0; n_sel];
+    for col in 0..cols {
+        let col_ptr = col * full_rows;
+        for row in 0..n_sel {
+            let value = values[col_ptr + sel[row]];
+            row_sum[row] += value;
+            row_sq_sum[row] += value * value;
+        }
+    }
+
+    let clip = scale_max.is_finite();
+    let cols_d = cols as f64;
+    let mut mu = vec![0.0; n_sel];
+    let mut inv_sigma = vec![0.0; n_sel];
+    let mut valid = vec![false; n_sel];
+    for row in 0..n_sel {
+        let mean = if cols == 0 { 0.0 } else { row_sum[row] / cols_d };
+        mu[row] = if center { mean } else { 0.0 };
+        let sigma = if scale {
+            let numerator = if center {
+                row_sq_sum[row] - (row_sum[row] * row_sum[row] / cols_d)
+            } else {
+                row_sq_sum[row]
+            };
+            (numerator / (cols.max(2) - 1) as f64).sqrt()
+        } else {
+            1.0
+        };
+        if sigma > 0.0 && sigma.is_finite() {
+            valid[row] = true;
+            inv_sigma[row] = 1.0 / sigma;
+        }
+    }
+
+    let mut out = vec![0.0; n_sel * cols];
+    out.par_chunks_mut(n_sel.max(1))
+        .enumerate()
+        .for_each(|(col, out_col)| {
+            let col_ptr = col * full_rows;
+            for row in 0..n_sel {
+                if valid[row] {
+                    let mut value = (values[col_ptr + sel[row]] - mu[row]) * inv_sigma[row];
+                    if clip {
+                        value = scale_clip(value, scale_max);
+                    }
+                    out_col[row] = value;
+                }
+            }
+        });
+
+    rmatrix_from_column_major(&out, n_sel, cols)
+}
+
 pub fn row_var_impl(mat: &RMatrix<f64>) -> Doubles {
     let nrows = mat.nrows();
     let ncols = mat.ncols();
