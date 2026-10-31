@@ -51,48 +51,48 @@ Median runtime for every ported native function, Seurat's C++ kernels against se
 
 ### seurust 0.2.0 (Seurat 5.6.0 kernels)
 
-Measured against **Seurat 5.6.0** with `setThreads(3)` on this 4-core machine (see [Machine](#machine)). Seurat 5.6.0 dropped `SparseRowVar2`, `WriteEdgeFile`, and `DirectSNNToFile` from its R exports (seurust still implements them, but they are not in this comparison). `AnnoySearchCpp` is not ported. **30 of 38** kernels were faster; the 5.6.0 C++ rewrite is ahead on `LogNorm`, `FastSparseRowScale`, `ComputeSNN`, `FindWeightsC`, and a few tiny kernels.
+Measured against **Seurat 5.6.0** with `setThreads(3)` on this 4-core machine (see [Machine](#machine)), after the Rust kernel work in [`OPTIMIZATION_ROADMAP.md`](OPTIMIZATION_ROADMAP.md) (items 1–7). Seurat 5.6.0 dropped `SparseRowVar2`, `WriteEdgeFile`, and `DirectSNNToFile` from its R exports (seurust still implements them, but they are not in this comparison). `AnnoySearchCpp` is not ported. **34 of 38** kernels were faster. The four that still lose are near-parity or sub-millisecond: `CcaCrossprodMultiply` (0.71×), `EigenGramPCA` (0.78×), `SparseRowMeanVar` (0.80×), and `fast_dist` (0.90×).
 
 | Function | Problem size | Seurat C++ | seurust Rust | Speedup |
 | --- | --- | ---: | ---: | ---: |
-| `LogNorm` | 5,000 × 2,000 sparse, 5% nonzero | 1.22 ms | 3.61 ms | 0.34× |
-| `Standardize` | 2,000 × 120 dense | 0.17 ms | 0.20 ms | 0.85× |
-| `FastCov` | 2,000 × 80 dense | 0.84 ms | 0.22 ms | **3.76×** |
-| `FastCovMats` | 2,000 × 80 and 2,000 × 40 dense | 0.53 ms | 0.39 ms | **1.35×** |
-| `FastRBind` | two 4,000 × 150 dense | 2.40 ms | 1.87 ms | **1.28×** |
-| `RowVar` | 2,000 × 120 dense | 0.10 ms | 0.04 ms | **2.31×** |
-| `FastExpMean` | 5,000 × 2,000 sparse, 5% nonzero | 4.07 ms | 0.62 ms | **6.58×** |
-| `SparseRowVar` | 5,000 × 2,000 sparse, 5% nonzero | 2.48 ms | 0.40 ms | **6.13×** |
-| `SparseRowVarStd` | 5,000 × 2,000 sparse, 5% nonzero | 0.58 ms | 0.31 ms | **1.85×** |
-| `SparseRowMeanVar` | 5,000 × 2,000 sparse, 5% nonzero | 0.27 ms | 0.25 ms | **1.07×** |
-| `SparseRowMeanVarLegacy` | 5,000 × 2,000 sparse, 5% nonzero | 0.65 ms | 0.41 ms | **1.60×** |
-| `SparseRowVarStdLegacyRows` | 5,000 × 2,000 sparse, 80 rows | 0.45 ms | 0.10 ms | **4.34×** |
-| `FastLogVMR` | 5,000 × 2,000 sparse, 5% nonzero | 6.20 ms | 1.29 ms | **4.80×** |
-| `FastSparseRowScale` | 5,000 × 2,000 sparse, 5% nonzero | 10.6 ms | 25.7 ms | 0.41× |
-| `FastDenseRowScale` | 800 × 300 dense | 0.36 ms | 0.34 ms | **1.08×** |
-| `FastSparseRowScaleWithKnownStats` | 5,000 × 2,000 sparse, 5% nonzero | 91.0 ms | 28.5 ms | **3.19×** |
-| `RowMergeMatrices` | 1,500 × 400 and 1,200 × 350 CSR | 0.56 ms | 0.23 ms | **2.47×** |
-| `ReplaceColsC` | 2,000 × 600 sparse, replace 20 columns | 0.30 ms | 0.10 ms | **3.08×** |
-| `GraphToNeighborHelper` | 2,000 cells, 30 neighbors, symmetric | 0.70 ms | 0.43 ms | **1.62×** |
-| `RunUMISampling` | 2,000 × 1,500 counts, 8% nonzero | 2.92 ms | 2.29 ms | **1.28×** |
-| `RunUMISamplingPerCell` | 2,000 × 1,500 counts, 8% nonzero | 2.87 ms | 2.18 ms | **1.32×** |
-| `ComputeSNN` | 1,500 cells, k = 20 | 1.03 ms | 1.75 ms | 0.59× |
-| `IntegrateDataC` | 800 genes × 200 cells, 60 anchors | 0.75 ms | 0.46 ms | **1.63×** |
-| `FindWeightsC` | 400 cells, 600 anchors, k = 10 | 0.28 ms | 0.49 ms | 0.56× |
-| `ScoreHelper` | 300 cells × 16 dimensions | 0.45 ms | 0.41 ms | **1.09×** |
-| `SNN_SmallestNonzero_Dist` | 400 cells × 10 dimensions | 0.36 ms | 0.33 ms | **1.07×** |
-| `RunModularityClusteringCpp` | 250-cell SNN, 10 iterations | 3.82 ms | 4.08 ms | 0.94× |
-| `RunModularityClusteringCpp_multi` | 250-cell SNN, 3 resolutions | 1.97 ms | 2.08 ms | 0.95× |
-| `FindAllMarkersSparseFoldChangeStats` | 5,000 × 2,000 sparse, 4 groups | 1.44 ms | 1.05 ms | **1.37×** |
-| `CcaCrossprodMultiply` | 80 × 200 and 80 × 180 dense | 0.01 ms | 0.02 ms | 0.39× |
-| `CountAnchorSharedNeighbors` | 80 anchors, k = 10 | 0.12 ms | 0.01 ms | **8.54×** |
-| `EigenGramPCA` | 120 features × 400 cells, 10 PCs | 0.92 ms | 0.87 ms | **1.06×** |
-| `SCTResidualStatsAndCorrected` | 800 × 400 sparse SCT | 1.80 ms | 1.32 ms | **1.36×** |
-| `SCTPearsonResidualMatrix` | 800 × 400 sparse, 80 features | 0.25 ms | 0.12 ms | **2.01×** |
-| `fast_dist` | 800 × 20 dense, 10 neighbors | 0.23 ms | 0.20 ms | **1.16×** |
-| `row_sum_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.22 ms | 0.10 ms | **2.10×** |
-| `row_mean_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.23 ms | 0.10 ms | **2.17×** |
-| `row_var_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.75 ms | 0.34 ms | **2.18×** |
+| `LogNorm` | 5,000 × 2,000 sparse, 5% nonzero | 1.04 ms | 0.78 ms | **1.33×** |
+| `Standardize` | 2,000 × 120 dense | 0.18 ms | 0.06 ms | **2.78×** |
+| `FastCov` | 2,000 × 80 dense | 0.87 ms | 0.23 ms | **3.72×** |
+| `FastCovMats` | 2,000 × 80 and 2,000 × 40 dense | 0.52 ms | 0.37 ms | **1.41×** |
+| `FastRBind` | two 4,000 × 150 dense | 2.48 ms | 1.85 ms | **1.34×** |
+| `RowVar` | 2,000 × 120 dense | 0.09 ms | 0.04 ms | **2.11×** |
+| `FastExpMean` | 5,000 × 2,000 sparse, 5% nonzero | 4.06 ms | 0.55 ms | **7.32×** |
+| `SparseRowVar` | 5,000 × 2,000 sparse, 5% nonzero | 2.45 ms | 0.42 ms | **5.83×** |
+| `SparseRowVarStd` | 5,000 × 2,000 sparse, 5% nonzero | 0.59 ms | 0.30 ms | **1.95×** |
+| `SparseRowMeanVar` | 5,000 × 2,000 sparse, 5% nonzero | 0.21 ms | 0.26 ms | 0.80× |
+| `SparseRowMeanVarLegacy` | 5,000 × 2,000 sparse, 5% nonzero | 0.64 ms | 0.37 ms | **1.75×** |
+| `SparseRowVarStdLegacyRows` | 5,000 × 2,000 sparse, 80 rows | 0.41 ms | 0.10 ms | **4.07×** |
+| `FastLogVMR` | 5,000 × 2,000 sparse, 5% nonzero | 5.92 ms | 1.14 ms | **5.19×** |
+| `FastSparseRowScale` | 5,000 × 2,000 sparse, 5% nonzero | 10.9 ms | 5.14 ms | **2.12×** |
+| `FastDenseRowScale` | 800 × 300 dense | 0.40 ms | 0.18 ms | **2.20×** |
+| `FastSparseRowScaleWithKnownStats` | 5,000 × 2,000 sparse, 5% nonzero | 90.6 ms | 5.28 ms | **17.16×** |
+| `RowMergeMatrices` | 1,500 × 400 and 1,200 × 350 CSR | 0.56 ms | 0.18 ms | **3.10×** |
+| `ReplaceColsC` | 2,000 × 600 sparse, replace 20 columns | 0.30 ms | 0.08 ms | **3.60×** |
+| `GraphToNeighborHelper` | 2,000 cells, 30 neighbors, symmetric | 0.51 ms | 0.38 ms | **1.34×** |
+| `RunUMISampling` | 2,000 × 1,500 counts, 8% nonzero | 2.90 ms | 2.18 ms | **1.33×** |
+| `RunUMISamplingPerCell` | 2,000 × 1,500 counts, 8% nonzero | 2.84 ms | 2.08 ms | **1.37×** |
+| `ComputeSNN` | 1,500 cells, k = 20 | 0.99 ms | 0.69 ms | **1.44×** |
+| `IntegrateDataC` | 800 genes × 200 cells, 60 anchors | 0.83 ms | 0.38 ms | **2.17×** |
+| `FindWeightsC` | 400 cells, 600 anchors, k = 10 | 0.26 ms | 0.12 ms | **2.18×** |
+| `ScoreHelper` | 300 cells × 16 dimensions | 0.42 ms | 0.40 ms | **1.04×** |
+| `SNN_SmallestNonzero_Dist` | 400 cells × 10 dimensions | 0.36 ms | 0.32 ms | **1.11×** |
+| `RunModularityClusteringCpp` | 250-cell SNN, 10 iterations | 3.80 ms | 3.39 ms | **1.12×** |
+| `RunModularityClusteringCpp_multi` | 250-cell SNN, 3 resolutions | 1.97 ms | 1.06 ms | **1.85×** |
+| `FindAllMarkersSparseFoldChangeStats` | 5,000 × 2,000 sparse, 4 groups | 1.28 ms | 1.00 ms | **1.29×** |
+| `CcaCrossprodMultiply` | 80 × 200 and 80 × 180 dense | 0.01 ms | 0.01 ms | 0.71× |
+| `CountAnchorSharedNeighbors` | 80 anchors, k = 10 | 0.12 ms | 0.01 ms | **12.32×** |
+| `EigenGramPCA` | 120 features × 400 cells, 10 PCs | 0.63 ms | 0.81 ms | 0.78× |
+| `SCTResidualStatsAndCorrected` | 800 × 400 sparse SCT | 1.85 ms | 1.28 ms | **1.45×** |
+| `SCTPearsonResidualMatrix` | 800 × 400 sparse, 80 features | 0.42 ms | 0.14 ms | **3.06×** |
+| `fast_dist` | 800 × 20 dense, 10 neighbors | 0.18 ms | 0.19 ms | 0.90× |
+| `row_sum_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.21 ms | 0.10 ms | **2.10×** |
+| `row_mean_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.23 ms | 0.10 ms | **2.22×** |
+| `row_var_dgcmatrix` | 6,000 × 1,500 sparse, 4% nonzero | 0.74 ms | 0.34 ms | **2.16×** |
 
 Times are medians from [`microbenchmark`](https://cran.r-project.org/package=microbenchmark) after one untimed warmup (3 to 11 repeats; fewer repeats on the slower kernels). Inputs are built before the timer starts. Reproduce the full table with Seurat and seurust installed:
 
@@ -161,10 +161,10 @@ These numbers were measured on the machine that ran the script:
 
 | | |
 | --- | --- |
-| OS | Ubuntu 24.04.5 LTS (Linux 6.12.94+, x86_64) |
+| OS | Ubuntu 24.04 (x86_64) |
 | CPU | 4 cores (`setThreads(3)`) |
 | Memory | 15 GiB |
-| R | 4.3.3 |
+| R | 4.6.1 |
 | Seurat | 5.6.0 |
 | seurust | 0.2.0 |
 | Rust | rustc 1.83.0 |
