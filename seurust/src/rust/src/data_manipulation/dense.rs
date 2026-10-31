@@ -1,4 +1,5 @@
 use crate::sparse::rmatrix_with_data;
+use crate::utils::use_parallel;
 use extendr_api::prelude::*;
 use rayon::prelude::*;
 
@@ -150,7 +151,13 @@ pub fn fast_cov_mats_impl(
     let mut out = RMatrix::<f64>::new(p1, p2);
     let cov = out.data_mut();
     crossprod_blocks(&values1, &values2, n, p1, p2, cov, |_, _| p1);
-    cov.par_iter_mut().for_each(|v| *v /= denom);
+    if use_parallel(cov.len(), cov.len()) {
+        cov.par_iter_mut().for_each(|v| *v /= denom);
+    } else {
+        for v in cov.iter_mut() {
+            *v /= denom;
+        }
+    }
     Ok(out)
 }
 

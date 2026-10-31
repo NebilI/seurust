@@ -1,5 +1,5 @@
-use crate::sparse::{CscSlots, CscView};
-use crate::utils::sort_indexes;
+use crate::sparse::{doubles_uninit, CscSlots, CscView};
+use crate::utils::{map_indexed, sort_indexes, use_parallel};
 use extendr_api::prelude::*;
 use rayon::prelude::*;
 
@@ -45,18 +45,35 @@ pub fn cca_crossprod_multiply_impl(
             feature_scores[row] += right_data[base + row] * xv;
         }
     }
-    let out: Vec<f64> = (0..ncells)
-        .into_par_iter()
-        .map(|col| {
-            let base = col * nfeatures;
-            let mut s = 0.0;
-            for row in 0..nfeatures {
-                s += left_data[base + row] * feature_scores[row];
+
+    let mut out = doubles_uninit(ncells);
+    if ncells > 0 {
+        let out_s = out
+            .as_robj_mut()
+            .as_real_slice_mut()
+            .expect("numeric CCA output");
+        let work = ncells.saturating_mul(nfeatures);
+        if use_parallel(ncells, work) {
+            out_s.par_iter_mut().enumerate().for_each(|(col, slot)| {
+                let base = col * nfeatures;
+                let mut s = 0.0;
+                for row in 0..nfeatures {
+                    s += left_data[base + row] * feature_scores[row];
+                }
+                *slot = s;
+            });
+        } else {
+            for col in 0..ncells {
+                let base = col * nfeatures;
+                let mut s = 0.0;
+                for row in 0..nfeatures {
+                    s += left_data[base + row] * feature_scores[row];
+                }
+                out_s[col] = s;
             }
-            s
-        })
-        .collect();
-    Ok(Doubles::from_values(out))
+        }
+    }
+    Ok(out)
 }
 
 /// Count unique nearest neighbors shared by each anchor pair.
@@ -83,44 +100,42 @@ pub fn count_anchor_shared_neighbors_impl(
     let bb_rows = indices_bb.nrows();
     let offset = offset as usize;
 
-    let scores: Vec<i32> = (0..nanchors)
-        .into_par_iter()
-        .map(|anchor| {
-            let mut neighbors_a = vec![0u32; max_neighbor + 1];
-            let mut seen_b = vec![0u32; max_neighbor + 1];
-            let stamp = (anchor as u32).wrapping_add(1);
-            let anchor_cell_a = (anchor_cell1[anchor] - 1) as usize;
-            let anchor_cell_b = (anchor_cell2[anchor] - 1) as usize;
-            for k in 0..k_score {
-                let aa_id = aa[anchor_cell_a + k * aa_rows] as usize;
-                let ab_id = ab[anchor_cell_a + k * ab_rows] as usize + offset;
-                if aa_id < neighbors_a.len() {
-                    neighbors_a[aa_id] = stamp;
-                }
-                if ab_id < neighbors_a.len() {
-                    neighbors_a[ab_id] = stamp;
+    let work = nanchors.saturating_mul(k_score.max(1));
+    let scores: Vec<i32> = map_indexed(nanchors, work, |anchor| {
+        let mut neighbors_a = vec![0u32; max_neighbor + 1];
+        let mut seen_b = vec![0u32; max_neighbor + 1];
+        let stamp = (anchor as u32).wrapping_add(1);
+        let anchor_cell_a = (anchor_cell1[anchor] - 1) as usize;
+        let anchor_cell_b = (anchor_cell2[anchor] - 1) as usize;
+        for k in 0..k_score {
+            let aa_id = aa[anchor_cell_a + k * aa_rows] as usize;
+            let ab_id = ab[anchor_cell_a + k * ab_rows] as usize + offset;
+            if aa_id < neighbors_a.len() {
+                neighbors_a[aa_id] = stamp;
+            }
+            if ab_id < neighbors_a.len() {
+                neighbors_a[ab_id] = stamp;
+            }
+        }
+        let mut shared = 0i32;
+        for k in 0..k_score {
+            let neighbor_ba = ba[anchor_cell_b + k * ba_rows] as usize;
+            if neighbor_ba < seen_b.len() && seen_b[neighbor_ba] != stamp {
+                seen_b[neighbor_ba] = stamp;
+                if neighbors_a[neighbor_ba] == stamp {
+                    shared += 1;
                 }
             }
-            let mut shared = 0i32;
-            for k in 0..k_score {
-                let neighbor_ba = ba[anchor_cell_b + k * ba_rows] as usize;
-                if neighbor_ba < seen_b.len() && seen_b[neighbor_ba] != stamp {
-                    seen_b[neighbor_ba] = stamp;
-                    if neighbors_a[neighbor_ba] == stamp {
-                        shared += 1;
-                    }
-                }
-                let neighbor_bb = bb[anchor_cell_b + k * bb_rows] as usize + offset;
-                if neighbor_bb < seen_b.len() && seen_b[neighbor_bb] != stamp {
-                    seen_b[neighbor_bb] = stamp;
-                    if neighbors_a[neighbor_bb] == stamp {
-                        shared += 1;
-                    }
+            let neighbor_bb = bb[anchor_cell_b + k * bb_rows] as usize + offset;
+            if neighbor_bb < seen_b.len() && seen_b[neighbor_bb] != stamp {
+                seen_b[neighbor_bb] = stamp;
+                if neighbors_a[neighbor_bb] == stamp {
+                    shared += 1;
                 }
             }
-            shared
-        })
-        .collect();
+        }
+        shared
+    });
     Integers::from_values(scores)
 }
 

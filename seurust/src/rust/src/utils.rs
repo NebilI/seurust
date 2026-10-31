@@ -1,3 +1,26 @@
+use rayon::prelude::*;
+
+/// Primitive-op count below which rayon dispatch usually costs more than the work.
+pub const SERIAL_WORK_THRESHOLD: usize = 65_536;
+
+#[inline]
+pub fn use_parallel(n_tasks: usize, work: usize) -> bool {
+    n_tasks > 1 && work >= SERIAL_WORK_THRESHOLD
+}
+
+/// Map `0..n` in parallel only when `work` is large enough to pay for rayon.
+pub fn map_indexed<T, F>(n: usize, work: usize, f: F) -> Vec<T>
+where
+    T: Send,
+    F: Fn(usize) -> T + Sync + Send,
+{
+    if use_parallel(n, work) {
+        (0..n).into_par_iter().map(f).collect()
+    } else {
+        (0..n).map(f).collect()
+    }
+}
+
 /// Stable sort of indices by ascending values (matches C++ `sort_indexes`).
 pub fn sort_indexes(v: &[f64]) -> Vec<usize> {
     let mut idx: Vec<usize> = (0..v.len()).collect();
@@ -60,4 +83,27 @@ pub fn dense_to_csc(mat: &ndarray::Array2<f64>) -> crate::sparse::CscSlots {
         }
     }
     crate::sparse::csc_from_triplets(nrows, ncols, &triplets)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_indexed_serial_matches_parallel() {
+        let f = |i: usize| (i as i32).wrapping_mul(3).wrapping_add(1);
+        let serial = map_indexed(64, 0, f);
+        let parallel = map_indexed(64, SERIAL_WORK_THRESHOLD, f);
+        assert_eq!(serial, parallel);
+        assert_eq!(serial[7], 22);
+        assert!(map_indexed::<i32, _>(0, SERIAL_WORK_THRESHOLD, f).is_empty());
+    }
+
+    #[test]
+    fn bench_sized_tiny_kernels_stay_serial() {
+        assert!(!use_parallel(200, 200 * 80));
+        assert!(!use_parallel(80, 80 * 10));
+        assert!(!use_parallel(3_200, 80 * 40));
+        assert!(use_parallel(2_000, 2_000 * 2_000));
+    }
 }

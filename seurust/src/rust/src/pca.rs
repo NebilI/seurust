@@ -3,7 +3,6 @@
 use crate::sparse::rmatrix_with_data;
 use extendr_api::prelude::*;
 use nalgebra::{DMatrix, SymmetricEigen};
-use rayon::prelude::*;
 
 fn gram_xx_t(x: &[f64], nfeatures: usize, ncells: usize) -> Vec<f64> {
     let mut gram = vec![0.0; nfeatures * nfeatures];
@@ -80,7 +79,9 @@ fn align_loading_signs(loadings: &mut [f64], nfeatures: usize, npcs: usize) {
             }
         }
         if col[best_idx] < 0.0 {
-            col.par_iter_mut().for_each(|v| *v = -*v);
+            for v in col.iter_mut() {
+                *v = -*v;
+            }
         }
     }
 }
