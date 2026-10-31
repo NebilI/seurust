@@ -14,10 +14,15 @@ fn vec_to_doubles(values: Vec<f64>) -> Doubles {
     doubles_from_slice(&values)
 }
 
+/// Allocate an uninitialized INTSXP and wrap it as `Integers`.
+pub fn integers_uninit(len: usize) -> Integers {
+    let robj = Robj::alloc_vector(extendr_ffi::SEXPTYPE::INTSXP, len);
+    Integers::try_from(robj).expect("INTSXP Integers")
+}
+
 fn vec_to_integers(values: Vec<i32>) -> Integers {
-    let len = values.len();
-    let mut out = Integers::new(len);
-    if len > 0 {
+    let mut out = integers_uninit(values.len());
+    if !values.is_empty() {
         out.as_robj_mut()
             .as_integer_slice_mut()
             .expect("integer output")
