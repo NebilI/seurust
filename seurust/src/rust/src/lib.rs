@@ -36,10 +36,7 @@ use snn::{
     compute_snn_to_r_impl, direct_snn_to_file_impl, snn_smallest_nonzero_dist_impl,
     write_edge_file_impl,
 };
-use sparse::{
-    doubles_uninit, strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView,
-    CsrView,
-};
+use sparse::{doubles_uninit, vec_from_doubles, vec_from_integers, CscSlots, CscView, CsrView};
 use stats::{row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl};
 
 #[extendr]
@@ -344,23 +341,24 @@ fn find_weights(
     sd: f64,
     display_progress: bool,
     _nthreads: i32,
-) -> List {
-    let cells: Vec<i32> = vec_from_doubles(&cells2)
-        .into_iter()
-        .map(|v| v as i32)
-        .collect();
+) -> extendr_api::Result<Robj> {
+    let cells = cells2.as_robj().as_real_slice().expect("numeric cells2");
+    let scores = anchor_score
+        .as_robj()
+        .as_real_slice()
+        .expect("numeric anchor_score");
     find_weights_impl(
-        &cells,
+        cells,
         &distances,
-        &strings_to_str_vec(anchor_cells2),
-        &strings_to_str_vec(integration_matrix_rownames),
+        &anchor_cells2,
+        &integration_matrix_rownames,
         &cell_index,
-        &anchor_score.iter().map(|v| v.0).collect::<Vec<_>>(),
+        scores,
         min_dist,
         sd,
         display_progress,
     )
-    .to_r_list()
+    .into_r_dgcmatrix()
 }
 
 #[extendr]
