@@ -1,4 +1,4 @@
-use crate::sparse::rmatrix_from_column_major;
+use crate::sparse::rmatrix_with_data;
 use extendr_api::prelude::*;
 use rayon::prelude::*;
 
@@ -6,33 +6,31 @@ pub fn standardize_impl(mat: &RMatrix<f64>, _display_progress: bool) -> RMatrix<
     let nrows = mat.nrows();
     let ncols = mat.ncols();
     let values = mat.data();
-    let mut out = vec![0.0; nrows * ncols];
-
-    out.par_chunks_mut(nrows.max(1))
-        .enumerate()
-        .for_each(|(c, out_col)| {
-            let start = c * nrows;
-            let col = &values[start..start + nrows];
-            let col_mean = if nrows == 0 {
-                0.0
-            } else {
-                col.iter().sum::<f64>() / nrows as f64
-            };
-            let col_sdev = (col
-                .iter()
-                .map(|v| {
-                    let d = v - col_mean;
-                    d * d
-                })
-                .sum::<f64>()
-                / (nrows as f64 - 1.0))
-                .sqrt();
-            for r in 0..nrows {
-                out_col[r] = (col[r] - col_mean) / col_sdev;
-            }
-        });
-
-    rmatrix_from_column_major(&out, nrows, ncols)
+    rmatrix_with_data(nrows, ncols, |out| {
+        out.par_chunks_mut(nrows.max(1))
+            .enumerate()
+            .for_each(|(c, out_col)| {
+                let start = c * nrows;
+                let col = &values[start..start + nrows];
+                let col_mean = if nrows == 0 {
+                    0.0
+                } else {
+                    col.iter().sum::<f64>() / nrows as f64
+                };
+                let col_sdev = (col
+                    .iter()
+                    .map(|v| {
+                        let d = v - col_mean;
+                        d * d
+                    })
+                    .sum::<f64>()
+                    / (nrows as f64 - 1.0))
+                    .sqrt();
+                for r in 0..nrows {
+                    out_col[r] = (col[r] - col_mean) / col_sdev;
+                }
+            });
+    })
 }
 
 /// Column-major copy of `values` (nrows x ncols), optionally with each column
@@ -227,7 +225,11 @@ pub fn fast_dense_row_scale_impl(
     let mut inv_sigma = vec![0.0; n_sel];
     let mut valid = vec![false; n_sel];
     for row in 0..n_sel {
-        let mean = if cols == 0 { 0.0 } else { row_sum[row] / cols_d };
+        let mean = if cols == 0 {
+            0.0
+        } else {
+            row_sum[row] / cols_d
+        };
         mu[row] = if center { mean } else { 0.0 };
         let sigma = if scale {
             let numerator = if center {
@@ -245,23 +247,22 @@ pub fn fast_dense_row_scale_impl(
         }
     }
 
-    let mut out = vec![0.0; n_sel * cols];
-    out.par_chunks_mut(n_sel.max(1))
-        .enumerate()
-        .for_each(|(col, out_col)| {
-            let col_ptr = col * full_rows;
-            for row in 0..n_sel {
-                if valid[row] {
-                    let mut value = (values[col_ptr + sel[row]] - mu[row]) * inv_sigma[row];
-                    if clip {
-                        value = scale_clip(value, scale_max);
+    rmatrix_with_data(n_sel, cols, |out| {
+        out.par_chunks_mut(n_sel.max(1))
+            .enumerate()
+            .for_each(|(col, out_col)| {
+                let col_ptr = col * full_rows;
+                for row in 0..n_sel {
+                    if valid[row] {
+                        let mut value = (values[col_ptr + sel[row]] - mu[row]) * inv_sigma[row];
+                        if clip {
+                            value = scale_clip(value, scale_max);
+                        }
+                        out_col[row] = value;
                     }
-                    out_col[row] = value;
                 }
-            }
-        });
-
-    rmatrix_from_column_major(&out, n_sel, cols)
+            });
+    })
 }
 
 pub fn row_var_impl(mat: &RMatrix<f64>) -> Doubles {

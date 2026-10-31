@@ -5,7 +5,11 @@ use extendr_api::prelude::*;
 use rayon::prelude::*;
 
 fn dimmed_matrix(values: Vec<f64>, nrow: usize, ncol: usize) -> RMatrix<f64> {
-    crate::sparse::rmatrix_from_column_major(&values, nrow, ncol)
+    crate::sparse::rmatrix_with_data(nrow, ncol, |out| {
+        if !values.is_empty() {
+            out.copy_from_slice(&values);
+        }
+    })
 }
 
 fn dimmed_integers(values: Vec<i32>, nrow: i32, ncol: i32) -> Robj {

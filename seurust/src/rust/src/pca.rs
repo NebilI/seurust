@@ -1,6 +1,6 @@
 //! Approximate PCA via the Gram matrix X X' (Seurat 5.6 `EigenGramPCA`).
 
-use crate::sparse::rmatrix_from_column_major;
+use crate::sparse::rmatrix_with_data;
 use extendr_api::prelude::*;
 use nalgebra::{DMatrix, SymmetricEigen};
 use rayon::prelude::*;
@@ -32,17 +32,18 @@ fn gram_xx_t(x: &[f64], nfeatures: usize, ncells: usize) -> Vec<f64> {
     gram
 }
 
-fn embeddings_xt_u(
+fn embeddings_xt_u_into(
     x: &[f64],
     loadings: &[f64],
     nfeatures: usize,
     ncells: usize,
     npcs: usize,
-) -> Vec<f64> {
-    let mut embeddings = vec![0.0; ncells * npcs];
+    embeddings: &mut [f64],
+) {
     if nfeatures == 0 || ncells == 0 || npcs == 0 {
-        return embeddings;
+        return;
     }
+    debug_assert_eq!(embeddings.len(), ncells * npcs);
     // embeddings = X^T * U, X is nfeatures x ncells, U is nfeatures x npcs.
     unsafe {
         matrixmultiply::dgemm(
@@ -62,7 +63,6 @@ fn embeddings_xt_u(
             ncells as isize,
         );
     }
-    embeddings
 }
 
 /// Align each eigenvector so the entry of largest magnitude is non-negative.
@@ -112,18 +112,21 @@ pub fn eigen_gram_pca_impl(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let mut loadings = vec![0.0; nfeatures * npcs];
     let mut d = vec![0.0; npcs];
-    for j in 0..npcs {
-        let src = order[j];
-        d[j] = eigen.eigenvalues[src].max(0.0).sqrt();
-        for i in 0..nfeatures {
-            loadings[i + j * nfeatures] = eigen.eigenvectors[(i, src)];
+    let loadings = rmatrix_with_data(nfeatures, npcs, |loadings| {
+        for j in 0..npcs {
+            let src = order[j];
+            d[j] = eigen.eigenvalues[src].max(0.0).sqrt();
+            for i in 0..nfeatures {
+                loadings[i + j * nfeatures] = eigen.eigenvectors[(i, src)];
+            }
         }
-    }
-    align_loading_signs(&mut loadings, nfeatures, npcs);
+        align_loading_signs(loadings, nfeatures, npcs);
+    });
 
-    let mut embeddings = embeddings_xt_u(x, &loadings, nfeatures, ncells, npcs);
+    let mut embeddings = rmatrix_with_data(ncells, npcs, |embeddings| {
+        embeddings_xt_u_into(x, loadings.data(), nfeatures, ncells, npcs, embeddings);
+    });
     if !weight_by_var {
         let max_d = d.iter().copied().fold(0.0_f64, f64::max);
         let min_singular = max_d * f64::EPSILON.sqrt();
@@ -132,10 +135,11 @@ pub fn eigen_gram_pca_impl(
                 "Unweighted PCA requires SVD for numerically zero singular values.".into(),
             ));
         }
+        let embeddings_data = embeddings.data_mut();
         for j in 0..npcs {
             let scale = d[j];
             for i in 0..ncells {
-                embeddings[i + j * ncells] /= scale;
+                embeddings_data[i + j * ncells] /= scale;
             }
         }
     }
@@ -143,8 +147,8 @@ pub fn eigen_gram_pca_impl(
     let denom = (ncells.max(2) - 1) as f64;
     let sdev: Vec<f64> = d.iter().map(|v| v / denom.sqrt()).collect();
     Ok(Robj::from(list!(
-        loadings = rmatrix_from_column_major(&loadings, nfeatures, npcs),
-        embeddings = rmatrix_from_column_major(&embeddings, ncells, npcs),
+        loadings = loadings,
+        embeddings = embeddings,
         sdev = Doubles::from_values(sdev)
     )))
 }

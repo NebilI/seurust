@@ -1,6 +1,4 @@
-use crate::sparse::{
-    build_dgcmatrix, rmatrix_from_column_major, CscSlots, CscView, CsrView, RowIndex,
-};
+use crate::sparse::{build_dgcmatrix, rmatrix_with_data, CscSlots, CscView, CsrView, RowIndex};
 use extendr_api::prelude::*;
 use extendr_api::GetSexp;
 use extendr_ffi::Rf_runif;
@@ -340,27 +338,26 @@ pub fn fast_sparse_row_scale_impl(
         }
     }
 
-    let mut data = vec![0.0; n_sel * n_cells];
-    data.par_chunks_mut(n_sel.max(1))
-        .enumerate()
-        .for_each(|(col, out_col)| {
-            out_col.copy_from_slice(&zero_value);
-            for ptr in view.p[col] as usize..view.p[col + 1] as usize {
-                let mapped = gmap[view.i[ptr] as usize];
-                if mapped >= 0 {
-                    let row = mapped as usize;
-                    if valid[row] {
-                        let mut value = (view.x[ptr] - mu[row]) * inv_sigma[row];
-                        if clip {
-                            value = scale_clip(value, scale_max);
+    rmatrix_with_data(n_sel, n_cells, |data| {
+        data.par_chunks_mut(n_sel.max(1))
+            .enumerate()
+            .for_each(|(col, out_col)| {
+                out_col.copy_from_slice(&zero_value);
+                for ptr in view.p[col] as usize..view.p[col + 1] as usize {
+                    let mapped = gmap[view.i[ptr] as usize];
+                    if mapped >= 0 {
+                        let row = mapped as usize;
+                        if valid[row] {
+                            let mut value = (view.x[ptr] - mu[row]) * inv_sigma[row];
+                            if clip {
+                                value = scale_clip(value, scale_max);
+                            }
+                            out_col[row] = value;
                         }
-                        out_col[row] = value;
                     }
                 }
-            }
-        });
-
-    rmatrix_from_column_major(&data, n_sel, n_cells)
+            });
+    })
 }
 
 pub fn fast_sparse_row_scale_with_known_stats_impl(
@@ -375,29 +372,27 @@ pub fn fast_sparse_row_scale_with_known_stats_impl(
     let n_genes = view.nrows as usize;
     let n_cells = view.ncols as usize;
     let row_index = RowIndex::from_csc_view(&view);
-    let mut data = vec![0.0; n_genes * n_cells];
-    let out_addr = data.as_mut_ptr() as usize;
-
-    (0..n_genes).into_par_iter().for_each(|gene| {
-        let col_mean = if center { mu[gene] } else { 0.0 };
-        let col_sdev = if scale { sigma[gene] } else { 1.0 };
-        let inv_sdev = 1.0 / col_sdev;
-        let out_ptr = out_addr as *mut f64;
-        unsafe {
-            for cell in 0..n_cells {
-                let value = scale_clip((0.0 - col_mean) * inv_sdev, scale_max);
-                *out_ptr.add(gene + cell * n_genes) = value;
+    rmatrix_with_data(n_genes, n_cells, |data| {
+        let out_addr = data.as_mut_ptr() as usize;
+        (0..n_genes).into_par_iter().for_each(|gene| {
+            let col_mean = if center { mu[gene] } else { 0.0 };
+            let col_sdev = if scale { sigma[gene] } else { 1.0 };
+            let inv_sdev = 1.0 / col_sdev;
+            let out_ptr = out_addr as *mut f64;
+            unsafe {
+                for cell in 0..n_cells {
+                    let value = scale_clip((0.0 - col_mean) * inv_sdev, scale_max);
+                    *out_ptr.add(gene + cell * n_genes) = value;
+                }
+                for pos in row_index.row_range(gene) {
+                    let cell = row_index.row_cols[pos];
+                    let val = view.x[row_index.row_x_idx[pos]];
+                    let value = scale_clip((val - col_mean) * inv_sdev, scale_max);
+                    *out_ptr.add(gene + cell * n_genes) = value;
+                }
             }
-            for pos in row_index.row_range(gene) {
-                let cell = row_index.row_cols[pos];
-                let val = view.x[row_index.row_x_idx[pos]];
-                let value = scale_clip((val - col_mean) * inv_sdev, scale_max);
-                *out_ptr.add(gene + cell * n_genes) = value;
-            }
-        }
-    });
-
-    rmatrix_from_column_major(&data, n_genes, n_cells)
+        });
+    })
 }
 
 /// Parallel per-row sums over CSC columns.
@@ -663,9 +658,7 @@ pub fn sparse_row_mean_var_legacy_impl(view: CscView<'_>) -> (Vec<f64>, Vec<f64>
         *sum += diff * diff;
     });
     let vars: Vec<f64> = (0..n_genes)
-        .map(|row| {
-            (sq[row] + (n_cells - nnz[row]) as f64 * means[row] * means[row]) / denom
-        })
+        .map(|row| (sq[row] + (n_cells - nnz[row]) as f64 * means[row] * means[row]) / denom)
         .collect();
     (means, vars)
 }
@@ -790,22 +783,15 @@ pub fn replace_cols_impl(
     })
 }
 
-/// Per-row neighbor lists of a graph (cells x cells), ordered by increasing
-/// distance. Row `k` of the outputs holds the 1-based column indices and
-/// values of row `k` of `mat`, as in Seurat's `GraphToNeighborHelper`.
-pub fn graph_to_neighbor_lists(mat: &CscSlots) -> Result<(usize, Vec<f64>, Vec<f64>), String> {
-    let csr = mat.to_cs_mat().to_csr();
+fn fill_neighbor_matrices(
+    csr: &sprs::CsMat<f64>,
+    n_neighbors: usize,
+    nn_idx: &mut [f64],
+    nn_dist: &mut [f64],
+) -> Result<(), String> {
     let nrows = csr.rows();
-    let n_neighbors = csr
-        .outer_iterator()
-        .next()
-        .map(|row| row.nnz())
-        .unwrap_or(0);
-
-    // Column-major nrows x n_neighbors buffers, ready to hand to R.
-    let mut nn_idx = vec![0.0; nrows * n_neighbors];
-    let mut nn_dist = vec![0.0; nrows * n_neighbors];
-
+    debug_assert_eq!(nn_idx.len(), nrows * n_neighbors);
+    debug_assert_eq!(nn_dist.len(), nrows * n_neighbors);
     for (k, row) in csr.outer_iterator().enumerate() {
         if row.nnz() != n_neighbors {
             return Err(format!(
@@ -830,18 +816,45 @@ pub fn graph_to_neighbor_lists(mat: &CscSlots) -> Result<(usize, Vec<f64>, Vec<f
             nn_dist[k + i * nrows] = row_dist[ord];
         }
     }
+    Ok(())
+}
 
+/// Per-row neighbor lists of a graph (cells x cells), ordered by increasing
+/// distance. Row `k` of the outputs holds the 1-based column indices and
+/// values of row `k` of `mat`, as in Seurat's `GraphToNeighborHelper`.
+pub fn graph_to_neighbor_lists(mat: &CscSlots) -> Result<(usize, Vec<f64>, Vec<f64>), String> {
+    let csr = mat.to_cs_mat().to_csr();
+    let nrows = csr.rows();
+    let n_neighbors = csr
+        .outer_iterator()
+        .next()
+        .map(|row| row.nnz())
+        .unwrap_or(0);
+
+    let mut nn_idx = vec![0.0; nrows * n_neighbors];
+    let mut nn_dist = vec![0.0; nrows * n_neighbors];
+    fill_neighbor_matrices(&csr, n_neighbors, &mut nn_idx, &mut nn_dist)?;
     Ok((n_neighbors, nn_idx, nn_dist))
 }
 
 pub fn graph_to_neighbor_helper_impl(mat: CscSlots) -> extendr_api::Result<Robj> {
-    let nrows = mat.nrows as usize;
-    let (n_neighbors, nn_idx, nn_dist) =
-        graph_to_neighbor_lists(&mat).map_err(extendr_api::Error::Other)?;
+    let csr = mat.to_cs_mat().to_csr();
+    let nrows = csr.rows();
+    let n_neighbors = csr
+        .outer_iterator()
+        .next()
+        .map(|row| row.nnz())
+        .unwrap_or(0);
+    let mut nn_idx = RMatrix::<f64>::new(nrows, n_neighbors);
+    let mut nn_dist = RMatrix::<f64>::new(nrows, n_neighbors);
+    if nrows > 0 && n_neighbors > 0 {
+        fill_neighbor_matrices(&csr, n_neighbors, nn_idx.data_mut(), nn_dist.data_mut())
+            .map_err(extendr_api::Error::Other)?;
+    }
 
     Ok(Robj::from(List::from_values([
-        Robj::from(rmatrix_from_column_major(&nn_idx, nrows, n_neighbors)),
-        Robj::from(rmatrix_from_column_major(&nn_dist, nrows, n_neighbors)),
+        Robj::from(nn_idx),
+        Robj::from(nn_dist),
     ])))
 }
 

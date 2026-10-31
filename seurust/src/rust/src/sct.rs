@@ -1,6 +1,6 @@
 //! SCTransform Pearson residuals and corrected counts (Seurat 5.6).
 
-use crate::sparse::{rmatrix_from_column_major, CscSlots, CscView};
+use crate::sparse::{rmatrix_with_data, CscSlots, CscView};
 use extendr_api::prelude::*;
 use rayon::prelude::*;
 
@@ -30,9 +30,7 @@ fn residual_stats(
     let cols = view.ncols as usize;
     let exp_intercept: Vec<f64> = intercept.iter().map(|v| v.exp()).collect();
     let first_slope = if rows == 0 { 0.0 } else { slope[0] };
-    let common_slope = slope
-        .iter()
-        .all(|s| (s - first_slope).abs() <= 1e-12);
+    let common_slope = slope.iter().all(|s| (s - first_slope).abs() <= 1e-12);
 
     let (residual_sum, residual_sq_sum) = (0..cols)
         .into_par_iter()
@@ -200,9 +198,7 @@ pub fn sct_residual_stats_and_corrected_impl(
     let denom = (cols.max(2) - 1) as f64;
     let residual_mean: Vec<f64> = residual_sum.iter().map(|s| s / cols_d).collect();
     let residual_variance: Vec<f64> = (0..rows)
-        .map(|row| {
-            (residual_sq_sum[row] - residual_sum[row] * residual_sum[row] / cols_d) / denom
-        })
+        .map(|row| (residual_sq_sum[row] - residual_sum[row] * residual_sum[row] / cols_d) / denom)
         .collect();
 
     if compute_corrected {
@@ -277,67 +273,67 @@ pub fn sct_pearson_residual_matrix_impl(
         }
     }
 
-    let mut out = vec![0.0; selected * cols];
     let mut row_sum = vec![0.0; selected];
-    let out_addr = out.as_mut_ptr() as usize;
-    let sums: Vec<Vec<f64>> = (0..cols)
-        .into_par_iter()
-        .map(|col| {
-            let mut local_y = vec![0.0; selected];
-            let mut touched = Vec::new();
-            for ptr in view.p[col] as usize..view.p[col + 1] as usize {
-                let selected_row = row_to_selected[view.i[ptr] as usize];
-                if selected_row >= 0 {
-                    let selected_row = selected_row as usize;
-                    local_y[selected_row] = view.x[ptr];
-                    touched.push(selected_row);
-                }
-            }
-            let log_umi_col = log_umi[col];
-            let common_factor = if common_slope {
-                (first_slope * log_umi_col).exp()
-            } else {
-                0.0
-            };
-            let mut local_sum = vec![0.0; selected];
-            let out_ptr = out_addr as *mut f64;
-            unsafe {
-                let out_col = out_ptr.add(col * selected);
-                for idx in 0..selected {
-                    let mu = if common_slope {
-                        selected_exp_intercept[idx] * common_factor
-                    } else {
-                        selected_exp_intercept[idx] * (selected_slope[idx] * log_umi_col).exp()
-                    };
-                    let mut variance = sct_model_var(mu, selected_theta[idx]);
-                    if variance < selected_min_var[idx] {
-                        variance = selected_min_var[idx];
+    let mut out = rmatrix_with_data(selected, cols, |out| {
+        let out_addr = out.as_mut_ptr() as usize;
+        let sums: Vec<Vec<f64>> = (0..cols)
+            .into_par_iter()
+            .map(|col| {
+                let mut local_y = vec![0.0; selected];
+                for ptr in view.p[col] as usize..view.p[col + 1] as usize {
+                    let selected_row = row_to_selected[view.i[ptr] as usize];
+                    if selected_row >= 0 {
+                        local_y[selected_row as usize] = view.x[ptr];
                     }
-                    let residual = (local_y[idx] - mu) / variance.sqrt();
-                    let clipped = sct_clip(residual, clip_min, clip_max);
-                    *out_col.add(idx) = clipped;
-                    local_sum[idx] = clipped;
                 }
+                let log_umi_col = log_umi[col];
+                let common_factor = if common_slope {
+                    (first_slope * log_umi_col).exp()
+                } else {
+                    0.0
+                };
+                let mut local_sum = vec![0.0; selected];
+                let out_ptr = out_addr as *mut f64;
+                unsafe {
+                    let out_col = out_ptr.add(col * selected);
+                    for idx in 0..selected {
+                        let mu = if common_slope {
+                            selected_exp_intercept[idx] * common_factor
+                        } else {
+                            selected_exp_intercept[idx] * (selected_slope[idx] * log_umi_col).exp()
+                        };
+                        let mut variance = sct_model_var(mu, selected_theta[idx]);
+                        if variance < selected_min_var[idx] {
+                            variance = selected_min_var[idx];
+                        }
+                        let residual = (local_y[idx] - mu) / variance.sqrt();
+                        let clipped = sct_clip(residual, clip_min, clip_max);
+                        *out_col.add(idx) = clipped;
+                        local_sum[idx] = clipped;
+                    }
+                }
+                local_sum
+            })
+            .collect();
+        for local in sums {
+            for idx in 0..selected {
+                row_sum[idx] += local[idx];
             }
-            local_sum
-        })
-        .collect();
-    for local in sums {
-        for idx in 0..selected {
-            row_sum[idx] += local[idx];
         }
-    }
+    });
 
     if do_center && cols > 0 {
         let inv_cols = 1.0 / cols as f64;
-        out.par_chunks_mut(selected.max(1)).for_each(|col| {
-            for idx in 0..selected {
-                col[idx] -= row_sum[idx] * inv_cols;
-            }
-        });
+        out.data_mut()
+            .par_chunks_mut(selected.max(1))
+            .for_each(|col| {
+                for idx in 0..selected {
+                    col[idx] -= row_sum[idx] * inv_cols;
+                }
+            });
     }
 
-    Ok(rmatrix_from_column_major(&out, selected, cols))
+    Ok(out)
 }
 
 #[cfg(test)]

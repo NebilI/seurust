@@ -11,15 +11,7 @@ pub fn vec_from_integers(i: &Integers) -> Vec<i32> {
 }
 
 fn vec_to_doubles(values: Vec<f64>) -> Doubles {
-    let len = values.len();
-    let mut out = Doubles::new(len);
-    if len > 0 {
-        out.as_robj_mut()
-            .as_real_slice_mut()
-            .expect("numeric output")
-            .copy_from_slice(&values);
-    }
-    out
+    doubles_from_slice(&values)
 }
 
 fn vec_to_integers(values: Vec<i32>) -> Integers {
@@ -344,11 +336,46 @@ impl RowIndex {
     }
 }
 
+/// Allocate an R numeric matrix (uninitialized) and fill it in place.
+///
+/// `RMatrix::new` uses `Rf_allocMatrix`, which does not zero the buffer.
+/// Filling that slice from rayon workers is safe as long as they only touch
+/// disjoint ranges and never call the R API.
+pub fn rmatrix_with_data(
+    nrows: usize,
+    ncols: usize,
+    fill: impl FnOnce(&mut [f64]),
+) -> RMatrix<f64> {
+    let mut out = RMatrix::<f64>::new(nrows, ncols);
+    if nrows > 0 && ncols > 0 {
+        fill(out.data_mut());
+    }
+    out
+}
+
 pub fn rmatrix_from_column_major(data: &[f64], nrows: usize, ncols: usize) -> RMatrix<f64> {
     debug_assert_eq!(data.len(), nrows * ncols);
-    let mut out = RMatrix::<f64>::new(nrows, ncols);
-    if !data.is_empty() {
-        out.data_mut().copy_from_slice(data);
+    rmatrix_with_data(nrows, ncols, |out| {
+        if !data.is_empty() {
+            out.copy_from_slice(data);
+        }
+    })
+}
+
+/// Allocate an uninitialized REALSXP and wrap it as `Doubles`.
+pub fn doubles_uninit(len: usize) -> Doubles {
+    let robj = Robj::alloc_vector(extendr_ffi::SEXPTYPE::REALSXP, len);
+    Doubles::try_from(robj).expect("REALSXP Doubles")
+}
+
+/// Copy `values` into a new R numeric vector without a zero-fill pass.
+pub fn doubles_from_slice(values: &[f64]) -> Doubles {
+    let mut out = doubles_uninit(values.len());
+    if !values.is_empty() {
+        out.as_robj_mut()
+            .as_real_slice_mut()
+            .expect("numeric output")
+            .copy_from_slice(values);
     }
     out
 }
