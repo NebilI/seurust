@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate vendored Rust crates for CRAN offline builds.
+# Regenerate vendored Rust crates for offline source builds.
 # Run from the repository root: ./seurust/tools/vendor.sh
 set -euo pipefail
 
@@ -22,4 +22,4 @@ rm -f vendor.tar.xz
 tar -cJ --no-xattrs -f vendor.tar.xz vendor
 rm -rf vendor
 ls -lh vendor.tar.xz vendor-config.toml
-echo "Vendoring complete. Commit vendor.tar.xz and vendor-config.toml before a CRAN release."
+echo "Vendoring complete. Commit vendor.tar.xz and vendor-config.toml."

@@ -14,12 +14,6 @@ No C++ compiler or `RcppEigen` headers are needed; all compiled code is Rust.
 
 ## Install
 
-### From CRAN (after acceptance)
-
-```r
-install.packages("seurust")
-```
-
 ### From r-universe
 
 ```r

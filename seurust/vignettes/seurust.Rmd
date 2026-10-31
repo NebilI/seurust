@@ -23,11 +23,7 @@ you can compare outputs directly.
 
 ## Install
 
-```{r}
-install.packages("seurust")
-```
-
-From [r-universe](https://NebilI.r-universe.dev/seurust) while mirrors update:
+From [r-universe](https://NebilI.r-universe.dev/seurust):
 
 ```{r}
 install.packages(

@@ -4,10 +4,7 @@ name: Release seurust
 # and r-universe. An existing release tag is reused.
 # Run it from the Actions tab (Release seurust → Run workflow) to republish
 # the current version. A push to main that changes seurust/DESCRIPTION does
-# the same. CRAN submission stays manual.
-# GitHub does not start other workflows from a release created with the
-# default token, so this workflow calls the crates.io and r-universe jobs
-# directly.
+# the same.
 
 on:
   workflow_dispatch:
@@ -28,7 +25,6 @@ jobs:
     name: Create GitHub release
     runs-on: ubuntu-latest
     outputs:
-      created: ${{ steps.rel.outputs.created }}
       tag: ${{ steps.rel.outputs.tag }}
     steps:
       - name: Checkout
@@ -49,27 +45,120 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           if gh release view "${tag}" >/dev/null 2>&1; then
             echo "Release ${tag} already exists."
-            echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           gh release create "${tag}" \
             --target "${GITHUB_SHA}" \
             --title "seurust ${version}" \
             --notes "seurust ${version}. See seurust/NEWS.md."
-          echo "created=true" >> "$GITHUB_OUTPUT"
 
   publish-crate:
-    name: Publish to crates.io
+    name: Publish Rust crate
     needs: create-release
-    uses: ./.github/workflows/publish-seurust-crate.yaml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seurust/src/rust
 
-  # Shared registry: the called workflow upserts only the seurust entry in
-  # NebilI.r-universe.dev packages.json and leaves every other package.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libclang-dev \
+            llvm-dev
+
+      - name: Verify crate packages cleanly
+        run: |
+          export R_HOME="$(R RHOME)"
+          cargo publish --dry-run
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::warning::CRATES_IO_TOKEN not configured; skipping crates.io publish"
+            exit 0
+          fi
+          export R_HOME="$(R RHOME)"
+          set +e
+          output=$(cargo publish --token "$CARGO_REGISTRY_TOKEN" 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            if printf '%s\n' "$output" | grep -q "already uploaded"; then
+              echo "This version is already on crates.io"
+              exit 0
+            fi
+            exit "$status"
+          fi
+
   publish-r:
     name: Publish R package and r-universe
     needs: create-release
-    uses: ./.github/workflows/publish-seurust-r.yaml
-    with:
-      tag: ${{ needs.create-release.outputs.tag }}
-    secrets: inherit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+          extra-repositories: 'https://satijalab.r-universe.dev'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libclang-dev \
+            llvm-dev \
+            patchelf
+
+      - name: Install R build dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: seurust
+          dependencies: '"hard"'
+
+      - name: Configure seurust
+        working-directory: seurust
+        run: Rscript tools/config.R
+        env:
+          NOT_CRAN: true
+
+      - name: Build source tarball
+        run: R CMD build seurust
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
+          files: seurust_*.tar.gz
+
+      # NebilI.r-universe.dev is a shared registry. packages.json lists every
+      # package in the universe. Upsert only seurust; never replace the file.
+      - name: Sync r-universe registry
+        env:
+          UNIVERSE_TOKEN: ${{ secrets.R_UNIVERSE_REGISTRY_TOKEN }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
+        run: bash scripts/sync-r-universe.sh

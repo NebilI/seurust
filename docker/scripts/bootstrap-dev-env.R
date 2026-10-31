@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Ensure seurust is installed inside a fresh container. Seurat is installed
-# from CRAN when it is missing so parity examples can call Seurat:::.
+# when it is missing so parity examples can call Seurat:::.
 
 setwd("/workspace")
 
@@ -13,7 +13,7 @@ run_or_stop <- function(cmd, args = character()) {
 }
 
 if (!requireNamespace("Matrix", quietly = TRUE) || !requireNamespace("Seurat", quietly = TRUE)) {
-  message("==> Installing Matrix and Seurat from CRAN...")
+  message("==> Installing Matrix and Seurat...")
   install.packages(
     c("Matrix", "Seurat"),
     repos = c("https://cloud.r-project.org", "https://satijalab.r-universe.dev")

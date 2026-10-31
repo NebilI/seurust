@@ -9,8 +9,8 @@
 [![seurust CI](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml/badge.svg)](https://github.com/NebilI/seurust/actions/workflows/seurust_checks.yaml)
 [![r-universe](https://NebilI.r-universe.dev/badges/seurust)](https://NebilI.r-universe.dev/seurust)
 
-Publishing notes: [`seurust/CRAN.md`](seurust/CRAN.md).
-PR tests: `seurust Checks`. CRAN updates: Actions → **Build / submit seurust to CRAN**.
+Publishing notes: [`r-universe/README.md`](r-universe/README.md).
+PR tests: `seurust Checks`. Releases: Actions → **Release seurust**.
 
 ---
 
@@ -23,7 +23,7 @@ seurust targets exactly that layer:
 - **Same Seurat kernel names** — no new object model
 - **Validated parity** — tests against the installed Seurat package on ported kernels
 - **Measurable speedups** — Rust wins on the preprocessing kernels that run on every dataset (see benchmarks below)
-- **Open development** — install from GitHub, r-universe, or CRAN once accepted
+- **Open development** — install from GitHub or r-universe
 
 Seurat remains the user-facing analysis package. **seurust** is the native backend you install alongside it.
 
@@ -35,13 +35,13 @@ Seurat remains the user-facing analysis package. **seurust** is the native backe
 |------|--------|
 | R package | [`seurust/`](seurust/) |
 | Rust crate | [`seurust/src/rust/`](seurust/src/rust/) |
-| Offline crates for CRAN | [`seurust/src/rust/vendor.tar.xz`](seurust/src/rust/vendor.tar.xz) |
+| Offline Rust crates | [`seurust/src/rust/vendor.tar.xz`](seurust/src/rust/vendor.tar.xz) |
 | Kernel benchmark | [`scripts/bench-all-kernels.R`](scripts/bench-all-kernels.R) |
 | Release-tag cleanup | [`scripts/prune-seurust-releases.sh`](scripts/prune-seurust-releases.sh) |
-| Docker / CRAN image | [`docker/`](docker/) |
+| Docker development images | [`docker/`](docker/) |
 | r-universe registry notes | [`r-universe/`](r-universe/) |
 
-Seurat itself is installed from CRAN (or r-universe). This repository does not contain Seurat's sources.
+Seurat itself is installed separately (this repository does not contain Seurat's sources).
 
 ---
 
@@ -192,22 +192,19 @@ The modularity optimizer is a Rust port of Seurat's C++ translation of Ludo Walt
 
 Requires R ≥ 4.0 and a [Rust toolchain](https://rustup.rs) (rustc + Cargo ≥ 1.81) when installing from source.
 
-**CRAN** (after acceptance) or **r-universe / GitHub**:
+**r-universe** or **GitHub**:
 
 ```r
-install.packages("seurust")
-
-# Until CRAN accepts:
-# install.packages(
-#   "seurust",
-#   repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
-# )
+install.packages(
+  "seurust",
+  repos = c("https://NebilI.r-universe.dev", "https://cloud.r-project.org")
+)
 
 # Or development:
 # remotes::install_github("NebilI/seurust", subdir = "seurust")
 ```
 
-See [`seurust/README.md`](seurust/README.md) and [`seurust/CRAN.md`](seurust/CRAN.md) for packaging details.
+See [`seurust/README.md`](seurust/README.md) and [`r-universe/README.md`](r-universe/README.md) for packaging details.
 
 ### Verify parity in one line
 
@@ -239,7 +236,7 @@ docker compose -f docker/docker-compose.yml run --rm rust-dev \
 
 Full developer docs: [`docker/README.md`](docker/README.md).
 
-Publishing to GitHub Releases, crates.io, and r-universe is `release-seurust` (a push to `main` that changes `seurust/DESCRIPTION`, or **Actions → Release seurust**). The r-universe job updates `NebilI/NebilI.r-universe.dev`. Setup notes: [`r-universe/README.md`](r-universe/README.md).
+Publishing the Rust crate and the r-universe R package is `release-seurust` (a push to `main` that changes `seurust/DESCRIPTION`, or **Actions → Release seurust**). That workflow creates the GitHub Release, publishes to crates.io, and updates `NebilI/NebilI.r-universe.dev`. Setup notes: [`r-universe/README.md`](r-universe/README.md).
 
 ---
 
@@ -248,7 +245,7 @@ Publishing to GitHub Releases, crates.io, and r-universe is `release-seurust` (a
 seurust follows native interfaces from [satijalab/seurat](https://github.com/satijalab/seurat). Upstream Seurat documentation still applies for analysis workflows:
 
 - https://satijalab.org/seurat
-- https://cran.r-project.org/package=Seurat
+- https://github.com/satijalab/seurat
 
 `seurust/DESCRIPTION` lists Rahul Satija as a contributor for those original native APIs, and the Satija Lab and collaborators as copyright holders of the original Seurat / ModularityOptimizer code.
 

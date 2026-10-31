@@ -1,7 +1,8 @@
-# r-universe distribution
+# Publishing seurust (r-universe, GitHub Releases, crates.io)
 
 Publish **seurust** on [r-universe](https://r-universe.dev) so users can install with
-`install.packages("seurust", repos = "https://NebilI.r-universe.dev")`.
+`install.packages("seurust", repos = "https://NebilI.r-universe.dev")`. The same
+workflow publishes the Rust crate to [crates.io](https://crates.io/crates/seurust).
 
 ## One-time setup
 
@@ -21,24 +22,24 @@ install.packages(
 
 ## Automated publishing
 
-When you publish a [GitHub Release](https://github.com/NebilI/seurust/releases),
-or run **Actions → Release seurust → Run workflow**,
-[`publish-seurust-r.yaml`](../.github/workflows/publish-seurust-r.yaml):
+[`release-seurust.yaml`](../.github/workflows/release-seurust.yaml) is the only
+publish workflow. A push to `main` that changes `seurust/DESCRIPTION`, or
+**Actions → Release seurust → Run workflow**, does all of the following:
 
-1. Builds an R source tarball and attaches it to the release.
-2. Upserts the `seurust` object in `packages.json` on `NebilI/NebilI.r-universe.dev` so `branch` is the release tag. Other entries stay, in order.
+1. Creates (or reuses) the GitHub Release tag `v<Version>` from `seurust/DESCRIPTION`.
+2. Publishes the Rust crate in `seurust/src/rust` to crates.io.
+3. Builds an R source tarball, attaches it to the release, and upserts the
+   `seurust` object in `packages.json` on `NebilI/NebilI.r-universe.dev` so
+   `branch` is the release tag. Other entries stay, in order.
 
 `NebilI.r-universe.dev` is shared by every package in this universe. [`scripts/sync-r-universe.sh`](../scripts/sync-r-universe.sh) fetches the current array, replaces only the object whose `package` is `seurust` (`url` `https://github.com/NebilI/seurust`, `subdir` `seurust`), and keeps everything else. It creates a one-element array only when `packages.json` is missing (HTTP 404). Any other fetch failure, or a file that is not a JSON array, fails the job and does not commit. A run that does not change the seurust entry does not commit.
 
-CRAN-oriented offline tarballs are built by
-[`build-seurust-cran.yaml`](../.github/workflows/build-seurust-cran.yaml).
-
 ### One-time GitHub secrets (in `NebilI/seurust`)
 
-| Secret | Used by | Purpose |
-|--------|---------|---------|
-| `CRATES_IO_TOKEN` | `publish-seurust-crate.yaml` | Publish the `seurust` crate to [crates.io](https://crates.io) |
-| `R_UNIVERSE_REGISTRY_TOKEN` | `publish-seurust-r.yaml` | PAT with `repo` scope to upsert the seurust entry in `NebilI/NebilI.r-universe.dev` `packages.json` |
+| Secret | Purpose |
+|--------|---------|
+| `CRATES_IO_TOKEN` | Publish the `seurust` crate to [crates.io](https://crates.io) |
+| `R_UNIVERSE_REGISTRY_TOKEN` | PAT with `repo` scope to upsert the seurust entry in `NebilI/NebilI.r-universe.dev` `packages.json` |
 
 Create the crates.io token at https://crates.io/settings/tokens (needs `publish-new` /
 `publish-update` for the `seurust` crate).
@@ -49,10 +50,7 @@ Create the crates.io token at https://crates.io/settings/tokens (needs `publish-
    `docker compose -f docker/docker-compose.yml run --rm rust-dev bash docker/scripts/vendor-seurust.sh`
 2. Bump `Version` in [`seurust/DESCRIPTION`](../seurust/DESCRIPTION) and `version` in
    [`seurust/src/rust/Cargo.toml`](../seurust/src/rust/Cargo.toml) together.
-3. Update [`seurust/NEWS.md`](../seurust/NEWS.md) and [`seurust/cran-comments.md`](../seurust/cran-comments.md).
-4. Validate CRAN tarball:
-   `docker compose -f docker/docker-compose.yml run --rm seurust-cran`
-5. Merge a version bump to `main`. That tags the release. To republish the current version without a new commit, use **Actions → Release seurust → Run workflow**.
-6. That run updates r-universe and crates.io. Trigger `build-seurust-cran` when you also want a CI CRAN tarball artifact.
-7. For CRAN: use the Docker-built `seurust_*.tar.gz`, then `devtools::submit_cran()` from `seurust/`
-   (or upload via the CRAN web form).
+3. Update [`seurust/NEWS.md`](../seurust/NEWS.md).
+4. Merge a version bump to `main`. That tags the release and publishes the crate
+   plus the r-universe package. To republish the current version without a new
+   commit, use **Actions → Release seurust → Run workflow**.

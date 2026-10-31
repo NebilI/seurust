@@ -4,7 +4,7 @@ set -euo pipefail
 cd /workspace
 TARBALL=$(ls -1t seurust_*.tar.gz 2>/dev/null | head -n 1 || true)
 if [ -z "${TARBALL}" ]; then
-  echo "No seurust_*.tar.gz found. Run seurust-cran first."
+  echo "No seurust_*.tar.gz found. Build the package first with R CMD build seurust."
   exit 1
 fi
 echo "Tarball: ${TARBALL}"
@@ -17,4 +17,4 @@ echo "=== Full file count ==="
 tar -tzf "${TARBALL}" | wc -l
 echo ""
 echo "=== Unexpected paths (should be empty) ==="
-tar -tzf "${TARBALL}" | grep -E 'benchmarks/|docker/|examples/|vignettes/|\.github/|CRAN\.md|vendor\.sh|RcppExports|tests/testthat/test_rust' || echo "(none)"
+tar -tzf "${TARBALL}" | grep -E 'benchmarks/|docker/|examples/|vignettes/|\.github/|vendor\.sh|RcppExports|tests/testthat/test_rust' || echo "(none)"

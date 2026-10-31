@@ -12,7 +12,7 @@
 #   RELEASE_TAG=v0.1.0 scripts/sync-r-universe.sh \
 #     --from-file current.json --to-file updated.json
 #
-# Update the registry (same token as publish-seurust-r.yaml):
+# Update the registry (same token as release-seurust.yaml):
 #   UNIVERSE_TOKEN=... RELEASE_TAG=v0.1.0 scripts/sync-r-universe.sh
 #
 # PACKAGES_JSON_URL overrides the fetch URL and disables clone/push unless
