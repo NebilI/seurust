@@ -36,7 +36,10 @@ use snn::{
     compute_snn_to_r_impl, direct_snn_to_file_impl, snn_smallest_nonzero_dist_impl,
     write_edge_file_impl,
 };
-use sparse::{strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView, CsrView};
+use sparse::{
+    doubles_from_slice, strings_to_str_vec, vec_from_doubles, vec_from_integers, CscSlots, CscView,
+    CsrView,
+};
 use stats::{row_mean_dgcmatrix_impl, row_sum_dgcmatrix_impl, row_var_dgcmatrix_impl};
 
 #[extendr]
@@ -70,12 +73,11 @@ fn log_norm(
     };
     let p_slice = p.as_robj().as_integer_slice().expect("integer p");
     let x_in = x.as_robj().as_real_slice().expect("numeric x");
-    let mut out = Doubles::new(x_in.len());
+    let mut out = doubles_from_slice(x_in);
     let x_out = out
         .as_robj_mut()
         .as_real_slice_mut()
         .expect("numeric output");
-    x_out.copy_from_slice(x_in);
     log_norm_impl(
         x_out,
         p_slice,
@@ -523,7 +525,10 @@ fn sparse_row_mean_var(
 ) -> List {
     let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
     let (mean, variance) = sparse_row_mean_var_impl(view);
-    list!(mean = Doubles::from_values(mean), variance = Doubles::from_values(variance))
+    list!(
+        mean = Doubles::from_values(mean),
+        variance = Doubles::from_values(variance)
+    )
 }
 
 #[extendr]
@@ -537,7 +542,10 @@ fn sparse_row_mean_var_legacy(
 ) -> List {
     let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
     let (mean, variance) = sparse_row_mean_var_legacy_impl(view);
-    list!(mean = Doubles::from_values(mean), variance = Doubles::from_values(variance))
+    list!(
+        mean = Doubles::from_values(mean),
+        variance = Doubles::from_values(variance)
+    )
 }
 
 #[extendr]
