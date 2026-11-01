@@ -4,7 +4,7 @@ TARGET = @RUST_TARGET@
 TARGET_DIR = ./rust/target
 LIBDIR = $(TARGET_DIR)/$(TARGET)/@LIBDIR@
 STATLIB = $(LIBDIR)/libseurust.a
-PKG_LIBS = -L$(LIBDIR) -lseurust -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll
+PKG_LIBS = -L$(LIBDIR) -lseurust -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
 
 all: $(SHLIB) rust_clean
 
@@ -34,7 +34,7 @@ $(STATLIB):
 	export CARGO_HOME="$(CARGOTMP)" && \
 	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
 	export LIBRARY_PATH="$(LIBRARY_PATH);$(CURDIR)/$(TARGET_DIR)/libgcc_mock" && \
-	RUSTFLAGS="$(RUSTFLAGS)" cargo build @CRAN_FLAGS@ --target=$(TARGET) --lib @PROFILE@ --manifest-path=rust/Cargo.toml --target-dir="$(TARGET_DIR)"
+	RUSTFLAGS="$(RUSTFLAGS)" cargo build @CRAN_FLAGS@ --target=$(TARGET) --lib --features r-lapack @PROFILE@ --manifest-path=rust/Cargo.toml --target-dir="$(TARGET_DIR)"
 
 	if [ "@RUN_DOCUMENT@" = "true" ]; then \
 		echo "=== Regenerating extendr wrappers (dev build) ==="; \

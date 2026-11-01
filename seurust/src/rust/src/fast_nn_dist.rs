@@ -1,58 +1,10 @@
+use crate::utils::use_parallel;
 use extendr_api::prelude::*;
+use extendr_ffi::{
+    R_NamesSymbol, Rboolean, Rf_allocVector, Rf_getAttrib, Rf_isNull, Rf_protect, Rf_setAttrib,
+    Rf_unprotect, INTEGER, LENGTH, REAL, SET_VECTOR_ELT, SEXPTYPE, TYPEOF, VECTOR_ELT,
+};
 use rayon::prelude::*;
-
-fn transpose_row_major(data: &[f64], nrows: usize, ncols: usize) -> Vec<f64> {
-    let mut out = vec![0.0; nrows.saturating_mul(ncols)];
-    for c in 0..ncols {
-        let col = &data[c * nrows..(c + 1) * nrows];
-        for r in 0..nrows {
-            out[r * ncols + c] = col[r];
-        }
-    }
-    out
-}
-
-fn euclidean(xs: &[f64], ys: &[f64]) -> f64 {
-    let mut sum = 0.0;
-    for (&a, &b) in xs.iter().zip(ys) {
-        let d = a - b;
-        sum += d * d;
-    }
-    sum.sqrt()
-}
-
-/// Convert one element of the neighbor list to 0-based row indices into `y`.
-/// Seurat's Rcpp signature coerces integer and double vectors alike.
-fn neighbor_indices(elt: &Robj, cell: usize, nrows_y: usize) -> extendr_api::Result<Vec<usize>> {
-    let to_index = |raw: f64| -> extendr_api::Result<usize> {
-        if !raw.is_finite() || raw < 1.0 || raw > nrows_y as f64 {
-            return Err(extendr_api::Error::Other(format!(
-                "fast_dist: neighbor index {raw} for cell {} is outside 1..{nrows_y}.",
-                cell + 1
-            )));
-        }
-        Ok(raw as usize - 1)
-    };
-
-    if let Some(ints) = elt.as_integer_slice() {
-        ints.iter()
-            .map(|&v| {
-                if v == i32::MIN {
-                    to_index(f64::NAN)
-                } else {
-                    to_index(v as f64)
-                }
-            })
-            .collect()
-    } else if let Some(reals) = elt.as_real_slice() {
-        reals.iter().map(|&v| to_index(v)).collect()
-    } else {
-        Err(extendr_api::Error::Other(format!(
-            "fast_dist: neighbors for cell {} must be an integer or numeric vector.",
-            cell + 1
-        )))
-    }
-}
 
 fn neighbor_id(raw: f64, cell: usize, nrows_y: usize) -> extendr_api::Result<usize> {
     if !raw.is_finite() || raw < 1.0 || raw > nrows_y as f64 {
@@ -64,52 +16,90 @@ fn neighbor_id(raw: f64, cell: usize, nrows_y: usize) -> extendr_api::Result<usi
     Ok(raw as usize - 1)
 }
 
-fn write_distances_column_major(
+fn parse_neighbor_ids(
+    elt: extendr_ffi::SEXP,
+    cell: usize,
+    nrows_y: usize,
+) -> extendr_api::Result<Vec<usize>> {
+    unsafe {
+        match TYPEOF(elt) {
+            SEXPTYPE::INTSXP => {
+                let n = LENGTH(elt) as usize;
+                let ptr = INTEGER(elt);
+                let mut ids = Vec::with_capacity(n);
+                for j in 0..n {
+                    let v = *ptr.add(j);
+                    let raw = if v == i32::MIN { f64::NAN } else { v as f64 };
+                    ids.push(neighbor_id(raw, cell, nrows_y)?);
+                }
+                Ok(ids)
+            }
+            SEXPTYPE::REALSXP => {
+                let n = LENGTH(elt) as usize;
+                let ptr = REAL(elt);
+                let mut ids = Vec::with_capacity(n);
+                for j in 0..n {
+                    ids.push(neighbor_id(*ptr.add(j), cell, nrows_y)?);
+                }
+                Ok(ids)
+            }
+            _ => Err(extendr_api::Error::Other(format!(
+                "fast_dist: neighbors for cell {} must be an integer or numeric vector.",
+                cell + 1
+            ))),
+        }
+    }
+}
+
+/// Euclidean distances from one row of `x` to the listed rows of `y`.
+/// Four neighbors share a pass over the dimensions so the CPU has independent
+/// add chains; each distance is still summed in column order.
+pub(crate) fn fill_distances(
     out: &mut [f64],
-    elt: &Robj,
+    neighbors: &[usize],
     x: &[f64],
     y: &[f64],
     x_row: usize,
     ncols: usize,
     nrows_x: usize,
     nrows_y: usize,
-) -> extendr_api::Result<()> {
-    let fill = |out: &mut [f64], n_idx: usize, j: usize| {
+) {
+    debug_assert_eq!(out.len(), neighbors.len());
+    let mut j = 0;
+    while j + 4 <= neighbors.len() {
+        let (a, b, c, d) = (
+            neighbors[j],
+            neighbors[j + 1],
+            neighbors[j + 2],
+            neighbors[j + 3],
+        );
+        let (mut s0, mut s1, mut s2, mut s3) = (0.0, 0.0, 0.0, 0.0);
+        for col in 0..ncols {
+            let xv = x[x_row + col * nrows_x];
+            let base = col * nrows_y;
+            let t0 = xv - y[a + base];
+            let t1 = xv - y[b + base];
+            let t2 = xv - y[c + base];
+            let t3 = xv - y[d + base];
+            s0 += t0 * t0;
+            s1 += t1 * t1;
+            s2 += t2 * t2;
+            s3 += t3 * t3;
+        }
+        out[j] = s0.sqrt();
+        out[j + 1] = s1.sqrt();
+        out[j + 2] = s2.sqrt();
+        out[j + 3] = s3.sqrt();
+        j += 4;
+    }
+    for j in j..neighbors.len() {
         let mut sum = 0.0;
-        for c in 0..ncols {
-            let d = x[x_row + c * nrows_x] - y[n_idx + c * nrows_y];
-            sum += d * d;
+        let id = neighbors[j];
+        for col in 0..ncols {
+            let t = x[x_row + col * nrows_x] - y[id + col * nrows_y];
+            sum += t * t;
         }
         out[j] = sum.sqrt();
-    };
-    let cell = x_row;
-
-    if let Some(ints) = elt.as_integer_slice() {
-        if ints.len() != out.len() {
-            return Err(extendr_api::Error::Other(
-                "fast_dist: internal length mismatch".to_string(),
-            ));
-        }
-        for (j, &v) in ints.iter().enumerate() {
-            let raw = if v == i32::MIN { f64::NAN } else { v as f64 };
-            fill(out, neighbor_id(raw, cell, nrows_y)?, j);
-        }
-        Ok(())
-    } else if let Some(reals) = elt.as_real_slice() {
-        if reals.len() != out.len() {
-            return Err(extendr_api::Error::Other(
-                "fast_dist: internal length mismatch".to_string(),
-            ));
-        }
-        for (j, &raw) in reals.iter().enumerate() {
-            fill(out, neighbor_id(raw, cell, nrows_y)?, j);
-        }
-        Ok(())
-    } else {
-        Err(extendr_api::Error::Other(format!(
-            "fast_dist: neighbors for cell {} must be an integer or numeric vector.",
-            cell + 1
-        )))
     }
 }
 
@@ -127,73 +117,112 @@ pub fn fast_dist_impl(x: &RMatrix<f64>, y: &RMatrix<f64>, n: &List) -> extendr_a
     }
 
     let ncols = x.ncols();
+    let nrows_x = x.nrows();
     let nrows_y = y.nrows();
     let x_data = x.data();
     let y_data = y.data();
+    let n_sexp = unsafe { n.get() };
 
-    // R object allocation stays on this thread. Parallelism pays off once the
-    // distance work dwarfs scheduling; the published 800 x 20 case does not.
-    let items: Vec<Robj> = if ngraph_size >= 4096 {
-        let x_rm = transpose_row_major(x_data, ngraph_size, ncols);
-        let y_rm = transpose_row_major(y_data, nrows_y, ncols);
-        let neighbors_by_row = n
-            .values()
-            .enumerate()
-            .map(|(i, elt)| neighbor_indices(&elt, i, nrows_y))
-            .collect::<extendr_api::Result<Vec<Vec<usize>>>>()?;
-        let distances_by_row: Vec<Vec<f64>> = neighbors_by_row
+    let mut neighbor_ids = Vec::with_capacity(ngraph_size);
+    for i in 0..ngraph_size {
+        let elt = unsafe { VECTOR_ELT(n_sexp, i as extendr_ffi::R_xlen_t) };
+        neighbor_ids.push(parse_neighbor_ids(elt, i, nrows_y)?);
+    }
+
+    let work: usize = neighbor_ids
+        .iter()
+        .map(|ids| ids.len().saturating_mul(ncols))
+        .sum();
+    let parallel = use_parallel(ngraph_size, work);
+    let precomputed = if parallel {
+        let rows: Vec<Vec<f64>> = neighbor_ids
             .par_iter()
             .enumerate()
-            .map(|(i, neighbors)| {
-                let xs = &x_rm[i * ncols..(i + 1) * ncols];
-                neighbors
-                    .iter()
-                    .map(|&n_idx| euclidean(xs, &y_rm[n_idx * ncols..(n_idx + 1) * ncols]))
-                    .collect()
+            .map(|(i, ids)| {
+                let mut out = vec![0.0; ids.len()];
+                fill_distances(&mut out, ids, x_data, y_data, i, ncols, nrows_x, nrows_y);
+                out
             })
             .collect();
-        distances_by_row
-            .into_iter()
-            .map(|distances| Robj::from(Doubles::from_values(distances)))
-            .collect()
+        Some(rows)
     } else {
-        let mut items = Vec::with_capacity(ngraph_size);
-        for (i, elt) in n.values().enumerate() {
-            let len = if let Some(ints) = elt.as_integer_slice() {
-                ints.len()
-            } else if let Some(reals) = elt.as_real_slice() {
-                reals.len()
-            } else {
-                return Err(extendr_api::Error::Other(format!(
-                    "fast_dist: neighbors for cell {} must be an integer or numeric vector.",
-                    i + 1
-                )));
-            };
-            let mut distances = Doubles::new(len);
-            if len > 0 {
-                write_distances_column_major(
-                    distances
-                        .as_robj_mut()
-                        .as_real_slice_mut()
-                        .expect("numeric distances"),
-                    &elt,
-                    x_data,
-                    y_data,
-                    i,
-                    ncols,
-                    ngraph_size,
-                    nrows_y,
-                )?;
-            }
-            items.push(Robj::from(distances));
-        }
-        items
+        None
     };
 
-    let mut out = Robj::from(List::from_values(items));
-    if let Some(names) = n.names() {
-        let names: Vec<&str> = names.collect();
-        out.set_names(names)?;
+    unsafe {
+        let out = Rf_protect(Rf_allocVector(
+            SEXPTYPE::VECSXP,
+            ngraph_size as extendr_ffi::R_xlen_t,
+        ));
+        for i in 0..ngraph_size {
+            let ids = &neighbor_ids[i];
+            let elt = Rf_protect(Rf_allocVector(
+                SEXPTYPE::REALSXP,
+                ids.len() as extendr_ffi::R_xlen_t,
+            ));
+            let dest = if ids.is_empty() {
+                &mut []
+            } else {
+                std::slice::from_raw_parts_mut(REAL(elt), ids.len())
+            };
+            if let Some(rows) = precomputed.as_ref() {
+                dest.copy_from_slice(&rows[i]);
+            } else {
+                fill_distances(dest, ids, x_data, y_data, i, ncols, nrows_x, nrows_y);
+            }
+            SET_VECTOR_ELT(out, i as extendr_ffi::R_xlen_t, elt);
+            Rf_unprotect(1);
+        }
+        let names = Rf_getAttrib(n_sexp, R_NamesSymbol);
+        if Rf_isNull(names) != Rboolean::TRUE {
+            Rf_setAttrib(out, R_NamesSymbol, names);
+        }
+        let robj = Robj::from_sexp(out);
+        Rf_unprotect(1);
+        Ok(robj)
     }
-    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fill_distances;
+
+    fn naive(
+        neighbors: &[usize],
+        x: &[f64],
+        y: &[f64],
+        x_row: usize,
+        ncols: usize,
+        nrows_x: usize,
+        nrows_y: usize,
+    ) -> Vec<f64> {
+        neighbors
+            .iter()
+            .map(|&id| {
+                let mut sum = 0.0;
+                for col in 0..ncols {
+                    let t = x[x_row + col * nrows_x] - y[id + col * nrows_y];
+                    sum += t * t;
+                }
+                sum.sqrt()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn four_neighbor_pass_is_bit_identical() {
+        let nrows = 6;
+        let ncols = 5;
+        let x: Vec<f64> = (0..nrows * ncols).map(|i| i as f64 * 0.1).collect();
+        let y: Vec<f64> = (0..nrows * ncols)
+            .map(|i| (i as f64) * 0.07 - 0.2)
+            .collect();
+        let neighbors = vec![0, 2, 4, 1, 3];
+        let expected = naive(&neighbors, &x, &y, 2, ncols, nrows, nrows);
+        let mut got = vec![0.0; neighbors.len()];
+        fill_distances(&mut got, &neighbors, &x, &y, 2, ncols, nrows, nrows);
+        for (a, b) in got.iter().zip(&expected) {
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
+    }
 }

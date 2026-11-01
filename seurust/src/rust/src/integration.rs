@@ -54,26 +54,71 @@ pub fn cca_crossprod_multiply_impl(
             .expect("numeric CCA output");
         let work = ncells.saturating_mul(nfeatures);
         if use_parallel(ncells, work) {
-            out_s.par_iter_mut().enumerate().for_each(|(col, slot)| {
-                let base = col * nfeatures;
-                let mut s = 0.0;
-                for row in 0..nfeatures {
-                    s += left_data[base + row] * feature_scores[row];
-                }
-                *slot = s;
-            });
+            out_s
+                .par_chunks_mut(4)
+                .enumerate()
+                .for_each(|(block, slots)| {
+                    let col0 = block * 4;
+                    cca_dots_block(left_data, &feature_scores, nfeatures, col0, slots);
+                });
         } else {
-            for col in 0..ncells {
-                let base = col * nfeatures;
-                let mut s = 0.0;
-                for row in 0..nfeatures {
-                    s += left_data[base + row] * feature_scores[row];
-                }
-                out_s[col] = s;
-            }
+            cca_dots_blocked(left_data, &feature_scores, nfeatures, ncells, out_s);
         }
     }
     Ok(out)
+}
+
+/// Four output columns per pass: four independent add chains, each still
+/// summed in row order so every value is bit-identical to a single-column loop.
+pub(crate) fn cca_dots_blocked(
+    left: &[f64],
+    scores: &[f64],
+    nfeatures: usize,
+    ncells: usize,
+    out: &mut [f64],
+) {
+    let mut col = 0;
+    while col + 4 <= ncells {
+        cca_dots_block(left, scores, nfeatures, col, &mut out[col..col + 4]);
+        col += 4;
+    }
+    if col < ncells {
+        cca_dots_block(left, scores, nfeatures, col, &mut out[col..ncells]);
+    }
+}
+
+fn cca_dots_block(left: &[f64], scores: &[f64], nfeatures: usize, col0: usize, out: &mut [f64]) {
+    match out.len() {
+        4 => {
+            let (l0, rest) = left[col0 * nfeatures..].split_at(nfeatures);
+            let (l1, rest) = rest.split_at(nfeatures);
+            let (l2, rest) = rest.split_at(nfeatures);
+            let (l3, _) = rest.split_at(nfeatures);
+            let (mut s0, mut s1, mut s2, mut s3) = (0.0, 0.0, 0.0, 0.0);
+            for r in 0..nfeatures {
+                let f = scores[r];
+                s0 += l0[r] * f;
+                s1 += l1[r] * f;
+                s2 += l2[r] * f;
+                s3 += l3[r] * f;
+            }
+            out[0] = s0;
+            out[1] = s1;
+            out[2] = s2;
+            out[3] = s3;
+        }
+        n => {
+            for (k, slot) in out.iter_mut().enumerate() {
+                let base = (col0 + k) * nfeatures;
+                let mut s = 0.0;
+                for r in 0..nfeatures {
+                    s += left[base + r] * scores[r];
+                }
+                *slot = s;
+            }
+            let _ = n;
+        }
+    }
 }
 
 /// Count unique nearest neighbors shared by each anchor pair.
@@ -770,5 +815,26 @@ mod tests {
         let out = integrate_data_impl(im.as_view(), w.as_view(), expr.as_view());
         assert_eq!(out.x.len(), 1);
         assert!((out.x[0] - 1.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn cca_blocked_dots_match_serial_bits() {
+        let nf = 7;
+        let nl = 11;
+        let left: Vec<f64> = (0..nf * nl).map(|i| (i as f64) * 0.03 - 0.1).collect();
+        let scores: Vec<f64> = (0..nf).map(|i| 0.5 - i as f64 * 0.08).collect();
+        let mut naive = vec![0.0; nl];
+        for col in 0..nl {
+            let mut s = 0.0;
+            for r in 0..nf {
+                s += left[col * nf + r] * scores[r];
+            }
+            naive[col] = s;
+        }
+        let mut blocked = vec![0.0; nl];
+        cca_dots_blocked(&left, &scores, nf, nl, &mut blocked);
+        for (a, b) in naive.iter().zip(&blocked) {
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
     }
 }

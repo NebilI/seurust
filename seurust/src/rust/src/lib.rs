@@ -19,9 +19,9 @@ use data_manipulation::{
     fast_log_vmr_impl, fast_rbind_impl, fast_sparse_row_scale_impl,
     fast_sparse_row_scale_with_known_stats_impl, graph_to_neighbor_helper_impl, log_norm_impl,
     replace_cols_impl, row_merge_matrices_impl, row_var_impl, run_umi_sampling_impl,
-    run_umi_sampling_per_cell_impl, sparse_row_mean_var_impl, sparse_row_mean_var_legacy_impl,
-    sparse_row_var2_impl, sparse_row_var_impl, sparse_row_var_std_impl,
-    sparse_row_var_std_legacy_rows_impl, standardize_impl,
+    run_umi_sampling_per_cell_impl, sparse_row_mean_var_legacy_impl, sparse_row_var2_impl,
+    sparse_row_var_impl, sparse_row_var_std_impl, sparse_row_var_std_legacy_rows_impl,
+    standardize_impl,
 };
 use fast_nn_dist::fast_dist_impl;
 use integration::{
@@ -511,11 +511,21 @@ fn sparse_row_mean_var(
     _display_progress: bool,
 ) -> List {
     let view = CscView::from_slots(&x, &i, &p, nrows, ncols);
-    let (mean, variance) = sparse_row_mean_var_impl(view);
-    list!(
-        mean = Doubles::from_values(mean),
-        variance = Doubles::from_values(variance)
-    )
+    let n_genes = view.nrows as usize;
+    let mut mean = doubles_uninit(n_genes);
+    let mut variance = doubles_uninit(n_genes);
+    if n_genes > 0 {
+        let mean_s = mean
+            .as_robj_mut()
+            .as_real_slice_mut()
+            .expect("numeric mean");
+        let var_s = variance
+            .as_robj_mut()
+            .as_real_slice_mut()
+            .expect("numeric variance");
+        data_manipulation::sparse_row_mean_var_into(view, mean_s, var_s);
+    }
+    list!(mean = mean, variance = variance)
 }
 
 #[extendr]
