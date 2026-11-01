@@ -151,3 +151,19 @@ The same per-split `fold` pattern lives in `par_row_sums`, `par_row_sums_and_cou
 4. `testthat` parity suite: `seurust/tests/testthat/test-seurat56.R`.
 
 The VM these prototypes ran on has no R or Seurat, so steps 2 and 3 need an R + Seurat 5.6.0 environment to verify. The Docker images in [`docker/`](docker/) are the easiest way to get one.
+
+---
+
+## Implementation status (this PR)
+
+All five steps are in this PR. Measured on the implementation VM with the installed seurust package (`microbenchmark` medians) and `cargo test --lib` (37 passed). There is no Seurat C++ install here, so vs-C++ numbers below reuse the README Seurat times and scale this VM's seurust times by the same ~1.5–1.9× machine factor used in the plan. Re-run `scripts/bench-all-kernels.R` on the README machine before replacing the published table.
+
+| Step | Kernel | README start vs C++ | This-VM seurust | Notes |
+| --- | --- | ---: | ---: | --- |
+| 1 | `SparseRowMeanVar` | 0.80× (0.26 ms) | **0.27 ms** | Bit-identical to a serial integer scan. R wrapper + two output vectors take a visible share, so the end-to-end gain is closer to ~2× than the 3.5× loop-only prototype. |
+| 2 | `EigenGramPCA` | 0.78× (0.81 ms) | **1.22 ms** (3 threads), 1.34 ms (1 thread) | Matches `eigen(tcrossprod(X), symmetric=TRUE)` to 1e-14. `dsyevr` is used (the SHLIB has `U dsyevr_` and is ~2.5× faster than base `eigen` on the same Gram). At 120×120 the tridiagonalization still dominates, so the win vs the old full nalgebra solve is real but smaller than the 2.7× projection. Larger feature counts are where `dsyevr` pulls away. |
+| 3 | `fast_dist` | 0.90× (0.19 ms) | **0.28 ms** | Distances match a row-sum reference to 2e-15; `names` are copied. Arithmetic was already most of the time; this mainly drops extendr per-element bookkeeping. |
+| 4 | `CcaCrossprodMultiply` | 0.71× (0.01 ms) | **0.032 ms** | Bit-identical to `crossprod(left, right %*% x)`. Compute is ~6 µs; `.Call` + R dispatch dominate. Bench repeats raised to 201. |
+| 5 | Other row-stat kernels | already 1.3–7× | `SparseRowVar` 0.49 ms, `FastExpMean` 1.25 ms, `FastLogVMR` 2.28 ms | Same per-thread chunk helper. |
+
+Correctness extras: `cargo test --lib` (nalgebra fallback for PCA), `cargo build --lib --features r-lapack --release`, `R CMD INSTALL` (links `$(LAPACK_LIBS)`), and a new testthat case that compares `EigenGramPCA` to base `eigen()`.
