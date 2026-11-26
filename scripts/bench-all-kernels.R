@@ -501,13 +501,13 @@ cases <- Filter(Negate(is.null), list(
   maybe_case("fast_dist", "800 × 20 dense, 10 neighbors", 5L,
     function() seurat_fn("fast_dist")(dist_x, dist_y, dist_n),
     function() seurust::fast_dist(dist_x, dist_y, dist_n)),
-  maybe_case("row_sum_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
+  maybe_case("row_sum_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 201L,
     function() seurat_fn("row_sum_dgcmatrix")(row_x, row_i, row_nr, row_nc),
     function() seurust::row_sum_dgcmatrix(row_x, row_i, row_nr, row_nc)),
-  maybe_case("row_mean_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
+  maybe_case("row_mean_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 201L,
     function() seurat_fn("row_mean_dgcmatrix")(row_x, row_i, row_nr, row_nc),
     function() seurust::row_mean_dgcmatrix(row_x, row_i, row_nr, row_nc)),
-  maybe_case("row_var_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 11L,
+  maybe_case("row_var_dgcmatrix", "6,000 × 1,500 sparse, 4% nonzero", 201L,
     function() seurat_fn("row_var_dgcmatrix")(row_x, row_i, row_nr, row_nc),
     function() seurust::row_var_dgcmatrix(row_x, row_i, row_nr, row_nc))
 ))

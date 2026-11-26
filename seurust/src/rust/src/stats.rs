@@ -1,3 +1,5 @@
+use crate::row_sum_kernels::row_sums_into;
+use crate::sparse::doubles_uninit;
 use extendr_api::prelude::*;
 
 pub fn row_sum_slices(x: &[f64], i: &[i32], rows: i32) -> Vec<f64> {
@@ -9,23 +11,30 @@ pub fn row_sum_slices(x: &[f64], i: &[i32], rows: i32) -> Vec<f64> {
     rowsum
 }
 
-pub fn row_sum_dgcmatrix_impl(x: &Doubles, i: &Integers, rows: i32) -> Doubles {
+/// Row sums (or means when `divisor` is set) written straight into a fresh R
+/// vector: no intermediate `Vec`, no copy, no separate divide pass. Large
+/// inputs are split across rayon threads (see `row_sum_kernels`).
+fn row_sums_to_r(x: &Doubles, i: &Integers, rows: i32, divisor: Option<f64>) -> Doubles {
+    let n_rows = usize::try_from(rows).expect("non-negative rows");
     let x_data = x.as_robj().as_real_slice().expect("numeric x");
     let i_data = i.as_robj().as_integer_slice().expect("integer i");
-    Doubles::from_values(row_sum_slices(x_data, i_data, rows))
+    let mut out = doubles_uninit(n_rows);
+    if n_rows > 0 {
+        let buf = out
+            .as_robj_mut()
+            .as_real_slice_mut()
+            .expect("numeric output");
+        row_sums_into(x_data, i_data, buf, divisor);
+    }
+    out
+}
+
+pub fn row_sum_dgcmatrix_impl(x: &Doubles, i: &Integers, rows: i32) -> Doubles {
+    row_sums_to_r(x, i, rows, None)
 }
 
 pub fn row_mean_dgcmatrix_impl(x: &Doubles, i: &Integers, rows: i32, cols: i32) -> Doubles {
-    let mut rowsum = row_sum_slices(
-        x.as_robj().as_real_slice().expect("numeric x"),
-        i.as_robj().as_integer_slice().expect("integer i"),
-        rows,
-    );
-    let n_cols = cols as f64;
-    for v in rowsum.iter_mut() {
-        *v /= n_cols;
-    }
-    Doubles::from_values(rowsum)
+    row_sums_to_r(x, i, rows, Some(cols as f64))
 }
 
 pub fn row_var_dgcmatrix_impl(x: &Doubles, i: &Integers, rows: i32, cols: i32) -> Doubles {
