@@ -1,4 +1,5 @@
 use crate::sparse::{build_dgcmatrix, rmatrix_with_data, CscSlots, CscView, CsrView, RowIndex};
+use crate::utils::par_col_chunk_map;
 use extendr_api::prelude::*;
 use extendr_api::GetSexp;
 use extendr_ffi::Rf_runif;
@@ -405,36 +406,86 @@ pub fn fast_sparse_row_scale_with_known_stats_impl(
     })
 }
 
+fn scan_chunk_rows(
+    view: &CscView<'_>,
+    col_start: usize,
+    col_end: usize,
+    visit: impl FnMut(usize, f64),
+) {
+    if col_start >= col_end {
+        return;
+    }
+    let start = view.p[col_start] as usize;
+    let end = view.p[col_end] as usize;
+    let mut visit = visit;
+    for idx in start..end {
+        visit(view.i[idx] as usize, view.x[idx]);
+    }
+}
+
+fn reduce_f64_rows(accs: &[Vec<f64>], n_rows: usize) -> Vec<f64> {
+    if accs.is_empty() {
+        return vec![0.0; n_rows];
+    }
+    if accs.len() == 1 {
+        return accs[0].clone();
+    }
+    let mut out = vec![0.0; n_rows];
+    let chunk = n_rows.div_ceil(accs.len()).max(1);
+    out.par_chunks_mut(chunk).enumerate().for_each(|(b, dest)| {
+        let g0 = b * chunk;
+        for (j, slot) in dest.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            for acc in accs {
+                sum += acc[g0 + j];
+            }
+            *slot = sum;
+        }
+    });
+    out
+}
+
+fn reduce_f64_usize_rows(accs: &[(Vec<f64>, Vec<usize>)], n_rows: usize) -> (Vec<f64>, Vec<usize>) {
+    if accs.is_empty() {
+        return (vec![0.0; n_rows], vec![0; n_rows]);
+    }
+    if accs.len() == 1 {
+        return accs[0].clone();
+    }
+    let mut sums = vec![0.0; n_rows];
+    let mut counts = vec![0usize; n_rows];
+    let chunk = n_rows.div_ceil(accs.len()).max(1);
+    sums.par_chunks_mut(chunk)
+        .zip(counts.par_chunks_mut(chunk))
+        .enumerate()
+        .for_each(|(b, (sum_out, count_out))| {
+            let g0 = b * chunk;
+            for j in 0..sum_out.len() {
+                let mut sum = 0.0;
+                let mut count = 0usize;
+                for acc in accs {
+                    sum += acc.0[g0 + j];
+                    count += acc.1[g0 + j];
+                }
+                sum_out[j] = sum;
+                count_out[j] = count;
+            }
+        });
+    (sums, counts)
+}
+
 /// Parallel per-row sums over CSC columns.
 ///
-/// Nonzeros of one gene are not contiguous in a `dgCMatrix`, but each entry
-/// can still be added into a dense row accumulator while the column data is
-/// scanned in order. That avoids building a row index (and the unused column-id
-/// buffer that went with it) and keeps the hot loop on sequential `x`/`i`.
+/// Columns are split into one nnz-balanced chunk per rayon thread so each
+/// accumulator is allocated once per thread, not once per work-stealing split.
 fn par_row_sums(view: &CscView<'_>, step: &(impl Fn(usize, f64, &mut f64) + Sync)) -> Vec<f64> {
     let n_genes = view.nrows as usize;
-    let n_cells = view.ncols as usize;
-    (0..n_cells)
-        .into_par_iter()
-        .fold(
-            || vec![0.0; n_genes],
-            |mut acc, col| {
-                for idx in view.p[col] as usize..view.p[col + 1] as usize {
-                    let row = view.i[idx] as usize;
-                    step(row, view.x[idx], &mut acc[row]);
-                }
-                acc
-            },
-        )
-        .reduce(
-            || vec![0.0; n_genes],
-            |mut left, right| {
-                for (dst, src) in left.iter_mut().zip(right) {
-                    *dst += src;
-                }
-                left
-            },
-        )
+    let accs = par_col_chunk_map(view.p, view.ncols as usize, |c0, c1| {
+        let mut acc = vec![0.0; n_genes];
+        scan_chunk_rows(view, c0, c1, |row, val| step(row, val, &mut acc[row]));
+        acc
+    });
+    reduce_f64_rows(&accs, n_genes)
 }
 
 /// Like [`par_row_sums`], also counting how many stored entries each row has.
@@ -443,29 +494,15 @@ fn par_row_sums_and_counts(
     step: &(impl Fn(usize, f64, &mut f64, &mut usize) + Sync),
 ) -> (Vec<f64>, Vec<usize>) {
     let n_genes = view.nrows as usize;
-    let n_cells = view.ncols as usize;
-    (0..n_cells)
-        .into_par_iter()
-        .fold(
-            || (vec![0.0; n_genes], vec![0usize; n_genes]),
-            |mut acc, col| {
-                for idx in view.p[col] as usize..view.p[col + 1] as usize {
-                    let row = view.i[idx] as usize;
-                    step(row, view.x[idx], &mut acc.0[row], &mut acc.1[row]);
-                }
-                acc
-            },
-        )
-        .reduce(
-            || (vec![0.0; n_genes], vec![0usize; n_genes]),
-            |mut left, right| {
-                for gene in 0..n_genes {
-                    left.0[gene] += right.0[gene];
-                    left.1[gene] += right.1[gene];
-                }
-                left
-            },
-        )
+    let accs = par_col_chunk_map(view.p, view.ncols as usize, |c0, c1| {
+        let mut sums = vec![0.0; n_genes];
+        let mut counts = vec![0usize; n_genes];
+        scan_chunk_rows(view, c0, c1, |row, val| {
+            step(row, val, &mut sums[row], &mut counts[row]);
+        });
+        (sums, counts)
+    });
+    reduce_f64_usize_rows(&accs, n_genes)
 }
 
 fn fast_exp_mean_values(view: &CscView<'_>) -> Vec<f64> {
@@ -487,30 +524,19 @@ pub fn sparse_row_var2_impl(view: CscView<'_>, mu: &[f64], _display_progress: bo
     let n_cells = view.ncols as usize;
     let denom = (n_cells as f64) - 1.0;
 
-    let (sums, nnz_rows): (Vec<f64>, Vec<usize>) = (0..n_cells)
-        .into_par_iter()
-        .fold(
-            || (vec![0.0; n_genes], vec![0usize; n_genes]),
-            |mut acc, col| {
-                for idx in view.p[col] as usize..view.p[col + 1] as usize {
-                    let row = view.i[idx] as usize;
-                    acc.1[row] += 1;
-                    let diff = view.x[idx] - mu[row];
-                    acc.0[row] += diff * diff;
-                }
-                acc
-            },
-        )
-        .reduce(
-            || (vec![0.0; n_genes], vec![0usize; n_genes]),
-            |mut left, right| {
-                for gene in 0..n_genes {
-                    left.0[gene] += right.0[gene];
-                    left.1[gene] += right.1[gene];
-                }
-                left
-            },
-        );
+    let (sums, nnz_rows) = {
+        let accs = par_col_chunk_map(view.p, n_cells, |c0, c1| {
+            let mut sums = vec![0.0; n_genes];
+            let mut nnz = vec![0usize; n_genes];
+            scan_chunk_rows(&view, c0, c1, |row, val| {
+                nnz[row] += 1;
+                let diff = val - mu[row];
+                sums[row] += diff * diff;
+            });
+            (sums, nnz)
+        });
+        reduce_f64_usize_rows(&accs, n_genes)
+    };
 
     let all_vars: Vec<f64> = (0..n_genes)
         .map(|gene_idx| {
@@ -610,42 +636,57 @@ pub fn sparse_row_var_impl(view: CscView<'_>, _display_progress: bool) -> Double
 }
 
 /// One-pass row mean and sample variance (Seurat 5.6 `SparseRowMeanVar`).
-pub fn sparse_row_mean_var_impl(view: CscView<'_>) -> (Vec<f64>, Vec<f64>) {
+pub fn sparse_row_mean_var_into(view: CscView<'_>, means: &mut [f64], vars: &mut [f64]) {
     let n_genes = view.nrows as usize;
     let n_cells = view.ncols as usize;
+    debug_assert_eq!(means.len(), n_genes);
+    debug_assert_eq!(vars.len(), n_genes);
     let cols_d = n_cells as f64;
     let denom = (n_cells.max(2) - 1) as f64;
-    let (sums, sumsq) = (0..n_cells)
-        .into_par_iter()
-        .fold(
-            || (vec![0.0; n_genes], vec![0.0; n_genes]),
-            |mut acc, col| {
-                for idx in view.p[col] as usize..view.p[col + 1] as usize {
-                    let row = view.i[idx] as usize;
-                    let value = view.x[idx];
-                    acc.0[row] += value;
-                    acc.1[row] += value * value;
-                }
-                acc
-            },
-        )
-        .reduce(
-            || (vec![0.0; n_genes], vec![0.0; n_genes]),
-            |mut left, right| {
-                for gene in 0..n_genes {
-                    left.0[gene] += right.0[gene];
-                    left.1[gene] += right.1[gene];
-                }
-                left
-            },
-        );
+    let accs = par_col_chunk_map(view.p, n_cells, |c0, c1| {
+        let mut acc = vec![[0.0f64; 2]; n_genes];
+        scan_chunk_rows(&view, c0, c1, |row, val| {
+            acc[row][0] += val;
+            acc[row][1] += val * val;
+        });
+        acc
+    });
+    if accs.is_empty() {
+        return;
+    }
+    let finish = |gene: usize, mean: &mut f64, var: &mut f64| {
+        let (mut sum, mut sumsq) = (0.0, 0.0);
+        for acc in &accs {
+            sum += acc[gene][0];
+            sumsq += acc[gene][1];
+        }
+        *mean = if n_cells == 0 { 0.0 } else { sum / cols_d };
+        *var = (sumsq - (sum * sum / cols_d)) / denom;
+    };
+    if accs.len() == 1 || n_genes < 64 {
+        for gene in 0..n_genes {
+            finish(gene, &mut means[gene], &mut vars[gene]);
+        }
+        return;
+    }
+    let chunk = n_genes.div_ceil(accs.len()).max(1);
+    means
+        .par_chunks_mut(chunk)
+        .zip(vars.par_chunks_mut(chunk))
+        .enumerate()
+        .for_each(|(b, (mean_out, var_out))| {
+            let g0 = b * chunk;
+            for (j, (mean, var)) in mean_out.iter_mut().zip(var_out.iter_mut()).enumerate() {
+                finish(g0 + j, mean, var);
+            }
+        });
+}
+
+pub fn sparse_row_mean_var_impl(view: CscView<'_>) -> (Vec<f64>, Vec<f64>) {
+    let n_genes = view.nrows as usize;
     let mut means = vec![0.0; n_genes];
     let mut vars = vec![0.0; n_genes];
-    for gene in 0..n_genes {
-        let sum = sums[gene];
-        means[gene] = if n_cells == 0 { 0.0 } else { sum / cols_d };
-        vars[gene] = (sumsq[gene] - (sum * sum / cols_d)) / denom;
-    }
+    sparse_row_mean_var_into(view, &mut means, &mut vars);
     (means, vars)
 }
 
@@ -694,38 +735,27 @@ pub fn sparse_row_var_std_legacy_rows_impl(
         }
     }
     let denom = (n_cells.max(2) - 1) as f64;
-    let (sums, nnz) = (0..n_cells)
-        .into_par_iter()
-        .fold(
-            || (vec![0.0; n_use], vec![0usize; n_use]),
-            |mut acc, col| {
-                for idx in view.p[col] as usize..view.p[col + 1] as usize {
-                    let src = view.i[idx] as usize;
-                    let j = row_map[src];
-                    if j < 0 {
-                        continue;
-                    }
-                    let j = j as usize;
-                    if sd[src] == 0.0 || !sd[src].is_finite() {
-                        continue;
-                    }
-                    let standardized = ((view.x[idx] - mu[src]) / sd[src]).min(vmax);
-                    acc.0[j] += standardized * standardized;
-                    acc.1[j] += 1;
+    let (sums, nnz) = {
+        let accs = par_col_chunk_map(view.p, n_cells, |c0, c1| {
+            let mut sums = vec![0.0; n_use];
+            let mut nnz = vec![0usize; n_use];
+            scan_chunk_rows(&view, c0, c1, |src, val| {
+                let j = row_map[src];
+                if j < 0 {
+                    return;
                 }
-                acc
-            },
-        )
-        .reduce(
-            || (vec![0.0; n_use], vec![0usize; n_use]),
-            |mut left, right| {
-                for j in 0..n_use {
-                    left.0[j] += right.0[j];
-                    left.1[j] += right.1[j];
+                let j = j as usize;
+                if sd[src] == 0.0 || !sd[src].is_finite() {
+                    return;
                 }
-                left
-            },
-        );
+                let standardized = ((val - mu[src]) / sd[src]).min(vmax);
+                sums[j] += standardized * standardized;
+                nnz[j] += 1;
+            });
+            (sums, nnz)
+        });
+        reduce_f64_usize_rows(&accs, n_use)
+    };
 
     (0..n_use)
         .map(|j| {
@@ -1046,6 +1076,34 @@ mod tests {
         }
         // sd == 0 leaves that row at 0, including when the row has nonzeros.
         assert_eq!(got_std[1], 0.0);
+    }
+
+    #[test]
+    fn sparse_row_mean_var_matches_serial_scan() {
+        // Integer counts: sums are order-independent, so chunked == serial bits.
+        let mat = CscSlots {
+            x: vec![1.0, 4.0, 3.0, 2.0, 5.0],
+            i: vec![0, 1, 0, 2, 1],
+            p: vec![0, 1, 2, 4, 5, 5],
+            nrows: 3,
+            ncols: 5,
+        };
+        let view = toy_view(&mat);
+        let (means, vars) = sparse_row_mean_var_impl(view);
+        let mut serial_sum = vec![0.0; 3];
+        let mut serial_sq = vec![0.0; 3];
+        for (&row, &val) in mat.i.iter().zip(&mat.x) {
+            serial_sum[row as usize] += val;
+            serial_sq[row as usize] += val * val;
+        }
+        let cols = 5.0;
+        let denom = 4.0;
+        for g in 0..3 {
+            let expected_mean = serial_sum[g] / cols;
+            let expected_var = (serial_sq[g] - serial_sum[g] * serial_sum[g] / cols) / denom;
+            assert_eq!(means[g].to_bits(), expected_mean.to_bits());
+            assert_eq!(vars[g].to_bits(), expected_var.to_bits());
+        }
     }
 
     #[test]

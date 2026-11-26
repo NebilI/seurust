@@ -802,11 +802,16 @@ FindAllMarkersSparseFoldChangeStats <- function(
 #' @return Numeric vector of length `ncol(left)`.
 #' @export
 CcaCrossprodMultiply <- function(left, right, x) {
-  cca_crossprod_multiply(
-    left = AsDoubleMatrix(x = left),
-    right = AsDoubleMatrix(x = right),
-    x = as.double(x = x)
-  )
+  if (!(is.matrix(left) && is.double(left))) {
+    left <- AsDoubleMatrix(x = left)
+  }
+  if (!(is.matrix(right) && is.double(right))) {
+    right <- AsDoubleMatrix(x = right)
+  }
+  if (!(is.double(x) && is.null(dim(x)))) {
+    x <- as.double(x = x)
+  }
+  cca_crossprod_multiply(left = left, right = right, x = x)
 }
 
 #' Count unique shared neighbors of integration anchors

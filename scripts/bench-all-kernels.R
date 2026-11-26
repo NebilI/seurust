@@ -483,7 +483,7 @@ cases <- Filter(Negate(is.null), list(
   maybe_case("FindAllMarkersSparseFoldChangeStats", "5,000 × 2,000 sparse, 4 groups", 5L,
     function() seurat_fn("FindAllMarkersSparseFoldChangeStats")(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), marker_groups, 4L, TRUE, nthreads),
     function() seurust::FindAllMarkersSparseFoldChangeStats(sparse@x, sparse@i, sparse@p, nrow(sparse), ncol(sparse), marker_groups, 4L, TRUE, nthreads)),
-  maybe_case("CcaCrossprodMultiply", "80 × 200 and 80 × 180 dense", 7L,
+  maybe_case("CcaCrossprodMultiply", "80 × 200 and 80 × 180 dense", 201L,
     function() seurat_fn("CcaCrossprodMultiply")(cca_left, cca_right, cca_x),
     function() seurust::CcaCrossprodMultiply(cca_left, cca_right, cca_x)),
   maybe_case("CountAnchorSharedNeighbors", "80 anchors, k = 10", 7L,

@@ -1,8 +1,8 @@
 //! FindAllMarkers sparse fold-change stats (Seurat 5.6).
 
 use crate::sparse::CscView;
+use crate::utils::par_col_chunk_map;
 use extendr_api::prelude::*;
-use rayon::prelude::*;
 
 fn dimmed_matrix(values: Vec<f64>, nrow: usize, ncol: usize) -> RMatrix<f64> {
     crate::sparse::rmatrix_with_data(nrow, ncol, |out| {
@@ -34,38 +34,40 @@ pub fn find_all_markers_sparse_fold_change_stats_impl(
     let n_groups = n_groups.max(0) as usize;
     let matrix_size = rows * n_groups;
 
-    let (group_sums, detected) = (0..cols)
-        .into_par_iter()
-        .fold(
-            || (vec![0.0; matrix_size], vec![0i32; matrix_size]),
-            |mut acc, col| {
-                let group = groups[col] - 1;
-                if group < 0 || group as usize >= n_groups {
-                    return acc;
+    let accs = par_col_chunk_map(view.p, cols, |c0, c1| {
+        let mut group_sums = vec![0.0; matrix_size];
+        let mut detected = vec![0i32; matrix_size];
+        for col in c0..c1 {
+            let group = groups[col] - 1;
+            if group < 0 || group as usize >= n_groups {
+                continue;
+            }
+            let group_offset = group as usize * rows;
+            for ptr in view.p[col] as usize..view.p[col + 1] as usize {
+                let row = view.i[ptr] as usize;
+                let value = view.x[ptr];
+                let sum_value = if log_normalize { value.exp_m1() } else { value };
+                group_sums[group_offset + row] += sum_value;
+                if value > 0.0 {
+                    detected[group_offset + row] += 1;
                 }
-                let group_offset = group as usize * rows;
-                for ptr in view.p[col] as usize..view.p[col + 1] as usize {
-                    let row = view.i[ptr] as usize;
-                    let value = view.x[ptr];
-                    let sum_value = if log_normalize { value.exp_m1() } else { value };
-                    acc.0[group_offset + row] += sum_value;
-                    if value > 0.0 {
-                        acc.1[group_offset + row] += 1;
-                    }
-                }
-                acc
-            },
-        )
-        .reduce(
-            || (vec![0.0; matrix_size], vec![0i32; matrix_size]),
-            |mut left, right| {
+            }
+        }
+        (group_sums, detected)
+    });
+    let (group_sums, detected) = if accs.is_empty() {
+        (vec![0.0; matrix_size], vec![0i32; matrix_size])
+    } else {
+        accs.into_iter()
+            .reduce(|mut left, right| {
                 for idx in 0..matrix_size {
                     left.0[idx] += right.0[idx];
                     left.1[idx] += right.1[idx];
                 }
                 left
-            },
-        );
+            })
+            .unwrap()
+    };
 
     let mut rest_sums = vec![0.0; matrix_size];
     let mut total_detected = vec![0i32; rows];

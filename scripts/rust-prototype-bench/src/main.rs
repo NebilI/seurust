@@ -1,6 +1,8 @@
 use rayon::prelude::*;
 use std::time::Instant;
 
+mod round2;
+
 struct Lcg(u64);
 impl Lcg {
     fn next(&mut self) -> u64 {
@@ -345,6 +347,10 @@ fn main() {
 
     let m = sparse(5000, 2000, 0.05, 1);
     println!("nnz {}", m.x.len());
+    if std::env::args().any(|a| a == "round2") {
+        round2::run(&m);
+        return;
+    }
     let a = lognorm_current(&m);
     let b = lognorm_fused_par(&m);
     assert!((a - b).abs() < 1e-12);

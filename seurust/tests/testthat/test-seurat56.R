@@ -127,6 +127,21 @@ test_that("CountAnchorSharedNeighbors matches Seurat", {
   expect_equal(as.integer(rust), as.integer(cpp))
 })
 
+test_that("EigenGramPCA matches base eigen on the Gram", {
+  set.seed(20)
+  object <- matrix(rnorm(30 * 80), nrow = 30)
+  rust <- seurust::EigenGramPCA(object, npcs = 5L, weight_by_var = TRUE, nthreads = 1L)
+  ev <- eigen(tcrossprod(object), symmetric = TRUE)
+  U <- ev$vectors[, seq_len(5L), drop = FALSE]
+  rust$loadings <- align_pc_signs(rust$loadings, U)
+  expect_equal(unname(rust$loadings), unname(U), tolerance = 1e-8)
+  expect_equal(
+    as.numeric(rust$sdev)^2 * (ncol(object) - 1),
+    ev$values[seq_len(5L)],
+    tolerance = 1e-8
+  )
+})
+
 test_that("EigenGramPCA matches Seurat up to loading sign", {
   seurat_pca <- seurat_has("EigenGramPCA")
   set.seed(20)
