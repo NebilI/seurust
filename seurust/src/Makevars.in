@@ -4,7 +4,7 @@ STATLIB = $(LIBDIR)/libseurust.a
 # LTO can strip unreferenced Rust registration symbols, so the whole static
 # library must be linked. tools/config.R fills this in: GNU ld uses
 # --whole-archive; Apple ld uses -force_load.
-PKG_LIBS = @PKG_LIBS_RUST@
+PKG_LIBS = @PKG_LIBS_RUST@ $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
 
 all: $(SHLIB) rust_clean
 
@@ -31,7 +31,7 @@ $(STATLIB):
 	# Build only the static library used by the R package (not helper binaries).
 	export CARGO_HOME=$(CARGOTMP) && \
 	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
-	@PANIC_EXPORTS@RUSTFLAGS="$(RUSTFLAGS)" cargo build @CRAN_FLAGS@ --lib @PROFILE@ --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) @TARGET@
+	@PANIC_EXPORTS@RUSTFLAGS="$(RUSTFLAGS)" cargo build @CRAN_FLAGS@ --lib --features r-lapack @PROFILE@ --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR) @TARGET@
 
 	if [ "@RUN_DOCUMENT@" = "true" ]; then \
 		echo "=== Regenerating extendr wrappers (dev build) ==="; \

@@ -1,3 +1,14 @@
+# seurust (unreleased)
+
+Further kernel work from [`SLOW_KERNELS_PLAN.md`](https://github.com/NebilI/seurust/blob/main/SLOW_KERNELS_PLAN.md) for the four functions that still lost to Seurat 5.6.0 C++ after 0.3.0.
+
+## Improvements
+
+* **`SparseRowMeanVar` and other row-statistics kernels** — Columns are split into one nnz-balanced chunk per rayon thread. Each thread owns a single accumulator (no per-split `fold` allocations). `SparseRowMeanVar` writes `mean` / `variance` straight into uninitialized R vectors. The same helper is used by `FastExpMean`, `SparseRowVar`, `SparseRowVar2`, `SparseRowVarStd`, `FastLogVMR`, `SparseRowMeanVarLegacy`, `SparseRowVarStdLegacyRows`, `FindAllMarkersSparseFoldChangeStats`, and `SCTResidualStatsAndCorrected`.
+* **`EigenGramPCA`** — Parallel lower-triangle Gram (`X Xᵀ`) honoring `nthreads`, then R's LAPACK `dsyevr` for only the top `npcs` eigenpairs instead of a full nalgebra solve.
+* **`fast_dist`** — Builds the result `VECSXP` with the R C API (no per-element extendr ownership table), copies the input `names` attribute pointer, and computes four neighbor distances per pass over the dimensions.
+* **`CcaCrossprodMultiply`** — Four output columns per pass (bit-identical) and a wrapper that skips `AsDoubleMatrix` / `as.double` when the inputs are already double matrices or a double vector.
+
 # seurust 0.3.0
 
 Performance release: seven kernel optimizations from

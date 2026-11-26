@@ -15,6 +15,12 @@ categories = ["science"]
 crate-type = ["rlib", "staticlib"]
 name = "seurust"
 
+[features]
+default = []
+# Link R's LAPACK `dsyevr` for the top-k EigenGramPCA solve. Enabled by
+# Makevars when building the R package; cargo test uses the nalgebra fallback.
+r-lapack = []
+
 [[bin]]
 name = "document"
 path = "document.rs"

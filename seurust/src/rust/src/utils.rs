@@ -8,6 +8,58 @@ pub fn use_parallel(n_tasks: usize, work: usize) -> bool {
     n_tasks > 1 && work >= SERIAL_WORK_THRESHOLD
 }
 
+/// Column ranges `[bounds[k], bounds[k + 1])` that split `ncols` into
+/// `n_chunks` contiguous pieces, balanced by stored nonzeros in CSC `p`.
+pub fn col_chunk_bounds(p: &[i32], ncols: usize, n_chunks: usize) -> Vec<usize> {
+    let n_chunks = n_chunks.max(1).min(ncols.max(1));
+    let mut bounds = vec![0usize; n_chunks + 1];
+    bounds[n_chunks] = ncols;
+    if n_chunks == 1 || ncols == 0 {
+        return bounds;
+    }
+    let nnz = p.get(ncols).copied().unwrap_or(0).max(0) as usize;
+    let mut col = 0;
+    for k in 1..n_chunks {
+        let target = ((nnz * k) / n_chunks) as i32;
+        while col < ncols && p[col] < target {
+            col += 1;
+        }
+        bounds[k] = col;
+    }
+    bounds
+}
+
+/// Run `work(col_start, col_end)` once per nnz-balanced column chunk.
+///
+/// One chunk per rayon thread (or a single serial call when the matrix is
+/// small), so each accumulator is allocated once per thread rather than once
+/// per work-stealing split.
+pub fn par_col_chunk_map<T, F>(p: &[i32], ncols: usize, work: F) -> Vec<T>
+where
+    T: Send,
+    F: Fn(usize, usize) -> T + Sync + Send,
+{
+    if ncols == 0 {
+        return Vec::new();
+    }
+    let nnz = p.get(ncols).copied().unwrap_or(0).max(0) as usize;
+    let n_chunks = if use_parallel(ncols, nnz) {
+        rayon::current_num_threads().max(1).min(ncols)
+    } else {
+        1
+    };
+    let bounds = col_chunk_bounds(p, ncols, n_chunks);
+    let n = bounds.len() - 1;
+    if n <= 1 {
+        vec![work(0, ncols)]
+    } else {
+        (0..n)
+            .into_par_iter()
+            .map(|k| work(bounds[k], bounds[k + 1]))
+            .collect()
+    }
+}
+
 /// Map `0..n` in parallel only when `work` is large enough to pay for rayon.
 pub fn map_indexed<T, F>(n: usize, work: usize, f: F) -> Vec<T>
 where
@@ -105,5 +157,19 @@ mod tests {
         assert!(!use_parallel(80, 80 * 10));
         assert!(!use_parallel(3_200, 80 * 40));
         assert!(use_parallel(2_000, 2_000 * 2_000));
+    }
+
+    #[test]
+    fn col_chunk_bounds_cover_every_column_once() {
+        let p = vec![0, 3, 5, 5, 10, 12];
+        let bounds = col_chunk_bounds(&p, 5, 3);
+        assert_eq!(bounds[0], 0);
+        assert_eq!(*bounds.last().unwrap(), 5);
+        for w in bounds.windows(2) {
+            assert!(w[0] <= w[1]);
+        }
+        let serial = col_chunk_bounds(&p, 5, 1);
+        assert_eq!(serial, vec![0, 5]);
+        assert_eq!(col_chunk_bounds(&p, 0, 4), vec![0, 0]);
     }
 }

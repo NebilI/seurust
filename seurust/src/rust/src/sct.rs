@@ -1,6 +1,7 @@
 //! SCTransform Pearson residuals and corrected counts (Seurat 5.6).
 
 use crate::sparse::{rmatrix_with_data, CscSlots, CscView};
+use crate::utils::par_col_chunk_map;
 use extendr_api::prelude::*;
 use rayon::prelude::*;
 
@@ -32,53 +33,55 @@ fn residual_stats(
     let first_slope = if rows == 0 { 0.0 } else { slope[0] };
     let common_slope = slope.iter().all(|s| (s - first_slope).abs() <= 1e-12);
 
-    let (residual_sum, residual_sq_sum) = (0..cols)
-        .into_par_iter()
-        .fold(
-            || (vec![0.0; rows], vec![0.0; rows]),
-            |mut acc, col| {
-                let log_umi_col = log_umi[col];
-                let common_factor = if common_slope {
-                    (first_slope * log_umi_col).exp()
-                } else {
-                    0.0
-                };
-                let start = view.p[col] as usize;
-                let end = view.p[col + 1] as usize;
-                let mut ptr = start;
-                for row in 0..rows {
-                    let mut y_value = 0.0;
-                    if ptr < end && view.i[ptr] as usize == row {
-                        y_value = view.x[ptr];
-                        ptr += 1;
-                    }
-                    let mu_original = if common_slope {
-                        exp_intercept[row] * common_factor
-                    } else {
-                        exp_intercept[row] * (slope[row] * log_umi_col).exp()
-                    };
-                    let mut variance_original = sct_model_var(mu_original, theta[row]);
-                    if variance_original < min_var {
-                        variance_original = min_var;
-                    }
-                    let residual = (y_value - mu_original) / variance_original.sqrt();
-                    let clipped = sct_clip(residual, residual_clip_min, residual_clip_max);
-                    acc.0[row] += clipped;
-                    acc.1[row] += clipped * clipped;
+    let accs = par_col_chunk_map(view.p, cols, |c0, c1| {
+        let mut residual_sum = vec![0.0; rows];
+        let mut residual_sq_sum = vec![0.0; rows];
+        for col in c0..c1 {
+            let log_umi_col = log_umi[col];
+            let common_factor = if common_slope {
+                (first_slope * log_umi_col).exp()
+            } else {
+                0.0
+            };
+            let start = view.p[col] as usize;
+            let end = view.p[col + 1] as usize;
+            let mut ptr = start;
+            for row in 0..rows {
+                let mut y_value = 0.0;
+                if ptr < end && view.i[ptr] as usize == row {
+                    y_value = view.x[ptr];
+                    ptr += 1;
                 }
-                acc
-            },
-        )
-        .reduce(
-            || (vec![0.0; rows], vec![0.0; rows]),
-            |mut left, right| {
+                let mu_original = if common_slope {
+                    exp_intercept[row] * common_factor
+                } else {
+                    exp_intercept[row] * (slope[row] * log_umi_col).exp()
+                };
+                let mut variance_original = sct_model_var(mu_original, theta[row]);
+                if variance_original < min_var {
+                    variance_original = min_var;
+                }
+                let residual = (y_value - mu_original) / variance_original.sqrt();
+                let clipped = sct_clip(residual, residual_clip_min, residual_clip_max);
+                residual_sum[row] += clipped;
+                residual_sq_sum[row] += clipped * clipped;
+            }
+        }
+        (residual_sum, residual_sq_sum)
+    });
+    let (residual_sum, residual_sq_sum) = if accs.is_empty() {
+        (vec![0.0; rows], vec![0.0; rows])
+    } else {
+        accs.into_iter()
+            .reduce(|mut left, right| {
                 for row in 0..rows {
                     left.0[row] += right.0[row];
                     left.1[row] += right.1[row];
                 }
                 left
-            },
-        );
+            })
+            .unwrap()
+    };
 
     (
         residual_sum,
