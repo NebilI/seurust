@@ -44,7 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 
 COPY docker/scripts/install-r-deps.R /usr/local/bin/install-r-deps.R
-RUN Rscript /usr/local/bin/install-r-deps.R
+# --full also installs the Seurat 5.6.0 parity reference (pinned in the script).
+RUN Rscript /usr/local/bin/install-r-deps.R --full
 
 # Default dev shell; mount the repo at /workspace when running the container.
 CMD ["bash"]

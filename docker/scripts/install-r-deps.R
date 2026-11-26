@@ -16,6 +16,7 @@ build_pkgs <- c(
   "Rcpp",
   "RcppEigen",
   "RcppProgress",
+  "RcppThread",
   "Matrix",
   "methods",
   "remotes",
@@ -33,9 +34,21 @@ install.packages(build_pkgs, Ncpus = max(1L, parallel::detectCores() - 1L))
 message("Installing SeuratObject from satijalab r-universe...")
 install.packages("SeuratObject", repos = "https://satijalab.r-universe.dev")
 
+# Parity checks compare against Seurat 5.6.0 native kernels specifically.
+# Pinned to the upstream v5.6.0 tag so the image does not drift with CRAN.
+SEURAT_REF <- "v5.6.0"
 if (full) {
-  message("Installing Seurat (this repository does not vendor Seurat sources)...")
-  install.packages("Seurat", Ncpus = max(1L, parallel::detectCores() - 1L))
+  message("Installing Seurat ", SEURAT_REF, " from satijalab/seurat (pinned)...")
+  remotes::install_github(
+    "satijalab/seurat",
+    ref = SEURAT_REF,
+    dependencies = TRUE,
+    upgrade = "never",
+    Ncpus = max(1L, parallel::detectCores() - 1L)
+  )
+  if (utils::packageVersion("Seurat") != "5.6.0") {
+    stop("Expected Seurat 5.6.0, got ", as.character(utils::packageVersion("Seurat")))
+  }
 }
 
 message("Done.")
