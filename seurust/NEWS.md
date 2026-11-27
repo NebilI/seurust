@@ -1,4 +1,4 @@
-# seurust (unreleased)
+# seurust 0.4.0
 
 Further kernel work from [`SLOW_KERNELS_PLAN.md`](https://github.com/NebilI/seurust/blob/main/SLOW_KERNELS_PLAN.md) for the four functions that still lost to Seurat 5.6.0 C++ after 0.3.0.
 
