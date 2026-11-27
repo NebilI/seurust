@@ -8,6 +8,7 @@ Further kernel work from [`SLOW_KERNELS_PLAN.md`](https://github.com/NebilI/seur
 * **`EigenGramPCA`** — Parallel lower-triangle Gram (`X Xᵀ`) honoring `nthreads`, then R's LAPACK `dsyevr` for only the top `npcs` eigenpairs instead of a full nalgebra solve.
 * **`fast_dist`** — Builds the result `VECSXP` with the R C API (no per-element extendr ownership table), copies the input `names` attribute pointer, and computes four neighbor distances per pass over the dimensions.
 * **`CcaCrossprodMultiply`** — Four output columns per pass (bit-identical) and a wrapper that skips `AsDoubleMatrix` / `as.double` when the inputs are already double matrices or a double vector.
+* **`row_sum_dgcmatrix` and `row_mean_dgcmatrix`** — Row totals are written straight into the R output vector (no intermediate `Vec` copy, and the mean divide is folded into the same output pass). Inputs with at least 200,000 stored entries are split into equal pieces, one accumulator per thread, and combined per row range in parallel. Integer-valued data gives bit-identical results; fractional data can differ in the last bits from a strictly serial sum but is reproducible for a given thread count.
 
 # seurust 0.3.0
 

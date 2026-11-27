@@ -6,6 +6,7 @@ mod integration;
 mod markers;
 mod modularity;
 mod pca;
+mod row_sum_kernels;
 mod sct;
 mod snn;
 mod sparse;
